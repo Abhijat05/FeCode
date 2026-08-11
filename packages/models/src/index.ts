@@ -1,5 +1,3 @@
-import type { ID } from "@fecode/shared";
-
-export interface ModelProvider {
-  id: ID;
-}
+export * from "./types.js";
+export * from "./factory.js";
+export { OpenAIModelProvider } from "./providers/openai/index.js";
