@@ -1,3 +1,5 @@
+import type { ToolCall } from "./tools/types.js";
+
 export interface ModelCapabilities {
   streaming: boolean;
   toolCalling: boolean;
@@ -6,13 +8,23 @@ export interface ModelCapabilities {
 }
 
 export interface ModelMessage {
-  role: "system" | "user" | "assistant";
-  content: string;
+  role: "system" | "user" | "assistant" | "tool";
+  content?: string;
+  toolCalls?: ToolCall[];
+  toolCallId?: string;
+  name?: string;
+}
+
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  inputSchema: unknown;
 }
 
 export interface ModelRequest {
   system?: string;
   messages: ModelMessage[];
+  tools?: ToolDefinition[];
 }
 
 export interface TokenUsage {
@@ -25,6 +37,10 @@ export type ModelEvent =
   | {
       type: "text_delta";
       content: string;
+    }
+  | {
+      type: "tool_call";
+      call: ToolCall;
     }
   | {
       type: "completed";

@@ -110,6 +110,20 @@ export const App: React.FC<AppProps> = ({
                 : t
             )
           );
+        } else if (event.type === "tool_call") {
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    status: "streaming",
+                    response: t.response + `\n● Tool: ${event.call.name}\n`
+                  }
+                : t
+            )
+          );
+        } else if (event.type === "tool_result") {
+          // Tool results handled internally by agent runtime
         } else if (event.type === "done") {
           setTurns((prev) =>
             prev.map((t) =>

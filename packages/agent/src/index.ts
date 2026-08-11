@@ -1,4 +1,4 @@
-import type { ModelProvider } from "@fecode/models";
+import type { ModelProvider, ToolCall, ToolResult } from "@fecode/models";
 import type { ID } from "@fecode/shared";
 
 export interface Agent {
@@ -16,8 +16,11 @@ export interface AgentInput {
 
 export type AgentEvent =
   | { type: "text"; content: string }
+  | { type: "tool_call"; call: ToolCall }
+  | { type: "tool_result"; result: ToolResult; callId: string }
   | { type: "done" }
   | { type: "error"; error: Error };
 
 export * from "./runtime.js";
 export * from "./systemPrompt.js";
+export * from "./tools/mockEchoTool.js";

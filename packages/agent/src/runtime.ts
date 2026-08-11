@@ -1,4 +1,16 @@
-import type { ModelMessage, ModelProvider, ModelRequest, TokenUsage } from "@fecode/models";
+import {
+  DefaultToolExecutor,
+  DefaultToolRegistry
+} from "@fecode/models";
+import type {
+  ModelMessage,
+  ModelProvider,
+  ModelRequest,
+  TokenUsage,
+  ToolCall,
+  ToolExecutor,
+  ToolRegistry
+} from "@fecode/models";
 import type { Agent, AgentEvent, AgentInput } from "./index.js";
 import { DEFAULT_SYSTEM_PROMPT } from "./systemPrompt.js";
 
@@ -19,17 +31,25 @@ export interface AgentState {
 export interface AgentRuntimeOptions {
   systemPrompt?: string;
   sessionId?: string;
+  registry?: ToolRegistry;
+  executor?: ToolExecutor;
 }
 
 export class AgentRuntime implements Agent {
   private readonly modelProvider: ModelProvider;
   private readonly systemPrompt: string;
+  private readonly registry: ToolRegistry;
+  private readonly executor: ToolExecutor;
   private state: AgentState;
   private activeController: AbortController | null = null;
 
   constructor(modelProvider: ModelProvider, options: AgentRuntimeOptions = {}) {
     this.modelProvider = modelProvider;
     this.systemPrompt = options.systemPrompt || DEFAULT_SYSTEM_PROMPT;
+    this.registry = options.registry || new DefaultToolRegistry();
+    this.executor =
+      options.executor || new DefaultToolExecutor(this.registry);
+
     this.state = {
       sessionId:
         options.sessionId ||
@@ -37,6 +57,10 @@ export class AgentRuntime implements Agent {
       status: "idle",
       messages: []
     };
+  }
+
+  public getRegistry(): ToolRegistry {
+    return this.registry;
   }
 
   public getState(): AgentState {
@@ -60,51 +84,102 @@ export class AgentRuntime implements Agent {
       content: input.message
     });
 
-    const request: ModelRequest = {
-      system: this.systemPrompt,
-      messages: [...this.state.messages]
-    };
-
-    let accumulatedText = "";
-
     try {
-      const stream = this.modelProvider.generate(
-        request,
-        this.activeController.signal
-      );
+      while (true) {
+        if (this.activeController.signal.aborted) {
+          throw new Error("Request aborted");
+        }
 
-      for await (const event of stream) {
-        if (event.type === "text_delta") {
-          accumulatedText += event.content;
-          yield { type: "text", content: event.content };
-        } else if (event.type === "completed") {
-          this.state.messages.push({
-            role: "assistant",
-            content: accumulatedText
-          });
+        const registeredTools = this.registry.list();
+        const toolDefinitions = registeredTools.map((t) => ({
+          name: t.name,
+          description: t.description,
+          inputSchema: t.inputSchema
+        }));
 
-          if (event.usage) {
-            const currentUsage = this.state.tokenUsage || {};
-            this.state.tokenUsage = {
-              inputTokens:
-                (currentUsage.inputTokens || 0) + (event.usage.inputTokens || 0),
-              outputTokens:
-                (currentUsage.outputTokens || 0) + (event.usage.outputTokens || 0),
-              totalTokens:
-                (currentUsage.totalTokens || 0) + (event.usage.totalTokens || 0)
-            };
+        const request: ModelRequest = {
+          system: this.systemPrompt,
+          messages: [...this.state.messages],
+          tools: toolDefinitions.length ? toolDefinitions : undefined
+        };
+
+        let accumulatedText = "";
+        const toolCallsForTurn: ToolCall[] = [];
+        let turnError: Error | null = null;
+
+        const stream = this.modelProvider.generate(
+          request,
+          this.activeController.signal
+        );
+
+        for await (const event of stream) {
+          if (event.type === "text_delta") {
+            accumulatedText += event.content;
+            yield { type: "text", content: event.content };
+          } else if (event.type === "tool_call") {
+            toolCallsForTurn.push(event.call);
+            yield { type: "tool_call", call: event.call };
+          } else if (event.type === "completed") {
+            if (event.usage) {
+              const currentUsage = this.state.tokenUsage || {};
+              this.state.tokenUsage = {
+                inputTokens:
+                  (currentUsage.inputTokens || 0) +
+                  (event.usage.inputTokens || 0),
+                outputTokens:
+                  (currentUsage.outputTokens || 0) +
+                  (event.usage.outputTokens || 0),
+                totalTokens:
+                  (currentUsage.totalTokens || 0) +
+                  (event.usage.totalTokens || 0)
+              };
+            }
+          } else if (event.type === "error") {
+            turnError = event.error;
+            yield { type: "error", error: event.error };
+            break;
           }
+        }
 
+        if (turnError) {
+          const isCancelled =
+            this.activeController.signal.aborted ||
+            turnError.message.toLowerCase().includes("abort") ||
+            turnError.message.toLowerCase().includes("cancel");
+          this.state.status = isCancelled ? "cancelled" : "failed";
+          break;
+        }
+
+        this.state.messages.push({
+          role: "assistant",
+          content: accumulatedText || undefined,
+          toolCalls: toolCallsForTurn.length ? toolCallsForTurn : undefined
+        });
+
+        if (toolCallsForTurn.length === 0) {
           this.state.status = "completed";
           yield { type: "done" };
-        } else if (event.type === "error") {
-          const isCancelled =
-            this.activeController?.signal.aborted ||
-            event.error.message.toLowerCase().includes("abort") ||
-            event.error.message.toLowerCase().includes("cancel");
+          break;
+        }
 
-          this.state.status = isCancelled ? "cancelled" : "failed";
-          yield { type: "error", error: event.error };
+        for (const call of toolCallsForTurn) {
+          if (this.activeController.signal.aborted) {
+            throw new Error("Request aborted");
+          }
+
+          const result = await this.executor.execute(call, {
+            cwd: input.cwd,
+            signal: this.activeController.signal
+          });
+
+          yield { type: "tool_result", result, callId: call.id };
+
+          this.state.messages.push({
+            role: "tool",
+            toolCallId: call.id,
+            name: call.name,
+            content: JSON.stringify(result)
+          });
         }
       }
     } catch (err: unknown) {

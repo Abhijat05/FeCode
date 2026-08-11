@@ -6,11 +6,18 @@ import type {
   ModelRequest,
   TokenUsage
 } from "../../types.js";
+import type { ToolCall } from "../../tools/types.js";
 
 export interface OpenAIProviderOptions {
   apiKey?: string;
   model?: string;
   client?: OpenAI;
+}
+
+interface AccumulatedToolCall {
+  id: string;
+  name: string;
+  arguments: string;
 }
 
 export class OpenAIModelProvider implements ModelProvider {
@@ -59,16 +66,67 @@ export class OpenAIModelProvider implements ModelProvider {
       }
 
       for (const msg of request.messages) {
-        openAiMessages.push({
-          role: msg.role,
-          content: msg.content
-        });
+        if (msg.role === "system") {
+          openAiMessages.push({
+            role: "system",
+            content: msg.content || ""
+          });
+        } else if (msg.role === "user") {
+          openAiMessages.push({
+            role: "user",
+            content: msg.content || ""
+          });
+        } else if (msg.role === "assistant") {
+          if (msg.toolCalls && msg.toolCalls.length > 0) {
+            openAiMessages.push({
+              role: "assistant",
+              content: msg.content || null,
+              tool_calls: msg.toolCalls.map((tc) => ({
+                id: tc.id,
+                type: "function" as const,
+                function: {
+                  name: tc.name,
+                  arguments:
+                    typeof tc.arguments === "string"
+                      ? tc.arguments
+                      : JSON.stringify(tc.arguments || {})
+                }
+              }))
+            });
+          } else {
+            openAiMessages.push({
+              role: "assistant",
+              content: msg.content || ""
+            });
+          }
+        } else if (msg.role === "tool") {
+          openAiMessages.push({
+            role: "tool",
+            tool_call_id: msg.toolCallId || "",
+            content: msg.content || ""
+          });
+        }
       }
+
+      const openAiTools = request.tools?.length
+        ? request.tools.map((t) => ({
+            type: "function" as const,
+            function: {
+              name: t.name,
+              description: t.description,
+              parameters: (t.inputSchema as Record<string, unknown>) || {
+                type: "object",
+                properties: {}
+              }
+            }
+          }))
+        : undefined;
 
       const stream = await this.client.chat.completions.create(
         {
           model: this.model,
           messages: openAiMessages,
+          tools: openAiTools,
           stream: true,
           stream_options: {
             include_usage: true
@@ -78,15 +136,35 @@ export class OpenAIModelProvider implements ModelProvider {
       );
 
       let usage: TokenUsage | undefined;
+      const accumulatedToolCalls = new Map<number, AccumulatedToolCall>();
 
       for await (const chunk of stream) {
         if (signal?.aborted) {
           throw new Error("Request aborted");
         }
 
-        const delta = chunk.choices[0]?.delta?.content;
-        if (delta) {
-          yield { type: "text_delta", content: delta };
+        const delta = chunk.choices[0]?.delta;
+        if (delta?.content) {
+          yield { type: "text_delta", content: delta.content };
+        }
+
+        if (delta?.tool_calls) {
+          for (const tcDelta of delta.tool_calls) {
+            const index = tcDelta.index;
+            const existing = accumulatedToolCalls.get(index) || {
+              id: "",
+              name: "",
+              arguments: ""
+            };
+
+            if (tcDelta.id) existing.id += tcDelta.id;
+            if (tcDelta.function?.name) existing.name += tcDelta.function.name;
+            if (tcDelta.function?.arguments) {
+              existing.arguments += tcDelta.function.arguments;
+            }
+
+            accumulatedToolCalls.set(index, existing);
+          }
         }
 
         if (chunk.usage) {
@@ -96,6 +174,23 @@ export class OpenAIModelProvider implements ModelProvider {
             totalTokens: chunk.usage.total_tokens
           };
         }
+      }
+
+      for (const [, callData] of accumulatedToolCalls) {
+        let parsedArgs: unknown = callData.arguments;
+        try {
+          parsedArgs = JSON.parse(callData.arguments);
+        } catch {
+          // fallback to raw string
+        }
+
+        const call: ToolCall = {
+          id: callData.id,
+          name: callData.name,
+          arguments: parsedArgs
+        };
+
+        yield { type: "tool_call", call };
       }
 
       yield { type: "completed", usage };

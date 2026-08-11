@@ -156,4 +156,78 @@ describe("OpenAIModelProvider (offline unit tests)", () => {
       }
     ]);
   });
+
+  it("parses streaming tool call deltas into ModelEvent tool_call", async () => {
+    async function* mockToolStream() {
+      yield {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_abc123",
+                  function: { name: "echo", arguments: '{"mess' }
+                }
+              ]
+            }
+          }
+        ]
+      };
+      yield {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  function: { arguments: 'age":"hi"}' }
+                }
+              ]
+            }
+          }
+        ]
+      };
+      yield {
+        choices: [],
+        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+      };
+    }
+
+    const mockClient = {
+      chat: {
+        completions: {
+          create: vi.fn().mockResolvedValue(mockToolStream())
+        }
+      }
+    } as unknown as OpenAI;
+
+    const provider = new OpenAIModelProvider({
+      apiKey: "sk-fake-key",
+      client: mockClient
+    });
+
+    const events: ModelEvent[] = [];
+    for await (const event of provider.generate({
+      messages: [{ role: "user", content: "Run echo tool" }],
+      tools: [{ name: "echo", description: "Echo tool", inputSchema: {} }]
+    })) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([
+      {
+        type: "tool_call",
+        call: {
+          id: "call_abc123",
+          name: "echo",
+          arguments: { message: "hi" }
+        }
+      },
+      {
+        type: "completed",
+        usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 }
+      }
+    ]);
+  });
 });
