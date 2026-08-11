@@ -95,6 +95,8 @@ export const App: React.FC<AppProps> = ({
       return;
     }
 
+    const toolCallNames = new Map<string, string>();
+
     try {
       const stream = agent.run({ message: trimmed, cwd });
       for await (const event of stream) {
@@ -111,6 +113,7 @@ export const App: React.FC<AppProps> = ({
             )
           );
         } else if (event.type === "tool_call") {
+          toolCallNames.set(event.call.id, event.call.name);
           setTurns((prev) =>
             prev.map((t) =>
               t.id === turnId
@@ -123,13 +126,18 @@ export const App: React.FC<AppProps> = ({
             )
           );
         } else if (event.type === "tool_result") {
+          const toolName = toolCallNames.get(event.callId) || "tool";
           setTurns((prev) =>
             prev.map((t) =>
               t.id === turnId
                 ? {
                     ...t,
                     status: "streaming",
-                    response: t.response + (event.result.success ? `✓ tool executed\n` : `✗ tool failed\n`)
+                    response:
+                      t.response +
+                      (event.result.success
+                        ? `✓ ${toolName}\n\n`
+                        : `✗ ${toolName} failed\n\n`)
                   }
                 : t
             )

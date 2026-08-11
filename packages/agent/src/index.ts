@@ -25,6 +25,8 @@ export * from "./runtime.js";
 export * from "./systemPrompt.js";
 export * from "./tools/mockEchoTool.js";
 export * from "./tools/pathUtils.js";
+export * from "./tools/ignoreUtils.js";
 export * from "./tools/listDirectory.js";
 export * from "./tools/readFile.js";
+export * from "./tools/searchFiles.js";
 export * from "./tools/defaultRegistry.js";
