@@ -9,6 +9,7 @@ export interface Agent {
 export interface AgentInput {
   message: string;
   cwd: string;
+  sessionId?: string;
   provider?: ModelProvider;
   id?: ID;
 }
@@ -17,3 +18,6 @@ export type AgentEvent =
   | { type: "text"; content: string }
   | { type: "done" }
   | { type: "error"; error: Error };
+
+export * from "./runtime.js";
+export * from "./systemPrompt.js";
