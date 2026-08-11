@@ -2,7 +2,7 @@
 import React from "react";
 import { render } from "ink";
 import { createModelProvider } from "@fecode/models";
-import { AgentRuntime } from "@fecode/agent";
+import { AgentRuntime, createDefaultToolRegistry } from "@fecode/agent";
 import { App } from "./App.js";
 
 function main(): void {
@@ -18,7 +18,9 @@ function main(): void {
       model: modelName
     });
 
-    agent = new AgentRuntime(modelProvider);
+    const registry = createDefaultToolRegistry();
+
+    agent = new AgentRuntime(modelProvider, { registry });
   } catch (err: unknown) {
     configError = err instanceof Error ? err.message : String(err);
   }

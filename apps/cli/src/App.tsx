@@ -117,13 +117,23 @@ export const App: React.FC<AppProps> = ({
                 ? {
                     ...t,
                     status: "streaming",
-                    response: t.response + `\n● Tool: ${event.call.name}\n`
+                    response: t.response + `\n● ${event.call.name}\n`
                   }
                 : t
             )
           );
         } else if (event.type === "tool_result") {
-          // Tool results handled internally by agent runtime
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    status: "streaming",
+                    response: t.response + (event.result.success ? `✓ tool executed\n` : `✗ tool failed\n`)
+                  }
+                : t
+            )
+          );
         } else if (event.type === "done") {
           setTurns((prev) =>
             prev.map((t) =>
