@@ -15,7 +15,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@fecode/shared": "*"
+    "@fecode/shared": "*",
+    "openai": "^4.77.0"
   },
   "devDependencies": {
     "typescript": "^5.7.2"

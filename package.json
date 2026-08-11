@@ -11,8 +11,8 @@
     "fe": "npm run dev --workspace=apps/cli",
     "dev": "npm run dev --workspace=apps/cli",
     "build": "npm run build --workspace=packages/shared && npm run build --workspace=packages/models && npm run build --workspace=packages/agent && npm run build --workspace=apps/cli",
-    "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit && eslint ."
   },
   "devDependencies": {
