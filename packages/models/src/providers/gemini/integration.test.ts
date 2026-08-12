@@ -5,8 +5,9 @@ import type { ModelEvent } from "../../types.js";
 
 const config = loadConfig();
 const apiKey = config.geminiApiKey;
+const isLiveTestEnabled = Boolean(apiKey && apiKey.startsWith("AIzaSy"));
 
-describe.runIf(Boolean(apiKey))(
+describe.runIf(isLiveTestEnabled)(
   "GeminiModelProvider Real API Integration Tests",
   () => {
     const model = config.model || "gemini-2.5-flash";
