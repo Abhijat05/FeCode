@@ -1,13 +1,15 @@
 import { describe, it, expect } from "vitest";
+import { loadConfig } from "@fecode/shared";
 import { GeminiModelProvider } from "./index.js";
 import type { ModelEvent } from "../../types.js";
 
-const apiKey = process.env.GEMINI_API_KEY;
+const config = loadConfig();
+const apiKey = config.geminiApiKey;
 
 describe.runIf(Boolean(apiKey))(
   "GeminiModelProvider Real API Integration Tests",
   () => {
-    const model = process.env.FE_MODEL || "gemini-2.5-flash";
+    const model = config.model || "gemini-2.5-flash";
 
     it("1. Basic text generation & streaming", async () => {
       const provider = new GeminiModelProvider({ apiKey, model });

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import React from "react";
 import { render } from "ink";
+import { loadConfig } from "@fecode/shared";
 import { createModelProvider } from "@fecode/models";
 import { AgentRuntime, createDefaultToolRegistry } from "@fecode/agent";
 import { App } from "./App.js";
@@ -10,21 +11,25 @@ function main(): void {
   let agent: AgentRuntime | undefined;
   let configError: string | undefined;
 
-  const providerName = process.env.FE_PROVIDER || "openai";
-  const modelName =
-    process.env.FE_MODEL ||
-    (providerName === "gemini"
-      ? "gemini-2.5-flash"
-      : providerName === "ollama"
-        ? "qwen2.5-coder"
-        : "gpt-4o");
+  const config = loadConfig();
+  const providerName = config.provider;
+  const modelName = config.model;
 
   const approvalResolver = new InteractiveApprovalResolver();
 
   try {
+    const apiKey =
+      providerName === "gemini"
+        ? config.geminiApiKey
+        : providerName === "openai"
+          ? config.openaiApiKey
+          : undefined;
+
     const modelProvider = createModelProvider({
       provider: providerName,
-      model: modelName
+      model: modelName,
+      apiKey,
+      baseUrl: config.ollamaBaseUrl
     });
 
     const registry = createDefaultToolRegistry();
