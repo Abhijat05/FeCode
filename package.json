@@ -12,6 +12,7 @@
     "dev": "npm run dev --workspace=apps/cli",
     "build": "npm run build --workspace=packages/shared && npm run build --workspace=packages/models && npm run build --workspace=packages/agent && npm run build --workspace=apps/cli",
     "test": "vitest run",
+    "coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit && eslint ."
   },
@@ -19,6 +20,7 @@
     "@eslint/js": "^9.16.0",
     "@types/node": "^22.10.1",
     "@types/react": "^18.3.12",
+    "@vitest/coverage-v8": "^2.1.9",
     "eslint": "^9.16.0",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.17.0",

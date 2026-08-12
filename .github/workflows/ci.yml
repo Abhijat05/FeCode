@@ -52,7 +52,7 @@ jobs:
         run: npm run typecheck
 
       - name: Run tests (Node 20 and 22)
-        run: npx vitest run --coverage
+        run: npm run coverage
 
       - name: Run build
         run: npm run build
