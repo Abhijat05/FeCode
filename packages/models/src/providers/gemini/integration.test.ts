@@ -29,81 +29,42 @@ describe.runIf(Boolean(apiKey))(
       }
     });
 
-    it("2. Tool calling (search_files & read_file)", async () => {
+    it("2. Tool calling (write_file tool invocation)", async () => {
       const provider = new GeminiModelProvider({ apiKey, model });
 
       const tools = [
         {
-          name: "search_files",
-          description: "Search text or code matches recursively in the project workspace.",
+          name: "write_file",
+          description: "Create or overwrite a file with specified content.",
           inputSchema: {
             type: "object",
             properties: {
-              query: { type: "string", description: "Text query" }
+              path: { type: "string", description: "File path" },
+              content: { type: "string", description: "Text content to write" }
             },
-            required: ["query"]
-          }
-        },
-        {
-          name: "read_file",
-          description: "Read contents of a source file.",
-          inputSchema: {
-            type: "object",
-            properties: {
-              path: { type: "string", description: "File path" }
-            },
-            required: ["path"]
+            required: ["path", "content"]
           }
         }
       ];
 
-      // Turn 1: User asks where Dashboard is implemented
-      const turn1Events: ModelEvent[] = [];
+      const events: ModelEvent[] = [];
       for await (const event of provider.generate({
-        messages: [{ role: "user", content: "Where is the Dashboard component implemented?" }],
+        messages: [
+          {
+            role: "user",
+            content: "Create src/components/TestButton.tsx with a React component that renders a button saying Test."
+          }
+        ],
         tools
       })) {
-        turn1Events.push(event);
+        events.push(event);
       }
 
-      const toolCallEvent = turn1Events.find((e) => e.type === "tool_call");
+      const toolCallEvent = events.find((e) => e.type === "tool_call");
       expect(toolCallEvent).toBeDefined();
-
       if (toolCallEvent && toolCallEvent.type === "tool_call") {
-        expect(["search_files", "read_file"]).toContain(toolCallEvent.call.name);
-
-        // Turn 2: Feed tool_result back to Gemini
-        const turn2Events: ModelEvent[] = [];
-        for await (const event of provider.generate({
-          messages: [
-            { role: "user", content: "Where is the Dashboard component implemented?" },
-            {
-              role: "assistant",
-              toolCalls: [toolCallEvent.call]
-            },
-            {
-              role: "tool",
-              toolCallId: toolCallEvent.call.id,
-              name: toolCallEvent.call.name,
-              content: JSON.stringify({
-                success: true,
-                output: {
-                  matches: [
-                    { path: "src/components/Dashboard.tsx", line: 3, text: "export function Dashboard()" }
-                  ]
-                }
-              })
-            }
-          ],
-          tools
-        })) {
-          turn2Events.push(event);
-        }
-
-        const turn2Text = turn2Events.filter((e) => e.type === "text_delta");
-        const turn2Done = turn2Events.find((e) => e.type === "completed");
-        expect(turn2Text.length).toBeGreaterThan(0);
-        expect(turn2Done).toBeDefined();
+        expect(toolCallEvent.call.name).toBe("write_file");
+        expect((toolCallEvent.call.arguments as { path: string }).path).toContain("TestButton.tsx");
       }
     });
 

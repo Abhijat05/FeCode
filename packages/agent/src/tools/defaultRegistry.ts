@@ -3,6 +3,7 @@ import { ListDirectoryTool } from "./listDirectory.js";
 import { ReadFileTool } from "./readFile.js";
 import { SearchFilesTool } from "./searchFiles.js";
 import { WriteFileTool } from "./writeFile.js";
+import { EditFileTool } from "./editFile.js";
 
 export function createDefaultToolRegistry(): ToolRegistry {
   const registry = new DefaultToolRegistry();
@@ -10,5 +11,6 @@ export function createDefaultToolRegistry(): ToolRegistry {
   registry.register(new ReadFileTool());
   registry.register(new SearchFilesTool());
   registry.register(new WriteFileTool());
+  registry.register(new EditFileTool());
   return registry;
 }

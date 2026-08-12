@@ -19,8 +19,15 @@ export function formatApprovalArguments(
       : str;
   }
 
+  const rec = args as Record<string, unknown>;
+
+  if (typeof rec.diff === "string" && rec.diff) {
+    const pathStr = typeof rec.path === "string" ? rec.path : "";
+    return `${pathStr ? `path: ${pathStr}\n` : ""}Diff:\n${rec.diff}`;
+  }
+
   const entries: string[] = [];
-  for (const [key, value] of Object.entries(args as Record<string, unknown>)) {
+  for (const [key, value] of Object.entries(rec)) {
     if (typeof value === "string") {
       const displayVal =
         value.length > maxStringLength
@@ -47,7 +54,6 @@ export class InteractiveApprovalResolver implements ApprovalResolver {
 
   async resolve(request: ApprovalRequest): Promise<ApprovalDecision> {
     if (this.pendingResolver) {
-      // If there was already a pending request, resolve it as denied first
       this.cancelPending("Superseded by new approval request.");
     }
 
