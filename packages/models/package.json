@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@fecode/shared": "*",
+    "@google/genai": "^2.16.0",
     "openai": "^4.77.0"
   },
   "devDependencies": {
