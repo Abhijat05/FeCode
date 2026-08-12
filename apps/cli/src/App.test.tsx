@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import { render } from "ink-testing-library";
 import type { Agent, AgentEvent, AgentInput } from "@fecode/agent";
 import { App } from "./App.js";
+import { InteractiveApprovalResolver } from "./approvalResolver.js";
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -99,5 +100,65 @@ describe("CLI App Component", () => {
     await delay(100);
 
     expect(mockAgent.isCancelled).toBe(true);
+  });
+
+  it("renders approval prompt and approves when user submits 'y'", async () => {
+    const mockAgent = new MockAgent();
+    const resolver = new InteractiveApprovalResolver();
+
+    mockAgent.runFn = async function* () {
+      yield {
+        type: "approval_required",
+        request: {
+          id: "req-1",
+          toolName: "mock_write",
+          category: "write",
+          arguments: { path: "test.txt", content: "hello" },
+          reason: "Tool 'mock_write' requires approval for write permission."
+        }
+      };
+
+      const decision = await resolver.resolve({
+        id: "req-1",
+        toolName: "mock_write",
+        category: "write",
+        arguments: { path: "test.txt", content: "hello" }
+      });
+
+      if (decision.approved) {
+        yield {
+          type: "tool_result",
+          result: { success: true, output: { path: "test.txt" } },
+          callId: "call-1"
+        };
+      } else {
+        yield {
+          type: "tool_result",
+          result: { success: false, error: { message: "Denied", code: "PERMISSION_DENIED" } },
+          callId: "call-1"
+        };
+      }
+      yield { type: "done" };
+    };
+
+    const { lastFrame, stdin } = render(
+      <App agent={mockAgent} approvalResolver={resolver} cwd="/test" />
+    );
+    await delay(50);
+
+    await typeAndSubmit(stdin, "Write test file");
+    await delay(100);
+
+    const promptFrame = lastFrame();
+    expect(promptFrame).toContain("FeCode wants to use a tool");
+    expect(promptFrame).toContain("Tool: mock_write");
+    expect(promptFrame).toContain("Allow? [y/N]:");
+
+    // Submit 'y'
+    await typeAndSubmit(stdin, "y");
+    await delay(200);
+
+    const finalFrame = lastFrame();
+    expect(finalFrame).toContain("✓ tool");
   });
 });

@@ -2,6 +2,11 @@ import React, { useState, useCallback } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import TextInput from "ink-text-input";
 import type { Agent } from "@fecode/agent";
+import type { ApprovalRequest } from "@fecode/models";
+import {
+  InteractiveApprovalResolver,
+  formatApprovalArguments
+} from "./approvalResolver.js";
 
 export interface Turn {
   id: string;
@@ -16,6 +21,7 @@ export interface AppProps {
   cwd?: string;
   providerName?: string;
   modelName?: string;
+  approvalResolver?: InteractiveApprovalResolver;
   onExit?: () => void;
   configError?: string;
 }
@@ -25,6 +31,7 @@ export const App: React.FC<AppProps> = ({
   cwd = process.cwd(),
   providerName,
   modelName,
+  approvalResolver,
   onExit,
   configError
 }) => {
@@ -32,6 +39,8 @@ export const App: React.FC<AppProps> = ({
   const [query, setQuery] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(null);
+  const [approvalInput, setApprovalInput] = useState("");
 
   const handleExit = useCallback(() => {
     if (onExit) {
@@ -44,6 +53,15 @@ export const App: React.FC<AppProps> = ({
   useInput(
     (input, key) => {
       if (key.ctrl && input === "c") {
+        if (pendingApproval) {
+          if (approvalResolver) {
+            approvalResolver.cancelPending("Approval request cancelled via Ctrl+C");
+          }
+          setPendingApproval(null);
+          setApprovalInput("");
+          return;
+        }
+
         if (isGenerating && agent) {
           agent.cancel().catch(() => {});
           setIsGenerating(false);
@@ -65,6 +83,15 @@ export const App: React.FC<AppProps> = ({
     },
     { isActive: true }
   );
+
+  const handleApprovalSubmit = (value: string) => {
+    const trimmed = value.trim();
+    setApprovalInput("");
+    setPendingApproval(null);
+    if (approvalResolver) {
+      approvalResolver.submitDecision(trimmed);
+    }
+  };
 
   const handleSubmit = async (value: string) => {
     const trimmed = value.trim();
@@ -130,6 +157,7 @@ export const App: React.FC<AppProps> = ({
             )
           );
         } else if (event.type === "approval_required") {
+          setPendingApproval(event.request);
           setTurns((prev) =>
             prev.map((t) =>
               t.id === turnId
@@ -144,6 +172,7 @@ export const App: React.FC<AppProps> = ({
             )
           );
         } else if (event.type === "tool_result") {
+          setPendingApproval(null);
           const toolName = toolCallNames.get(event.callId) || "tool";
           setTurns((prev) =>
             prev.map((t) =>
@@ -155,18 +184,20 @@ export const App: React.FC<AppProps> = ({
                       t.response +
                       (event.result.success
                         ? `✓ ${toolName}\n\n`
-                        : `✗ ${toolName} failed\n\n`)
+                        : `✗ ${toolName} failed: ${event.result.error?.message || "denied"}\n\n`)
                   }
                 : t
             )
           );
         } else if (event.type === "done") {
+          setPendingApproval(null);
           setTurns((prev) =>
             prev.map((t) =>
               t.id === turnId ? { ...t, status: "done" } : t
             )
           );
         } else if (event.type === "error") {
+          setPendingApproval(null);
           setTurns((prev) =>
             prev.map((t) =>
               t.id === turnId
@@ -181,6 +212,7 @@ export const App: React.FC<AppProps> = ({
         }
       }
     } catch (err: unknown) {
+      setPendingApproval(null);
       const message = err instanceof Error ? err.message : String(err);
       setTurns((prev) =>
         prev.map((t) =>
@@ -194,6 +226,7 @@ export const App: React.FC<AppProps> = ({
         )
       );
     } finally {
+      setPendingApproval(null);
       setIsGenerating(false);
     }
   };
@@ -232,7 +265,50 @@ export const App: React.FC<AppProps> = ({
         </Box>
       ))}
 
-      {!isGenerating && (
+      {pendingApproval && (
+        <Box
+          flexDirection="column"
+          marginY={1}
+          borderStyle="round"
+          borderColor="yellow"
+          padding={1}
+        >
+          <Text bold color="yellow">
+            ⚠ FeCode wants to use a tool
+          </Text>
+          <Box marginY={1} flexDirection="column">
+            <Text>
+              <Text color="gray">Tool:</Text> {pendingApproval.toolName}
+            </Text>
+            <Text>
+              <Text color="gray">Category:</Text> {pendingApproval.category}
+            </Text>
+            {pendingApproval.reason && (
+              <Text>
+                <Text color="gray">Reason:</Text> {pendingApproval.reason}
+              </Text>
+            )}
+            <Text>
+              <Text color="gray">Arguments:</Text>
+            </Text>
+            <Text color="cyan">
+              {formatApprovalArguments(pendingApproval.arguments)}
+            </Text>
+          </Box>
+          <Box marginTop={1}>
+            <Text bold color="yellow">
+              Allow? [y/N]:{" "}
+            </Text>
+            <TextInput
+              value={approvalInput}
+              onChange={setApprovalInput}
+              onSubmit={handleApprovalSubmit}
+            />
+          </Box>
+        </Box>
+      )}
+
+      {!isGenerating && !pendingApproval && (
         <Box marginTop={1}>
           <Text color="yellow">› </Text>
           <TextInput value={query} onChange={setQuery} onSubmit={handleSubmit} />

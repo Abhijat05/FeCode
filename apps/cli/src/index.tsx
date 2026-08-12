@@ -4,6 +4,7 @@ import { render } from "ink";
 import { createModelProvider } from "@fecode/models";
 import { AgentRuntime, createDefaultToolRegistry } from "@fecode/agent";
 import { App } from "./App.js";
+import { InteractiveApprovalResolver } from "./approvalResolver.js";
 
 function main(): void {
   let agent: AgentRuntime | undefined;
@@ -18,6 +19,8 @@ function main(): void {
         ? "qwen2.5-coder"
         : "gpt-4o");
 
+  const approvalResolver = new InteractiveApprovalResolver();
+
   try {
     const modelProvider = createModelProvider({
       provider: providerName,
@@ -26,7 +29,10 @@ function main(): void {
 
     const registry = createDefaultToolRegistry();
 
-    agent = new AgentRuntime(modelProvider, { registry });
+    agent = new AgentRuntime(modelProvider, {
+      registry,
+      approvalResolver
+    });
   } catch (err: unknown) {
     configError = err instanceof Error ? err.message : String(err);
   }
@@ -37,6 +43,7 @@ function main(): void {
       cwd={process.cwd()}
       providerName={providerName}
       modelName={modelName}
+      approvalResolver={approvalResolver}
       configError={configError}
     />
   );
