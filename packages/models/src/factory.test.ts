@@ -1,21 +1,48 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createModelProvider } from "./factory.js";
 
-describe("createModelProvider factory", () => {
-  it("instantiates OpenAI provider when provider is 'openai' and API key is set", () => {
+describe("createModelProvider", () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    process.env.OPENAI_API_KEY = "sk-test-openai";
+    process.env.GEMINI_API_KEY = "fake-gemini-key";
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it("creates OpenAIModelProvider when provider is 'openai'", () => {
     const provider = createModelProvider({
-      provider: "openai",
-      apiKey: "sk-fake-key",
-      model: "gpt-4o-mini"
+      provider: "openai"
     });
+
     expect(provider.id).toBe("openai");
   });
 
-  it("throws clear error for unsupported provider", () => {
+  it("creates GeminiModelProvider when provider is 'gemini'", () => {
+    const provider = createModelProvider({
+      provider: "gemini"
+    });
+
+    expect(provider.id).toBe("gemini");
+  });
+
+  it("creates OllamaModelProvider when provider is 'ollama'", () => {
+    const provider = createModelProvider({
+      provider: "ollama"
+    });
+
+    expect(provider.id).toBe("ollama");
+  });
+
+  it("throws error for unsupported provider", () => {
     expect(() =>
       createModelProvider({
-        provider: "anthropic"
+        provider: "unsupported-provider"
       })
-    ).toThrow("Unsupported model provider: anthropic");
+    ).toThrow("Unsupported model provider: unsupported-provider");
   });
 });

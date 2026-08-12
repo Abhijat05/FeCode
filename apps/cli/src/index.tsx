@@ -9,10 +9,16 @@ function main(): void {
   let agent: AgentRuntime | undefined;
   let configError: string | undefined;
 
-  try {
-    const providerName = process.env.FE_PROVIDER || "openai";
-    const modelName = process.env.FE_MODEL || "gpt-4o";
+  const providerName = process.env.FE_PROVIDER || "openai";
+  const modelName =
+    process.env.FE_MODEL ||
+    (providerName === "gemini"
+      ? "gemini-2.5-flash"
+      : providerName === "ollama"
+        ? "qwen2.5-coder"
+        : "gpt-4o");
 
+  try {
     const modelProvider = createModelProvider({
       provider: providerName,
       model: modelName
@@ -29,6 +35,8 @@ function main(): void {
     <App
       agent={agent}
       cwd={process.cwd()}
+      providerName={providerName}
+      modelName={modelName}
       configError={configError}
     />
   );

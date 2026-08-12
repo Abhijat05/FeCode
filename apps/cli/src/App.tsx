@@ -14,6 +14,8 @@ export interface Turn {
 export interface AppProps {
   agent?: Agent;
   cwd?: string;
+  providerName?: string;
+  modelName?: string;
   onExit?: () => void;
   configError?: string;
 }
@@ -21,6 +23,8 @@ export interface AppProps {
 export const App: React.FC<AppProps> = ({
   agent,
   cwd = process.cwd(),
+  providerName,
+  modelName,
   onExit,
   configError
 }) => {
@@ -186,6 +190,8 @@ export const App: React.FC<AppProps> = ({
         FeCode
       </Text>
       <Box marginY={1} flexDirection="column">
+        {providerName && <Text color="gray">Provider: {providerName}</Text>}
+        {modelName && <Text color="gray">Model: {modelName}</Text>}
         <Text color="gray">Working directory:</Text>
         <Text>{cwd}</Text>
       </Box>
