@@ -32,7 +32,7 @@ describe.runIf(isLiveTestEnabled)(
       }
     });
 
-    it("2. Tool calling (write_file tool invocation)", async () => {
+    it("2. Tool calling (write_file and execute_command tool invocation)", async () => {
       const provider = new GeminiModelProvider({ apiKey, model });
 
       const tools = [
@@ -47,6 +47,17 @@ describe.runIf(isLiveTestEnabled)(
             },
             required: ["path", "content"]
           }
+        },
+        {
+          name: "execute_command",
+          description: "Run a controlled shell command.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              command: { type: "string", description: "Command line string" }
+            },
+            required: ["command"]
+          }
         }
       ];
 
@@ -55,7 +66,7 @@ describe.runIf(isLiveTestEnabled)(
         messages: [
           {
             role: "user",
-            content: "Create src/components/TestButton.tsx with a React component that renders a button saying Test."
+            content: "Run npm run typecheck to check for TypeScript errors."
           }
         ],
         tools
@@ -66,8 +77,8 @@ describe.runIf(isLiveTestEnabled)(
       const toolCallEvent = events.find((e) => e.type === "tool_call");
       expect(toolCallEvent).toBeDefined();
       if (toolCallEvent && toolCallEvent.type === "tool_call") {
-        expect(toolCallEvent.call.name).toBe("write_file");
-        expect((toolCallEvent.call.arguments as { path: string }).path).toContain("TestButton.tsx");
+        expect(toolCallEvent.call.name).toBe("execute_command");
+        expect((toolCallEvent.call.arguments as { command: string }).command).toContain("npm");
       }
     });
 

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { createDefaultToolRegistry } from "./defaultRegistry.js";
 
 describe("createDefaultToolRegistry", () => {
-  it("creates a tool registry pre-populated with list_directory, read_file, search_files, write_file, and edit_file tools", () => {
+  it("creates a tool registry pre-populated with list_directory, read_file, search_files, write_file, edit_file, and execute_command tools", () => {
     const registry = createDefaultToolRegistry();
 
     expect(registry.get("list_directory")).toBeDefined();
@@ -10,6 +10,8 @@ describe("createDefaultToolRegistry", () => {
     expect(registry.get("search_files")).toBeDefined();
     expect(registry.get("write_file")).toBeDefined();
     expect(registry.get("edit_file")).toBeDefined();
+    expect(registry.get("execute_command")).toBeDefined();
+    expect(registry.get("execute_command")?.permissionCategory).toBe("execute");
 
     const names = registry.list().map((t) => t.name);
     expect(names).toEqual([
@@ -17,7 +19,8 @@ describe("createDefaultToolRegistry", () => {
       "read_file",
       "search_files",
       "write_file",
-      "edit_file"
+      "edit_file",
+      "execute_command"
     ]);
   });
 });

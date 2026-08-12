@@ -19,6 +19,7 @@ import type {
 } from "@fecode/models";
 import type { Agent, AgentEvent, AgentInput } from "./index.js";
 import { DEFAULT_SYSTEM_PROMPT } from "./systemPrompt.js";
+import type { CommandResult } from "./commands/types.js";
 
 export type AgentStatus =
   | "idle"
@@ -32,6 +33,7 @@ export interface AgentState {
   status: AgentStatus;
   messages: ModelMessage[];
   tokenUsage?: TokenUsage;
+  verificationAttempts?: number;
 }
 
 export interface AgentRuntimeOptions {
@@ -41,6 +43,7 @@ export interface AgentRuntimeOptions {
   executor?: ToolExecutor;
   permissionManager?: PermissionManager;
   approvalResolver?: ApprovalResolver;
+  maxVerificationAttempts?: number;
 }
 
 export class AgentRuntime implements Agent {
@@ -50,6 +53,7 @@ export class AgentRuntime implements Agent {
   private readonly executor: ToolExecutor;
   private readonly permissionManager: PermissionManager;
   private readonly approvalResolver?: ApprovalResolver;
+  private readonly maxVerificationAttempts: number;
   private state: AgentState;
   private activeController: AbortController | null = null;
 
@@ -62,13 +66,15 @@ export class AgentRuntime implements Agent {
     this.permissionManager =
       options.permissionManager || new DefaultPermissionManager();
     this.approvalResolver = options.approvalResolver;
+    this.maxVerificationAttempts = options.maxVerificationAttempts ?? 3;
 
     this.state = {
       sessionId:
         options.sessionId ||
         `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       status: "idle",
-      messages: []
+      messages: [],
+      verificationAttempts: 0
     };
   }
 
@@ -258,6 +264,27 @@ export class AgentRuntime implements Agent {
             name: call.name,
             content: JSON.stringify(result)
           });
+
+          // Check if this was a command execution that failed
+          if (call.name === "execute_command") {
+            const cmdOutput = result.output as CommandResult | undefined;
+            const isFailure =
+              !result.success ||
+              (cmdOutput && cmdOutput.exitCode !== 0) ||
+              (cmdOutput && cmdOutput.timedOut);
+
+            if (isFailure) {
+              const attempts = (this.state.verificationAttempts || 0) + 1;
+              this.state.verificationAttempts = attempts;
+
+              if (attempts >= this.maxVerificationAttempts) {
+                this.state.messages.push({
+                  role: "user",
+                  content: `[SYSTEM NOTICE] Maximum verification attempts (${this.maxVerificationAttempts}) reached. Do not attempt further verification commands. Report the current status, failure details, and remaining unresolved issues to the user.`
+                });
+              }
+            }
+          }
         }
       }
     } catch (err: unknown) {

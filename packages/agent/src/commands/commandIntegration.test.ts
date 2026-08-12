@@ -46,10 +46,12 @@ describe("Command Execution Architecture Integration Tests", () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it("verifies createDefaultToolRegistry does NOT include execute_command tool yet", () => {
+  it("verifies createDefaultToolRegistry includes execute_command tool with execute category", () => {
     const registry = createDefaultToolRegistry();
-    expect(registry.get("execute_command")).toBeUndefined();
-    expect(registry.list().map((t) => t.name)).not.toContain("execute_command");
+    const tool = registry.get("execute_command");
+    expect(tool).toBeDefined();
+    expect(tool?.permissionCategory).toBe("execute");
+    expect(registry.list().map((t) => t.name)).toContain("execute_command");
   });
 
   it("triggers permission approval for execute category when execute_command is invoked", async () => {
