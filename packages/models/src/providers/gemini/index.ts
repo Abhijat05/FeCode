@@ -113,12 +113,24 @@ export class GeminiModelProvider implements ModelProvider {
               parsedResponse = { output: msg.content };
             }
           }
+          let toolName = msg.name;
+          if (!toolName && msg.toolCallId) {
+            for (const m of request.messages) {
+              if (m.role === "assistant" && m.toolCalls) {
+                const match = m.toolCalls.find((tc) => tc.id === msg.toolCallId);
+                if (match) {
+                  toolName = match.name;
+                  break;
+                }
+              }
+            }
+          }
           geminiContents.push({
             role: "user",
             parts: [
               {
                 functionResponse: {
-                  name: msg.name || "tool",
+                  name: toolName || "tool",
                   response: (parsedResponse as Record<string, unknown>) || {}
                 }
               }
