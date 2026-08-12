@@ -1,3 +1,5 @@
+export type ToolPermissionCategory = "read" | "write" | "execute" | "network";
+
 export interface ToolContext {
   cwd: string;
   signal: AbortSignal;
@@ -16,6 +18,7 @@ export interface Tool<TInput = unknown, TOutput = unknown> {
   name: string;
   description: string;
   inputSchema: unknown;
+  permissionCategory?: ToolPermissionCategory;
 
   execute(
     input: TInput,

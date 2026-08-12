@@ -1,4 +1,9 @@
-import type { ModelProvider, ToolCall, ToolResult } from "@fecode/models";
+import type {
+  ApprovalRequest,
+  ModelProvider,
+  ToolCall,
+  ToolResult
+} from "@fecode/models";
 import type { ID } from "@fecode/shared";
 
 export interface Agent {
@@ -17,6 +22,7 @@ export interface AgentInput {
 export type AgentEvent =
   | { type: "text"; content: string }
   | { type: "tool_call"; call: ToolCall }
+  | { type: "approval_required"; request: ApprovalRequest }
   | { type: "tool_result"; result: ToolResult; callId: string }
   | { type: "done" }
   | { type: "error"; error: Error };
@@ -24,6 +30,7 @@ export type AgentEvent =
 export * from "./runtime.js";
 export * from "./systemPrompt.js";
 export * from "./tools/mockEchoTool.js";
+export * from "./tools/mockWriteTool.js";
 export * from "./tools/pathUtils.js";
 export * from "./tools/ignoreUtils.js";
 export * from "./tools/listDirectory.js";

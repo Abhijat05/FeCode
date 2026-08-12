@@ -25,6 +25,7 @@ export interface ListDirectoryToolOptions {
 export class ListDirectoryTool
   implements Tool<ListDirectoryInput, ListDirectoryOutput> {
   public readonly name = "list_directory";
+  public readonly permissionCategory = "read";
   public readonly description =
     "List files and directories within the project workspace.";
   public readonly inputSchema = {

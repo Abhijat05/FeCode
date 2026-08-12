@@ -9,8 +9,9 @@ export interface EchoOutput {
 }
 
 export class MockEchoTool implements Tool<EchoInput, EchoOutput> {
-  public name = "echo";
-  public description = "Echoes the provided message";
+  public readonly name = "echo";
+  public readonly permissionCategory = "read";
+  public readonly description = "Echoes back the input message.";
   public inputSchema = {
     type: "object",
     properties: {

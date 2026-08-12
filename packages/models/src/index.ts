@@ -6,3 +6,5 @@ export * from "./providers/ollama/index.js";
 export * from "./tools/types.js";
 export * from "./tools/registry.js";
 export * from "./tools/executor.js";
+export * from "./permissions/types.js";
+export * from "./permissions/policy.js";

@@ -129,6 +129,20 @@ export const App: React.FC<AppProps> = ({
                 : t
             )
           );
+        } else if (event.type === "approval_required") {
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    status: "streaming",
+                    response:
+                      t.response +
+                      `● approval required for ${event.request.toolName}\n`
+                  }
+                : t
+            )
+          );
         } else if (event.type === "tool_result") {
           const toolName = toolCallNames.get(event.callId) || "tool";
           setTurns((prev) =>

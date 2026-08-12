@@ -1,15 +1,21 @@
 import {
+  DefaultPermissionManager,
   DefaultToolExecutor,
   DefaultToolRegistry
 } from "@fecode/models";
 import type {
+  ApprovalDecision,
+  ApprovalRequest,
+  ApprovalResolver,
   ModelMessage,
   ModelProvider,
   ModelRequest,
+  PermissionManager,
   TokenUsage,
   ToolCall,
   ToolExecutor,
-  ToolRegistry
+  ToolRegistry,
+  ToolResult
 } from "@fecode/models";
 import type { Agent, AgentEvent, AgentInput } from "./index.js";
 import { DEFAULT_SYSTEM_PROMPT } from "./systemPrompt.js";
@@ -33,6 +39,8 @@ export interface AgentRuntimeOptions {
   sessionId?: string;
   registry?: ToolRegistry;
   executor?: ToolExecutor;
+  permissionManager?: PermissionManager;
+  approvalResolver?: ApprovalResolver;
 }
 
 export class AgentRuntime implements Agent {
@@ -40,6 +48,8 @@ export class AgentRuntime implements Agent {
   private readonly systemPrompt: string;
   private readonly registry: ToolRegistry;
   private readonly executor: ToolExecutor;
+  private readonly permissionManager: PermissionManager;
+  private readonly approvalResolver?: ApprovalResolver;
   private state: AgentState;
   private activeController: AbortController | null = null;
 
@@ -49,6 +59,9 @@ export class AgentRuntime implements Agent {
     this.registry = options.registry || new DefaultToolRegistry();
     this.executor =
       options.executor || new DefaultToolExecutor(this.registry);
+    this.permissionManager =
+      options.permissionManager || new DefaultPermissionManager();
+    this.approvalResolver = options.approvalResolver;
 
     this.state = {
       sessionId:
@@ -167,10 +180,75 @@ export class AgentRuntime implements Agent {
             throw new Error("Request aborted");
           }
 
-          const result = await this.executor.execute(call, {
+          const toolContext = {
             cwd: input.cwd,
             signal: this.activeController.signal
-          });
+          };
+
+          const tool = this.registry.get(call.name);
+          let result: ToolResult;
+
+          if (!tool) {
+            result = {
+              success: false,
+              error: {
+                message: `Tool not found: ${call.name}`,
+                code: "NOT_FOUND"
+              }
+            };
+          } else {
+            const decision = await this.permissionManager.check(
+              tool,
+              toolContext
+            );
+
+            if (decision.type === "denied") {
+              result = {
+                success: false,
+                error: {
+                  message: decision.reason,
+                  code: "PERMISSION_DENIED"
+                }
+              };
+            } else if (decision.type === "requires_approval") {
+              const approvalRequest: ApprovalRequest = {
+                id: `approval-${call.id}`,
+                toolName: tool.name,
+                category: tool.permissionCategory || "write",
+                arguments: call.arguments,
+                reason: decision.reason
+              };
+
+              yield { type: "approval_required", request: approvalRequest };
+
+              let approvalDecision: ApprovalDecision = {
+                approved: false,
+                reason: "Approval required but no resolver configured."
+              };
+
+              if (this.approvalResolver) {
+                approvalDecision = await this.approvalResolver.resolve(
+                  approvalRequest
+                );
+              }
+
+              if (approvalDecision.approved) {
+                result = await this.executor.execute(call, toolContext);
+              } else {
+                result = {
+                  success: false,
+                  error: {
+                    message:
+                      approvalDecision.reason ||
+                      "Tool execution was denied by the user.",
+                    code: "PERMISSION_DENIED"
+                  }
+                };
+              }
+            } else {
+              result = await this.executor.execute(call, toolContext);
+            }
+          }
 
           yield { type: "tool_result", result, callId: call.id };
 

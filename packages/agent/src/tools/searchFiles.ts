@@ -83,6 +83,7 @@ function isBinaryBuffer(buffer: Buffer): boolean {
 export class SearchFilesTool
   implements Tool<SearchFilesInput, SearchFilesOutput> {
   public readonly name = "search_files";
+  public readonly permissionCategory = "read";
   public readonly description =
     "Search text or code matches recursively in the project workspace.";
   public readonly inputSchema = {

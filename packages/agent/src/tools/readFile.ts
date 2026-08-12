@@ -72,6 +72,7 @@ function isBinaryBuffer(buffer: Buffer): boolean {
 export class ReadFileTool
   implements Tool<ReadFileInput, ReadFileOutput> {
   public readonly name = "read_file";
+  public readonly permissionCategory = "read";
   public readonly description =
     "Read the text contents of a file within the project workspace.";
   public readonly inputSchema = {
