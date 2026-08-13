@@ -55,3 +55,4 @@ export * from "./skills/selector.js";
 export * from "./skills/composer.js";
 export * from "./skills/parser.js";
 export * from "./skills/loader.js";
+export * from "./skills/requestRecommender.js";

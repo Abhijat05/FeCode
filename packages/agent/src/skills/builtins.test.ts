@@ -33,8 +33,7 @@ describe("Built-in Skills Spec v2", () => {
     registerBuiltinSkills(registry);
 
     expect(registry.list().length).toBe(BUILTIN_SKILLS.length);
-    expect(registry.get("react")).toBeDefined();
-    expect(registry.get("tailwind")).toBeDefined();
     expect(registry.get("frontend-design")).toBeDefined();
+    expect(registry.get("typescript-frontend")).toBeDefined();
   });
 });
