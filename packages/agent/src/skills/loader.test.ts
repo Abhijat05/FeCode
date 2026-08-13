@@ -1,11 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "fs/promises";
+import * as fsSync from "fs";
 import * as path from "path";
 import * as os from "os";
 import { SkillLoader } from "./loader.js";
 import { DefaultSkillRegistry } from "./registry.js";
+import { frontendDesignSkill } from "./builtins/frontendDesign.js";
 
-describe("SkillLoader", () => {
+describe("SkillLoader Architecture & Built-in Skill Loading", () => {
   let tmpDir: string;
   let loader: SkillLoader;
 
@@ -137,7 +139,8 @@ version: 1.0.0
   });
 
   it("loads canonical frontend-design/SKILL.md proof of concept file cleanly", async () => {
-    const canonicalPath = path.resolve(process.cwd(), "packages/agent/skills/frontend-design/SKILL.md");
+    const builtinDir = loader.getBuiltinSkillsDir();
+    const canonicalPath = path.join(builtinDir, "frontend-design", "SKILL.md");
     const skill = await loader.loadSkillFromFile(canonicalPath);
 
     // Frontmatter
@@ -163,5 +166,61 @@ version: 1.0.0
 
     // Examples present
     expect(skill.examples?.length).toBeGreaterThan(0);
+  });
+
+  it("verifies frontendDesign.ts exports skill loaded via SkillLoader without filesystem heuristics", () => {
+    expect(frontendDesignSkill.name).toBe("frontend-design");
+    expect(frontendDesignSkill.version).toBe("2.0.0");
+    expect(frontendDesignSkill.instructions.length).toBeGreaterThan(2);
+
+    // Inspect module source to ensure no fs, path, __dirname, process.cwd, or possiblePaths exist in frontendDesign.ts
+    const frontendDesignSource = fsSync.readFileSync(
+      path.resolve(process.cwd(), "packages/agent/src/skills/builtins/frontendDesign.ts"),
+      "utf-8"
+    );
+
+    expect(frontendDesignSource).not.toContain("possiblePaths");
+    expect(frontendDesignSource).not.toContain("process.cwd()");
+    expect(frontendDesignSource).not.toContain("__dirname");
+    expect(frontendDesignSource).not.toContain("import * as fs");
+    expect(frontendDesignSource).not.toContain("import * as path");
+  });
+
+  it("verifies built-in skill loading does not depend on process.cwd()", () => {
+    const originalCwd = process.cwd();
+    try {
+      // Temporarily change CWD to a random temp directory
+      process.chdir(tmpDir);
+
+      const skill = loader.loadBuiltinSkillSync("frontend-design");
+      expect(skill.name).toBe("frontend-design");
+      expect(skill.version).toBe("2.0.0");
+      expect(skill.instructions.length).toBeGreaterThan(2);
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+
+  it("produces a clear installation error when requesting a missing built-in skill", () => {
+    expect(() => loader.loadBuiltinSkillSync("non-existent-skill")).toThrow(
+      /FeCode Installation Error: Built-in skill 'non-existent-skill' SKILL\.md could not be found/
+    );
+  });
+
+  it("produces a clear error when loading a malformed SKILL.md", async () => {
+    const malformedPath = path.join(tmpDir, "SKILL.md");
+    await fs.writeFile(
+      malformedPath,
+      `---
+name: malformed-skill
+---
+## Instructions
+- Missing required frontmatter fields
+`
+    );
+
+    expect(() => loader.loadSkillFromFileSync(malformedPath)).toThrow(
+      "Frontmatter field 'description' is required."
+    );
   });
 });

@@ -159,8 +159,11 @@ export function parseSkillMarkdown(markdownContent: string): Skill {
     "workflow": "workflow",
     "design workflow": "workflow",
     "implementation workflow": "workflow",
+    "debugging workflow": "workflow",
+    "review workflow": "workflow",
     "process": "workflow",
     "design process": "workflow",
+    "debugging process": "workflow",
     // rules aliases
     "rules": "rules",
     "self-review checklist": "rules",
@@ -168,6 +171,7 @@ export function parseSkillMarkdown(markdownContent: string): Skill {
     "review checklist": "rules",
     "checklist": "rules",
     "quality checklist": "rules",
+    "self-check before producing findings": "rules",
     // antiPatterns aliases
     "avoid": "antiPatterns",
     "avoiding generic ai-generated ui": "antiPatterns",

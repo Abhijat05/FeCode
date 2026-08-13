@@ -1,10 +1,70 @@
 import * as fs from "fs/promises";
+import * as fsSync from "fs";
 import * as path from "path";
+import { fileURLToPath } from "url";
 import { parseSkillMarkdown } from "./parser.js";
 import type { Skill } from "./types.js";
 import { resolveSafePath } from "../tools/pathUtils.js";
 
 export class SkillLoader {
+  getBuiltinSkillsDir(): string {
+    const currentDir = path.dirname(fileURLToPath(import.meta.url));
+    return path.resolve(currentDir, "../../skills");
+  }
+
+  loadSkillFromFileSync(filePath: string, rootDir?: string): Skill {
+    let targetPath = path.resolve(filePath);
+    if (rootDir) {
+      const res = resolveSafePath(rootDir, filePath);
+      if ("error" in res) {
+        const err = new Error(res.error.message);
+        (err as { code?: string }).code = res.error.code;
+        throw err;
+      }
+      targetPath = res.targetPath;
+    }
+
+    try {
+      const content = fsSync.readFileSync(targetPath, "utf-8");
+      return parseSkillMarkdown(content);
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        if ("code" in err && (err as { code: string }).code === "PATH_OUT_OF_BOUNDS") {
+          throw err;
+        }
+        throw new Error(`Failed to load skill file '${path.basename(filePath)}': ${err.message}`);
+      }
+      throw new Error(`Failed to load skill file '${filePath}': ${String(err)}`);
+    }
+  }
+
+  loadSkillFromDirSync(dirPath: string, rootDir?: string): Skill {
+    const skillFilePath = path.join(dirPath, "SKILL.md");
+    return this.loadSkillFromFileSync(skillFilePath, rootDir);
+  }
+
+  loadBuiltinSkillSync(skillName: string): Skill {
+    const builtinDir = this.getBuiltinSkillsDir();
+    const skillFilePath = path.join(builtinDir, skillName, "SKILL.md");
+    if (!fsSync.existsSync(skillFilePath)) {
+      throw new Error(
+        `FeCode Installation Error: Built-in skill '${skillName}' SKILL.md could not be found at '${skillFilePath}'. Please verify your FeCode installation.`
+      );
+    }
+    return this.loadSkillFromFileSync(skillFilePath);
+  }
+
+  async loadBuiltinSkill(skillName: string): Promise<Skill> {
+    const builtinDir = this.getBuiltinSkillsDir();
+    const skillFilePath = path.join(builtinDir, skillName, "SKILL.md");
+    if (!fsSync.existsSync(skillFilePath)) {
+      throw new Error(
+        `FeCode Installation Error: Built-in skill '${skillName}' SKILL.md could not be found at '${skillFilePath}'. Please verify your FeCode installation.`
+      );
+    }
+    return this.loadSkillFromFile(skillFilePath);
+  }
+
   async loadSkillFromFile(filePath: string, rootDir?: string): Promise<Skill> {
     let targetPath = path.resolve(filePath);
     if (rootDir) {
