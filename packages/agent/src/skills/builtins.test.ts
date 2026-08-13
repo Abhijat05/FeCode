@@ -3,7 +3,7 @@ import { BUILTIN_SKILLS } from "./builtins/index.js";
 import { DefaultSkillRegistry } from "./registry.js";
 import { registerBuiltinSkills } from "./builtins/index.js";
 
-describe("Built-in Skills", () => {
+describe("Built-in Skills Spec v2", () => {
   it("verifies every built-in skill has valid metadata, non-empty instructions, and valid categories", () => {
     const validCategories = new Set([
       "frontend",
@@ -20,8 +20,10 @@ describe("Built-in Skills", () => {
       expect(skill.name).toBeTruthy();
       expect(skill.description).toBeTruthy();
       expect(skill.version).toBeTruthy();
-      expect(skill.instructions).toBeTruthy();
-      expect(skill.instructions.length).toBeGreaterThan(20);
+      expect(skill.instructions).toBeDefined();
+      expect(Array.isArray(skill.instructions)).toBe(true);
+      expect(skill.instructions.length).toBeGreaterThan(0);
+      expect(skill.instructions.join("\n").length).toBeGreaterThan(20);
       expect(validCategories.has(skill.category)).toBe(true);
     }
   });

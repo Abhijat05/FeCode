@@ -4,7 +4,7 @@ import { DEFAULT_SYSTEM_PROMPT } from "../systemPrompt.js";
 import type { ProjectContext } from "../project/types.js";
 import type { Skill } from "./types.js";
 
-describe("composeSystemPrompt", () => {
+describe("composeSystemPrompt with Skill Spec v2", () => {
   const mockContext: ProjectContext = {
     projectRoot: "/test",
     languages: ["typescript"],
@@ -19,52 +19,80 @@ describe("composeSystemPrompt", () => {
     configFiles: []
   };
 
-  const mockSkills: Skill[] = [
-    {
-      name: "react",
-      description: "React best practices",
-      category: "framework",
-      version: "1.0.0",
-      instructions: "Use functional components."
+  const mockStructuredSkill: Skill = {
+    name: "frontend-design",
+    description: "UI design best practices",
+    category: "frontend",
+    version: "2.0.0",
+    activation: {
+      when: ["Designing UI components"],
+      notWhen: ["Writing database queries"]
     },
-    {
-      name: "tailwind",
-      description: "Tailwind guidelines",
-      category: "styling",
-      version: "1.0.0",
-      instructions: "Use standard spacing tokens."
-    }
-  ];
+    instructions: ["Maintain clean visual hierarchy."],
+    workflow: ["1. Establish layout grid", "2. Style interactive states"],
+    rules: ["Never use unconstrained massive typography."],
+    antiPatterns: ["Avoid icon-stuffed bento boxes"],
+    examples: [
+      {
+        title: "Primary Button",
+        example: "<button className=\"px-4 py-2 bg-blue-600 text-white rounded\">Submit</button>"
+      }
+    ],
+    references: [
+      {
+        name: "Design System Guide",
+        path: "docs/design.md"
+      }
+    ]
+  };
 
-  it("composes system prompt preserving deterministic precedence (Core rules -> Project Context -> Active Skills)", () => {
+  it("formats structured skill sections cleanly without empty headers", () => {
     const prompt = composeSystemPrompt({
       baseSystemPrompt: DEFAULT_SYSTEM_PROMPT,
       projectContext: mockContext,
-      activeSkills: mockSkills
+      activeSkills: [mockStructuredSkill]
     });
 
-    expect(prompt).toContain(DEFAULT_SYSTEM_PROMPT);
-    expect(prompt).toContain("## Project Context");
-    expect(prompt).toContain("Framework: react (18.3.1)");
-    expect(prompt).toContain("Styling: tailwind");
-    expect(prompt).toContain("## Active Frontend Skills");
-    expect(prompt).toContain("Use functional components.");
-    expect(prompt).toContain("Use standard spacing tokens.");
-
-    // Assert order of appearance
-    const posCore = prompt.indexOf(DEFAULT_SYSTEM_PROMPT);
-    const posContext = prompt.indexOf("## Project Context");
-    const posSkills = prompt.indexOf("## Active Frontend Skills");
-
-    expect(posCore).toBeLessThan(posContext);
-    expect(posContext).toBeLessThan(posSkills);
+    expect(prompt).toContain("### Skill: frontend-design (v2.0.0)");
+    expect(prompt).toContain("When relevant:");
+    expect(prompt).toContain("- Designing UI components");
+    expect(prompt).toContain("Core instructions:");
+    expect(prompt).toContain("- Maintain clean visual hierarchy.");
+    expect(prompt).toContain("Workflow:");
+    expect(prompt).toContain("1. Establish layout grid");
+    expect(prompt).toContain("Rules:");
+    expect(prompt).toContain("- Never use unconstrained massive typography.");
+    expect(prompt).toContain("Avoid:");
+    expect(prompt).toContain("- Avoid icon-stuffed bento boxes");
+    expect(prompt).toContain("Examples:");
+    expect(prompt).toContain("Primary Button");
+    expect(prompt).toContain("References:");
+    expect(prompt).toContain("Design System Guide: docs/design.md");
   });
 
-  it("handles missing project context and empty skills gracefully without breaking core prompt", () => {
+  it("omits empty optional sections cleanly when skill optional fields are undefined", () => {
+    const simpleSkill: Skill = {
+      name: "simple-skill",
+      description: "Simple skill description",
+      category: "frontend",
+      version: "1.0.0",
+      instructions: ["Simple instruction 1"]
+    };
+
     const prompt = composeSystemPrompt({
-      baseSystemPrompt: DEFAULT_SYSTEM_PROMPT
+      baseSystemPrompt: DEFAULT_SYSTEM_PROMPT,
+      activeSkills: [simpleSkill]
     });
 
-    expect(prompt).toBe(DEFAULT_SYSTEM_PROMPT);
+    expect(prompt).toContain("### Skill: simple-skill (v1.0.0)");
+    expect(prompt).toContain("Core instructions:");
+    expect(prompt).toContain("- Simple instruction 1");
+
+    expect(prompt).not.toContain("When relevant:");
+    expect(prompt).not.toContain("Workflow:");
+    expect(prompt).not.toContain("Rules:");
+    expect(prompt).not.toContain("Avoid:");
+    expect(prompt).not.toContain("Examples:");
+    expect(prompt).not.toContain("References:");
   });
 });

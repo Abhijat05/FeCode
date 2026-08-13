@@ -10,7 +10,7 @@ describe("DefaultSkillRegistry", () => {
     description: "React best practices",
     category: "framework",
     version: "1.0.0",
-    instructions: "Use functional components."
+    instructions: ["Use functional components."]
   };
 
   const mockSkill2: Skill = {
@@ -18,7 +18,7 @@ describe("DefaultSkillRegistry", () => {
     description: "Tailwind CSS guidelines",
     category: "styling",
     version: "1.0.0",
-    instructions: "Use utility classes."
+    instructions: ["Use utility classes."]
   };
 
   beforeEach(() => {
@@ -46,12 +46,12 @@ describe("DefaultSkillRegistry", () => {
     const updatedSkill: Skill = {
       ...mockSkill1,
       version: "2.0.0",
-      instructions: "Use React 18 hooks."
+      instructions: ["Use React 18 hooks."]
     };
 
     registry.register(updatedSkill);
     expect(registry.list()).toHaveLength(1);
     expect(registry.get("react")?.version).toBe("2.0.0");
-    expect(registry.get("react")?.instructions).toBe("Use React 18 hooks.");
+    expect(registry.get("react")?.instructions).toEqual(["Use React 18 hooks."]);
   });
 });
