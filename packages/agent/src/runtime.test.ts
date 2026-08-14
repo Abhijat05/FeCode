@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { ModelProvider, ModelRequest, ModelEvent } from "@fecode/models";
 import { AgentRuntime } from "./runtime.js";
 import type { AgentEvent } from "./index.js";
+import type { Skill } from "./skills/types.js";
 
 class MockModelProvider implements ModelProvider {
   public id = "mock-provider";
@@ -193,5 +194,62 @@ describe("AgentRuntime", () => {
     expect(events2.length).toBeGreaterThan(0);
     expect(runtime.getState().status).toBe("completed");
     expect(runtime.getState().messages).toHaveLength(4);
+  });
+
+  it("dynamically composes system prompt with active skills and ensures per-turn isolation", async () => {
+    const recordedRequests: ModelRequest[] = [];
+    const provider = new MockModelProvider();
+    
+    provider.generateFn = async function* (request: ModelRequest) {
+      recordedRequests.push(request);
+      yield { type: "text_delta", content: "Done" };
+      yield { type: "completed" };
+    };
+
+    // A mock registry and policy that activates a specific skill based on the request
+    const registry = {
+      list: () => [
+        { name: "test-skill-1", version: "1.0", category: "frontend", description: "", instructions: ["Do test 1"], activation: {} } as Skill,
+        { name: "test-skill-2", version: "1.0", category: "frontend", description: "", instructions: ["Do test 2"], activation: {} } as Skill
+      ],
+      register: () => {},
+      get: () => undefined,
+      has: () => false
+    } as unknown as import("./skills/types.js").SkillRegistry;
+
+    const activationPolicy = {
+      activate: (request: string) => {
+        if (request === "Use 1") return { skills: [registry.list()[0]] };
+        if (request === "Use 2") return { skills: [registry.list()[1]] };
+        return { skills: [] };
+      }
+    } as unknown as import("./skills/activation.js").SkillActivationPolicy;
+
+    const runtime = new AgentRuntime(provider, { skillRegistry: registry, activationPolicy });
+
+    // Turn 1
+    const events1: AgentEvent[] = [];
+    for await (const event of runtime.run({ message: "Use 1", cwd: "/test" })) {
+      events1.push(event);
+    }
+    
+    expect(events1.some(e => e.type === "skills_activated" && e.skills.length === 1 && e.skills[0] === "test-skill-1")).toBe(true);
+    expect(recordedRequests[0].system).toContain("Do test 1");
+    expect(recordedRequests[0].system).not.toContain("Do test 2");
+    
+    // Turn 2
+    const events2: AgentEvent[] = [];
+    for await (const event of runtime.run({ message: "Use 2", cwd: "/test" })) {
+      events2.push(event);
+    }
+
+    expect(events2.some(e => e.type === "skills_activated" && e.skills.length === 1 && e.skills[0] === "test-skill-2")).toBe(true);
+    expect(recordedRequests[1].system).toContain("Do test 2");
+    expect(recordedRequests[1].system).not.toContain("Do test 1"); // Isolation: Turn 1 skill is NOT present
+
+    // Verify conversation history is clean of skills
+    const state = runtime.getState();
+    expect(state.messages).toHaveLength(4); // Use 1, Done, Use 2, Done
+    expect(state.messages.some(m => typeof m.content === "string" && m.content.includes("test-skill-1"))).toBe(false);
   });
 });

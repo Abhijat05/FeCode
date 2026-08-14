@@ -18,7 +18,9 @@ const MAX_DEFAULT = 3;
 // ─── Normalisation ────────────────────────────────────────────────────────────
 
 function normalise(text: string): string {
-  return text.toLowerCase().replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
+  return text.toLowerCase().replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim()
+    .replace(/\bcomponents\b/g, "component")
+    .replace(/\btests\b/g, "test");
 }
 
 function tokenize(text: string): Set<string> {
@@ -29,22 +31,24 @@ function tokenize(text: string): Set<string> {
 
 const KEYWORD_BOOST: Array<{ keywords: string[]; skillName: string; bonus: number }> = [
   // build/create/design/implement → frontend-design
-  { keywords: ["build", "create", "design", "implement", "make", "add", "write", "polished", "new", "settings"], skillName: "frontend-design", bonus: 15 },
+  { keywords: ["build", "create", "design", "redesign", "implement", "make", "add", "write", "polished", "new", "settings", "dashboard"], skillName: "frontend-design", bonus: 15 },
   // review/audit/assess/evaluate → ui-review
   { keywords: ["review", "audit", "assess", "evaluate", "critique", "check"], skillName: "ui-review", bonus: 15 },
   // responsive/mobile/viewport/layout/breakpoint → responsive-design
   { keywords: ["responsive", "mobile", "viewport", "breakpoint", "narrow", "screen", "widths"], skillName: "responsive-design", bonus: 15 },
   // fix/debug/broken/error/bug/doesn't work/failing → frontend-debugging
-  { keywords: ["fix", "debug", "broken", "breaks", "break", "error", "bug", "failing", "doesn", "work", "wrong", "crash", "throws", "throwing"], skillName: "frontend-debugging", bonus: 15 },
+  { keywords: ["fix", "debug", "broken", "breaks", "break", "error", "bug", "failing", "doesn", "work", "wrong", "crash", "throws", "throwing", "rendering", "render"], skillName: "frontend-debugging", bonus: 15 },
   // accessibility
   { keywords: ["accessible", "accessibility", "a11y", "aria", "reader"], skillName: "accessibility", bonus: 15 },
   // frontend-performance
   { keywords: ["slow", "performance", "optimize", "fast", "speed", "bottleneck"], skillName: "frontend-performance", bonus: 15 },
   // frontend-testing
-  { keywords: ["test", "tests", "testing", "jest", "vitest", "coverage", "mock"], skillName: "frontend-testing", bonus: 15 }
+  { keywords: ["test", "testing", "jest", "vitest", "coverage", "mock"], skillName: "frontend-testing", bonus: 15 }
 ];
 
 const BACKEND_PENALTY_KEYWORDS = ["database", "postgres", "postgresql", "sql", "migration", "api", "backend", "middleware", "worker", "server", "docker", "index"];
+
+const FRONTEND_ACTION_VERBS = new Set(["build", "create", "implement", "make", "add", "write", "refactor", "update", "fix", "change", "new", "design", "style", "redesign"]);
 
 function phraseWordMatchCount(phrase: string, requestTokens: Set<string>): number {
   const phraseTokens = tokenize(phrase);
@@ -61,7 +65,7 @@ function phraseScore(phrase: string, requestTokens: Set<string>): number {
   const total = phraseTokens.size;
   if (total === 0) return 0;
   const matched = phraseWordMatchCount(phrase, requestTokens);
-  if (matched < Math.ceil(total / 2)) return 0;
+  if (matched === 0) return 0;
   return matched / total;
 }
 
@@ -170,12 +174,16 @@ function scoreSkill(
   // ── Project context framework boost ────────────────────────────────────────
   if (isProjectFrameworkMatch) {
     score += SCORE_FRAMEWORK_MATCH;
+    // Boost framework skills if the request contains an active frontend verb
+    if ([...requestTokens].some(t => FRONTEND_ACTION_VERBS.has(t))) {
+      score += 2;
+    }
   }
 
   // ── Backend keyword penalty ───────────────────────────────────────────────
   const hasBackendKeywords = BACKEND_PENALTY_KEYWORDS.some(kw => requestTokens.has(kw));
-  if (hasBackendKeywords && !isFrameworkCategory) {
-    score -= 30; // Strong penalty for frontend skills on backend tasks
+  if (hasBackendKeywords) {
+    score -= 30; // Strong penalty for all frontend skills on backend tasks
   }
 
   return score;

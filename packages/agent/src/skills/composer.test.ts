@@ -66,12 +66,12 @@ describe("composeSystemPrompt with Skill Spec v2", () => {
       activeSkills: [mockStructuredSkill]
     });
 
-    expect(prompt).toContain("### frontend-design");
+    expect(prompt).toContain("### Skill: frontend-design");
     expect(prompt).toContain("UI design best practices");
     expect(prompt).toContain("- Maintain clean visual hierarchy.");
-    expect(prompt).toContain("Rules:");
+    expect(prompt).toContain("#### Rules");
     expect(prompt).toContain("- Never use unconstrained massive typography.");
-    expect(prompt).toContain("Avoid:");
+    expect(prompt).toContain("#### Anti-Patterns");
     expect(prompt).toContain("- Avoid icon-stuffed bento boxes");
   });
 
@@ -89,11 +89,11 @@ describe("composeSystemPrompt with Skill Spec v2", () => {
       activeSkills: [simpleSkill]
     });
 
-    expect(prompt).toContain("### simple-skill");
+    expect(prompt).toContain("### Skill: simple-skill");
     expect(prompt).toContain("Simple skill description");
     expect(prompt).toContain("- Simple instruction 1");
 
-    expect(prompt).not.toContain("Rules:");
-    expect(prompt).not.toContain("Avoid:");
+    expect(prompt).not.toContain("#### Rules");
+    expect(prompt).not.toContain("#### Anti-Patterns");
   });
 });

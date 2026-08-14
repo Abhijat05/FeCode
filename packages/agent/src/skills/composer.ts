@@ -8,35 +8,7 @@ export interface ComposeSystemPromptOptions {
   activeSkills?: Skill[];
 }
 
-export function formatSkill(skill: Skill): string {
-  const lines: string[] = [`### ${skill.name}`];
-  
-  if (skill.description) {
-    lines.push(skill.description);
-  }
-
-  if (skill.instructions && skill.instructions.length > 0) {
-    for (const inst of skill.instructions) {
-      lines.push(`- ${inst}`);
-    }
-  }
-
-  if (skill.rules && skill.rules.length > 0) {
-    lines.push("\nRules:");
-    for (const rule of skill.rules) {
-      lines.push(`- ${rule}`);
-    }
-  }
-
-  if (skill.antiPatterns && skill.antiPatterns.length > 0) {
-    lines.push("\nAvoid:");
-    for (const ap of skill.antiPatterns) {
-      lines.push(`- ${ap}`);
-    }
-  }
-
-  return lines.join("\n");
-}
+import { SkillContextFormatter } from "./formatter.js";
 
 export function composeSystemPrompt(options: ComposeSystemPromptOptions = {}): string {
   const base = options.baseSystemPrompt || DEFAULT_SYSTEM_PROMPT;
@@ -79,8 +51,9 @@ export function composeSystemPrompt(options: ComposeSystemPromptOptions = {}): s
   }
 
   if (options.activeSkills && options.activeSkills.length > 0) {
-    const skillBlocks = options.activeSkills.map((skill) => formatSkill(skill));
-    sections.push(`## Active FeCode Skills\n\n${skillBlocks.join("\n\n")}`);
+    const formatter = new SkillContextFormatter();
+    const result = formatter.format(options.activeSkills);
+    sections.push(result.content);
   }
 
   return sections.join("\n\n");

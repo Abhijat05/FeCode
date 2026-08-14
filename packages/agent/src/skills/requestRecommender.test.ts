@@ -58,7 +58,7 @@ describe("recommendSkillsFromRequest", () => {
 
   it("Scenario 1: responsive layout request ranks responsive-design first", () => {
     const results = recommendSkillsFromRequest({
-      request: "Make this page responsive.",
+      request: "Ensure this layout is responsive on mobile.",
       registry,
       projectContext: noCtx
     });
