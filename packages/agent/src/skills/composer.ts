@@ -9,58 +9,29 @@ export interface ComposeSystemPromptOptions {
 }
 
 export function formatSkill(skill: Skill): string {
-  const lines: string[] = [`### Skill: ${skill.name} (v${skill.version})`, skill.description];
-
-  if (skill.activation?.when && skill.activation.when.length > 0) {
-    lines.push("When relevant:");
-    for (const w of skill.activation.when) {
-      lines.push(`- ${w}`);
-    }
+  const lines: string[] = [`### ${skill.name}`];
+  
+  if (skill.description) {
+    lines.push(skill.description);
   }
 
   if (skill.instructions && skill.instructions.length > 0) {
-    lines.push("Core instructions:");
     for (const inst of skill.instructions) {
       lines.push(`- ${inst}`);
     }
   }
 
-  if (skill.workflow && skill.workflow.length > 0) {
-    lines.push("Workflow:");
-    for (const step of skill.workflow) {
-      lines.push(step.startsWith("- ") || /^\d+\./.test(step) ? step : `- ${step}`);
-    }
-  }
-
   if (skill.rules && skill.rules.length > 0) {
-    lines.push("Rules:");
+    lines.push("\nRules:");
     for (const rule of skill.rules) {
       lines.push(`- ${rule}`);
     }
   }
 
   if (skill.antiPatterns && skill.antiPatterns.length > 0) {
-    lines.push("Avoid:");
+    lines.push("\nAvoid:");
     for (const ap of skill.antiPatterns) {
       lines.push(`- ${ap}`);
-    }
-  }
-
-  if (skill.examples && skill.examples.length > 0) {
-    lines.push("Examples:");
-    for (const ex of skill.examples) {
-      lines.push(`- Title: ${ex.title}`);
-      if (ex.description) {
-        lines.push(`  Description: ${ex.description}`);
-      }
-      lines.push(`  ${ex.example}`);
-    }
-  }
-
-  if (skill.references && skill.references.length > 0) {
-    lines.push("References:");
-    for (const ref of skill.references) {
-      lines.push(`- ${ref.name}: ${ref.path}${ref.description ? ` (${ref.description})` : ""}`);
     }
   }
 
@@ -109,7 +80,7 @@ export function composeSystemPrompt(options: ComposeSystemPromptOptions = {}): s
 
   if (options.activeSkills && options.activeSkills.length > 0) {
     const skillBlocks = options.activeSkills.map((skill) => formatSkill(skill));
-    sections.push(`## Active Frontend Skills\n\n${skillBlocks.join("\n\n")}`);
+    sections.push(`## Active FeCode Skills\n\n${skillBlocks.join("\n\n")}`);
   }
 
   return sections.join("\n\n");

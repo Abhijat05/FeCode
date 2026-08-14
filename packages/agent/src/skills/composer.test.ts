@@ -66,21 +66,13 @@ describe("composeSystemPrompt with Skill Spec v2", () => {
       activeSkills: [mockStructuredSkill]
     });
 
-    expect(prompt).toContain("### Skill: frontend-design (v2.0.0)");
-    expect(prompt).toContain("When relevant:");
-    expect(prompt).toContain("- Designing UI components");
-    expect(prompt).toContain("Core instructions:");
+    expect(prompt).toContain("### frontend-design");
+    expect(prompt).toContain("UI design best practices");
     expect(prompt).toContain("- Maintain clean visual hierarchy.");
-    expect(prompt).toContain("Workflow:");
-    expect(prompt).toContain("1. Establish layout grid");
     expect(prompt).toContain("Rules:");
     expect(prompt).toContain("- Never use unconstrained massive typography.");
     expect(prompt).toContain("Avoid:");
     expect(prompt).toContain("- Avoid icon-stuffed bento boxes");
-    expect(prompt).toContain("Examples:");
-    expect(prompt).toContain("Primary Button");
-    expect(prompt).toContain("References:");
-    expect(prompt).toContain("Design System Guide: docs/design.md");
   });
 
   it("omits empty optional sections cleanly when skill optional fields are undefined", () => {
@@ -97,15 +89,11 @@ describe("composeSystemPrompt with Skill Spec v2", () => {
       activeSkills: [simpleSkill]
     });
 
-    expect(prompt).toContain("### Skill: simple-skill (v1.0.0)");
-    expect(prompt).toContain("Core instructions:");
+    expect(prompt).toContain("### simple-skill");
+    expect(prompt).toContain("Simple skill description");
     expect(prompt).toContain("- Simple instruction 1");
 
-    expect(prompt).not.toContain("When relevant:");
-    expect(prompt).not.toContain("Workflow:");
     expect(prompt).not.toContain("Rules:");
     expect(prompt).not.toContain("Avoid:");
-    expect(prompt).not.toContain("Examples:");
-    expect(prompt).not.toContain("References:");
   });
 });

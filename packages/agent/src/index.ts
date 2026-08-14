@@ -25,7 +25,8 @@ export type AgentEvent =
   | { type: "approval_required"; request: ApprovalRequest }
   | { type: "tool_result"; result: ToolResult; callId: string }
   | { type: "done" }
-  | { type: "error"; error: Error };
+  | { type: "error"; error: Error }
+  | { type: "skills_activated"; skills: string[] };
 
 export * from "./runtime.js";
 export * from "./systemPrompt.js";
@@ -56,3 +57,4 @@ export * from "./skills/composer.js";
 export * from "./skills/parser.js";
 export * from "./skills/loader.js";
 export * from "./skills/requestRecommender.js";
+export * from "./skills/activation.js";

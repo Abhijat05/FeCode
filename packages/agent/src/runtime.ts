@@ -21,6 +21,9 @@ import type { Agent, AgentEvent, AgentInput } from "./index.js";
 import { DEFAULT_SYSTEM_PROMPT } from "./systemPrompt.js";
 import type { CommandResult } from "./commands/types.js";
 import type { ProjectContext } from "./project/types.js";
+import type { SkillRegistry } from "./skills/types.js";
+import { SkillActivationPolicy } from "./skills/activation.js";
+import { composeSystemPrompt } from "./skills/composer.js";
 
 export type AgentStatus =
   | "idle"
@@ -46,6 +49,8 @@ export interface AgentRuntimeOptions {
   approvalResolver?: ApprovalResolver;
   maxVerificationAttempts?: number;
   projectContext?: ProjectContext;
+  skillRegistry?: SkillRegistry;
+  activationPolicy?: SkillActivationPolicy;
 }
 
 export class AgentRuntime implements Agent {
@@ -57,6 +62,8 @@ export class AgentRuntime implements Agent {
   private readonly approvalResolver?: ApprovalResolver;
   private readonly maxVerificationAttempts: number;
   private readonly projectContext?: ProjectContext;
+  private readonly skillRegistry?: SkillRegistry;
+  private readonly activationPolicy?: SkillActivationPolicy;
   private state: AgentState;
   private activeController: AbortController | null = null;
 
@@ -71,6 +78,8 @@ export class AgentRuntime implements Agent {
     this.approvalResolver = options.approvalResolver;
     this.maxVerificationAttempts = options.maxVerificationAttempts ?? 3;
     this.projectContext = options.projectContext;
+    this.skillRegistry = options.skillRegistry;
+    this.activationPolicy = options.activationPolicy;
 
     this.state = {
       sessionId:
@@ -107,6 +116,29 @@ export class AgentRuntime implements Agent {
       content: input.message
     });
 
+    let activeSystemPrompt = this.systemPrompt;
+    if (this.skillRegistry && this.activationPolicy) {
+      const activated = this.activationPolicy.activate(
+        input.message,
+        this.skillRegistry,
+        this.projectContext
+      );
+      if (activated.skills.length > 0) {
+        yield { type: "skills_activated", skills: activated.skills.map((s) => s.name) };
+      }
+      activeSystemPrompt = composeSystemPrompt({
+        baseSystemPrompt: this.systemPrompt,
+        projectContext: this.projectContext,
+        activeSkills: activated.skills
+      });
+    } else if (this.projectContext) {
+      activeSystemPrompt = composeSystemPrompt({
+        baseSystemPrompt: this.systemPrompt,
+        projectContext: this.projectContext,
+        activeSkills: []
+      });
+    }
+
     try {
       while (true) {
         if (this.activeController.signal.aborted) {
@@ -121,7 +153,7 @@ export class AgentRuntime implements Agent {
         }));
 
         const request: ModelRequest = {
-          system: this.systemPrompt,
+          system: activeSystemPrompt,
           messages: [...this.state.messages],
           tools: toolDefinitions.length ? toolDefinitions : undefined
         };

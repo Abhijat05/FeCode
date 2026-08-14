@@ -3,7 +3,7 @@ import React from "react";
 import { render } from "ink";
 import { loadConfig } from "@fecode/shared";
 import { createModelProvider } from "@fecode/models";
-import { AgentRuntime, createDefaultToolRegistry, ProjectDetector } from "@fecode/agent";
+import { AgentRuntime, createDefaultToolRegistry, ProjectDetector, SkillLoader, DefaultSkillRegistry, SkillActivationPolicy } from "@fecode/agent";
 import type { ProjectContext } from "@fecode/agent";
 import { App } from "./App.js";
 import { InteractiveApprovalResolver } from "./approvalResolver.js";
@@ -44,11 +44,22 @@ async function main(): Promise<void> {
     });
 
     const registry = createDefaultToolRegistry();
+    const skillLoader = new SkillLoader();
+    const skillRegistry = new DefaultSkillRegistry();
+    const activationPolicy = new SkillActivationPolicy();
+    
+    // We can lazily load built-in skills asynchronously.
+    const builtinSkills = await skillLoader.discoverSkills(skillLoader.getBuiltinSkillsDir());
+    for (const s of builtinSkills) {
+      skillRegistry.register(s);
+    }
 
     agent = new AgentRuntime(modelProvider, {
       registry,
       approvalResolver,
-      projectContext
+      projectContext,
+      skillRegistry,
+      activationPolicy
     });
   } catch (err: unknown) {
     configError = err instanceof Error ? err.message : String(err);

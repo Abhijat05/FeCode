@@ -146,6 +146,18 @@ export const App: React.FC<AppProps> = ({
                 : t
             )
           );
+        } else if (event.type === "skills_activated" && "skills" in event) {
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    status: "streaming",
+                    response: t.response + `\n● Using skills: ${event.skills.join(", ")}\n`
+                  }
+                : t
+            )
+          );
         } else if (event.type === "tool_call") {
           toolCallNames.set(event.call.id, event.call.name);
           setTurns((prev) =>

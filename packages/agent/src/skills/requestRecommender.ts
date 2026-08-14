@@ -100,8 +100,9 @@ function scoreSkill(
   const nameTokens = tokenize(normalise(skill.name));
   const hasNameMention = [...nameTokens].some((t) => requestTokens.has(t));
   const isProjectFrameworkMatch =
-    projectContext?.framework &&
-    (FRAMEWORK_SKILL_MAP[projectContext.framework] ?? []).includes(skill.name);
+    (projectContext?.framework &&
+      (FRAMEWORK_SKILL_MAP[projectContext.framework] ?? []).includes(skill.name)) ||
+    (projectContext?.styling && projectContext.styling.includes(skill.name));
 
   if (isFrameworkCategory && !hasNameMention && !isProjectFrameworkMatch) {
     return 0; // Exclude framework skills when neither context nor request references them
