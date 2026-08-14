@@ -3,13 +3,24 @@ import React from "react";
 import { render } from "ink";
 import { loadConfig } from "@fecode/shared";
 import { createModelProvider } from "@fecode/models";
-import { AgentRuntime, createDefaultToolRegistry } from "@fecode/agent";
+import { AgentRuntime, createDefaultToolRegistry, ProjectDetector } from "@fecode/agent";
+import type { ProjectContext } from "@fecode/agent";
 import { App } from "./App.js";
 import { InteractiveApprovalResolver } from "./approvalResolver.js";
 
-function main(): void {
+async function main(): Promise<void> {
   let agent: AgentRuntime | undefined;
   let configError: string | undefined;
+  let projectContext: ProjectContext | undefined;
+
+  const cwd = process.cwd();
+  
+  try {
+    const detector = new ProjectDetector();
+    projectContext = await detector.detect(cwd);
+  } catch {
+    // Ignore detection errors, continue without context
+  }
 
   const config = loadConfig();
   const providerName = config.provider;
@@ -36,7 +47,8 @@ function main(): void {
 
     agent = new AgentRuntime(modelProvider, {
       registry,
-      approvalResolver
+      approvalResolver,
+      projectContext
     });
   } catch (err: unknown) {
     configError = err instanceof Error ? err.message : String(err);
@@ -45,13 +57,17 @@ function main(): void {
   render(
     <App
       agent={agent}
-      cwd={process.cwd()}
+      cwd={cwd}
       providerName={providerName}
       modelName={modelName}
       approvalResolver={approvalResolver}
       configError={configError}
+      projectContext={projectContext}
     />
   );
 }
 
-main();
+main().catch((err) => {
+  console.error("Fatal error:", err);
+  process.exit(1);
+});

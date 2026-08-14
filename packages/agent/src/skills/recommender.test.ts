@@ -4,21 +4,34 @@ import type { ProjectContext } from "../project/types.js";
 
 describe("recommendSkills", () => {
   it("recommends appropriate skills for React + TypeScript + Tailwind project", () => {
-    const ctx: ProjectContext = {
+    const reactCtx: ProjectContext = {
       projectRoot: "/test",
+      projectType: "frontend",
       languages: ["typescript"],
       framework: "react",
+      frameworks: ["react"],
       frameworkVersion: "18.3.1",
       buildTool: "vite",
       styling: ["tailwind"],
       testing: ["vitest"],
       packageManager: "npm",
-      sourceDirectories: ["src"],
-      componentDirectories: ["src/components"],
-      configFiles: []
+      structure: {
+        sourceDirectories: ["src"],
+        componentDirectories: ["src/components"],
+        routeDirectories: [],
+        testDirectories: [],
+        assetDirectories: []
+      },
+      scripts: {},
+      configuration: {
+        framework: [],
+        styling: [],
+        build: [],
+        testing: []
+      }
     };
 
-    const recs = recommendSkills(ctx);
+    const recs = recommendSkills(reactCtx);
     expect(recs).toEqual([
       "frontend-design",
       "frontend-debugging",
@@ -31,21 +44,34 @@ describe("recommendSkills", () => {
   });
 
   it("recommends appropriate skills for Next.js project", () => {
-    const ctx: ProjectContext = {
+    const nextCtx: ProjectContext = {
       projectRoot: "/test",
+      projectType: "fullstack",
       languages: ["typescript"],
       framework: "next",
+      frameworks: ["react", "nextjs"],
       frameworkVersion: "14.2.0",
       buildTool: "next",
       styling: [],
       testing: [],
       packageManager: "pnpm",
-      sourceDirectories: ["app"],
-      componentDirectories: ["components"],
-      configFiles: []
+      structure: {
+        sourceDirectories: ["app"],
+        componentDirectories: ["components"],
+        routeDirectories: [],
+        testDirectories: [],
+        assetDirectories: []
+      },
+      scripts: {},
+      configuration: {
+        framework: [],
+        styling: [],
+        build: [],
+        testing: []
+      }
     };
 
-    const recs = recommendSkills(ctx);
+    const recs = recommendSkills(nextCtx);
     expect(recs).toEqual([
       "frontend-design",
       "frontend-debugging",
@@ -57,21 +83,34 @@ describe("recommendSkills", () => {
   });
 
   it("recommends appropriate skills for Vue project", () => {
-    const ctx: ProjectContext = {
+    const vueCtx: ProjectContext = {
       projectRoot: "/test",
+      projectType: "frontend",
       languages: ["javascript"],
       framework: "vue",
+      frameworks: ["vue"],
       frameworkVersion: "3.4.0",
       buildTool: "vite",
       styling: [],
       testing: [],
       packageManager: "yarn",
-      sourceDirectories: ["src"],
-      componentDirectories: ["src/components"],
-      configFiles: []
+      structure: {
+        sourceDirectories: ["src"],
+        componentDirectories: ["src/components"],
+        routeDirectories: [],
+        testDirectories: [],
+        assetDirectories: []
+      },
+      scripts: {},
+      configuration: {
+        framework: [],
+        styling: [],
+        build: [],
+        testing: []
+      }
     };
 
-    const recs = recommendSkills(ctx);
+    const recs = recommendSkills(vueCtx);
     expect(recs).toEqual([
       "frontend-design",
       "frontend-debugging",

@@ -64,16 +64,29 @@ describe("Phase 4B.7: Skill Library Audit & Cleanup", () => {
   describe("Deterministic Skill Recommender Scenarios", () => {
     const mockContext = (deps: string[]): ProjectContext => ({
       projectRoot: "/fake/root",
+      projectType: "frontend",
       languages: ["typescript"],
+      frameworks: deps.filter(d => ["react", "vue", "svelte", "next"].includes(d)),
       framework: deps.includes("react") ? "react" : deps.includes("vue") ? "vue" : deps.includes("svelte") ? "svelte" : deps.includes("next") ? "next" : null,
       frameworkVersion: null,
       buildTool: null,
       styling: deps.includes("tailwindcss") ? ["tailwind"] : [],
       testing: deps.includes("jest") ? ["jest"] : [],
       packageManager: "npm",
-      sourceDirectories: [],
-      componentDirectories: [],
-      configFiles: []
+      structure: {
+        sourceDirectories: [],
+        componentDirectories: [],
+        routeDirectories: [],
+        testDirectories: [],
+        assetDirectories: []
+      },
+      scripts: {},
+      configuration: {
+        framework: [],
+        styling: [],
+        build: [],
+        testing: []
+      }
     });
 
     it("Scenario A: Build a polished React dashboard", () => {

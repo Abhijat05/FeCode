@@ -95,11 +95,11 @@ export function composeSystemPrompt(options: ComposeSystemPromptOptions = {}): s
     if (ctx.packageManager) {
       ctxLines.push(`- Package Manager: ${ctx.packageManager}`);
     }
-    if (ctx.sourceDirectories.length > 0) {
-      ctxLines.push(`- Source Directories: ${ctx.sourceDirectories.join(", ")}`);
+    if (ctx.structure.sourceDirectories.length > 0) {
+      ctxLines.push(`- Source Directories: ${ctx.structure.sourceDirectories.join(", ")}`);
     }
-    if (ctx.componentDirectories.length > 0) {
-      ctxLines.push(`- Component Directories: ${ctx.componentDirectories.join(", ")}`);
+    if (ctx.structure.componentDirectories.length > 0) {
+      ctxLines.push(`- Component Directories: ${ctx.structure.componentDirectories.join(", ")}`);
     }
 
     if (ctxLines.length > 1) {

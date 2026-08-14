@@ -2,6 +2,7 @@ import React, { useState, useCallback } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import TextInput from "ink-text-input";
 import type { Agent } from "@fecode/agent";
+import type { ProjectContext } from "@fecode/agent";
 import type { ApprovalRequest } from "@fecode/models";
 import {
   InteractiveApprovalResolver,
@@ -24,6 +25,7 @@ export interface AppProps {
   approvalResolver?: InteractiveApprovalResolver;
   onExit?: () => void;
   configError?: string;
+  projectContext?: ProjectContext;
 }
 
 export const App: React.FC<AppProps> = ({
@@ -33,7 +35,8 @@ export const App: React.FC<AppProps> = ({
   modelName,
   approvalResolver,
   onExit,
-  configError
+  configError,
+  projectContext
 }) => {
   const { exit } = useApp();
   const [query, setQuery] = useState("");
@@ -241,6 +244,47 @@ export const App: React.FC<AppProps> = ({
         {modelName && <Text color="gray">Model: {modelName}</Text>}
         <Text color="gray">Working directory:</Text>
         <Text>{cwd}</Text>
+        {projectContext && (
+          <Box marginTop={1} flexDirection="column">
+            <Text color="gray">Detected:</Text>
+            {projectContext.projectType && projectContext.projectType !== "unknown" && (
+              <Text>  Type: {projectContext.projectType}</Text>
+            )}
+            {projectContext.languages.length > 0 && (
+              <Text>  Languages: {projectContext.languages.join(", ")}</Text>
+            )}
+            {projectContext.frameworks.length > 0 && (
+              <Text>  Frameworks: {projectContext.frameworks.join(", ")}</Text>
+            )}
+            {projectContext.styling.length > 0 && (
+              <Text>  Styling: {projectContext.styling.join(", ")}</Text>
+            )}
+            {projectContext.packageManager && (
+              <Text>  Package Manager: {projectContext.packageManager}</Text>
+            )}
+            {projectContext.testing.length > 0 && (
+              <Text>  Testing: {projectContext.testing.join(", ")}</Text>
+            )}
+
+            {(projectContext.structure.sourceDirectories.length > 0 || projectContext.structure.componentDirectories.length > 0 || projectContext.structure.routeDirectories.length > 0 || projectContext.structure.testDirectories.length > 0) && (
+              <Box marginTop={1} flexDirection="column">
+                <Text color="gray">Structure:</Text>
+                {projectContext.structure.sourceDirectories.length > 0 && (
+                  <Text>  Source: {projectContext.structure.sourceDirectories.map(d => d + "/").join(", ")}</Text>
+                )}
+                {projectContext.structure.componentDirectories.length > 0 && (
+                  <Text>  Components: {projectContext.structure.componentDirectories.map(d => d + "/").join(", ")}</Text>
+                )}
+                {projectContext.structure.routeDirectories.length > 0 && (
+                  <Text>  Routes: {projectContext.structure.routeDirectories.map(d => d + "/").join(", ")}</Text>
+                )}
+                {projectContext.structure.testDirectories.length > 0 && (
+                  <Text>  Tests: {projectContext.structure.testDirectories.map(d => d + "/").join(", ")}</Text>
+                )}
+              </Box>
+            )}
+          </Box>
+        )}
       </Box>
 
       {configError && (

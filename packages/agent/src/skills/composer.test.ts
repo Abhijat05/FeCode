@@ -6,17 +6,30 @@ import type { Skill } from "./types.js";
 
 describe("composeSystemPrompt with Skill Spec v2", () => {
   const mockContext: ProjectContext = {
-    projectRoot: "/test",
+    projectRoot: "/mock",
+    projectType: "frontend",
     languages: ["typescript"],
     framework: "react",
-    frameworkVersion: "18.3.1",
+    frameworks: ["react"],
+    frameworkVersion: "18.0.0",
     buildTool: "vite",
     styling: ["tailwind"],
     testing: ["vitest"],
     packageManager: "npm",
-    sourceDirectories: ["src"],
-    componentDirectories: ["src/components"],
-    configFiles: []
+    structure: {
+      sourceDirectories: ["src"],
+      componentDirectories: ["src/components"],
+      routeDirectories: [],
+      testDirectories: [],
+      assetDirectories: []
+    },
+    scripts: {},
+    configuration: {
+      framework: [],
+      styling: [],
+      build: [],
+      testing: []
+    }
   };
 
   const mockStructuredSkill: Skill = {

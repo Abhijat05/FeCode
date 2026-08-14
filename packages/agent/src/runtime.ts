@@ -20,6 +20,7 @@ import type {
 import type { Agent, AgentEvent, AgentInput } from "./index.js";
 import { DEFAULT_SYSTEM_PROMPT } from "./systemPrompt.js";
 import type { CommandResult } from "./commands/types.js";
+import type { ProjectContext } from "./project/types.js";
 
 export type AgentStatus =
   | "idle"
@@ -44,6 +45,7 @@ export interface AgentRuntimeOptions {
   permissionManager?: PermissionManager;
   approvalResolver?: ApprovalResolver;
   maxVerificationAttempts?: number;
+  projectContext?: ProjectContext;
 }
 
 export class AgentRuntime implements Agent {
@@ -54,6 +56,7 @@ export class AgentRuntime implements Agent {
   private readonly permissionManager: PermissionManager;
   private readonly approvalResolver?: ApprovalResolver;
   private readonly maxVerificationAttempts: number;
+  private readonly projectContext?: ProjectContext;
   private state: AgentState;
   private activeController: AbortController | null = null;
 
@@ -67,6 +70,7 @@ export class AgentRuntime implements Agent {
       options.permissionManager || new DefaultPermissionManager();
     this.approvalResolver = options.approvalResolver;
     this.maxVerificationAttempts = options.maxVerificationAttempts ?? 3;
+    this.projectContext = options.projectContext;
 
     this.state = {
       sessionId:

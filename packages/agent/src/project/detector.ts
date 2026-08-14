@@ -2,10 +2,14 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import type {
   BuildToolType,
+  ConfigurationMap,
   FrameworkType,
   PackageJsonData,
   PackageManagerType,
-  ProjectContext
+  PackageScripts,
+  ProjectContext,
+  ProjectStructure,
+  ProjectType
 } from "./types.js";
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -45,25 +49,37 @@ export class ProjectDetector {
     const packageManager = await this.detectPackageManager(projectRoot, packageJson);
     const configFiles = await this.detectConfigFiles(projectRoot);
     const languages = await this.detectLanguages(projectRoot, packageJson);
-    const { framework, frameworkVersion } = this.detectFramework(packageJson);
+    const { framework, frameworkVersion, frameworks } = this.detectFramework(packageJson);
     const buildTool = this.detectBuildTool(packageJson, configFiles);
     const styling = this.detectStyling(packageJson, configFiles);
     const testing = this.detectTesting(packageJson, configFiles);
-    const sourceDirectories = await this.detectSourceDirectories(projectRoot);
-    const componentDirectories = await this.detectComponentDirectories(projectRoot);
+    const projectType = this.detectProjectType(framework, packageJson);
+
+    const structure: ProjectStructure = {
+      sourceDirectories: await this.detectSourceDirectories(projectRoot),
+      componentDirectories: await this.detectComponentDirectories(projectRoot),
+      routeDirectories: await this.detectRouteDirectories(projectRoot),
+      testDirectories: await this.detectTestDirectories(projectRoot),
+      assetDirectories: await this.detectAssetDirectories(projectRoot)
+    };
+
+    const scripts = this.detectScripts(packageJson);
+    const configuration = this.buildConfigurationMap(configFiles);
 
     return {
       projectRoot,
+      projectType,
       languages,
       framework,
+      frameworks,
       frameworkVersion,
       buildTool,
       styling,
       testing,
       packageManager,
-      sourceDirectories,
-      componentDirectories,
-      configFiles,
+      structure,
+      scripts,
+      configuration,
       packageJson
     };
   }
@@ -113,6 +129,7 @@ export class ProjectDetector {
 
   private detectFramework(packageJson?: PackageJsonData): {
     framework: FrameworkType;
+    frameworks: string[];
     frameworkVersion: string | null;
   } {
     const allDeps = {
@@ -120,35 +137,80 @@ export class ProjectDetector {
       ...(packageJson?.devDependencies || {})
     };
 
-    if ("next" in allDeps) {
-      return { framework: "next", frameworkVersion: allDeps["next"] || null };
-    }
-    if ("@sveltejs/kit" in allDeps) {
-      return {
-        framework: "sveltekit",
-        frameworkVersion: allDeps["@sveltejs/kit"] || null
-      };
-    }
-    if ("nuxt" in allDeps) {
-      return { framework: "nuxt", frameworkVersion: allDeps["nuxt"] || null };
-    }
-    if ("astro" in allDeps) {
-      return { framework: "astro", frameworkVersion: allDeps["astro"] || null };
-    }
+    const frameworks: string[] = [];
+    let framework: FrameworkType = null;
+    let frameworkVersion: string | null = null;
+
     if ("react" in allDeps || "react-dom" in allDeps) {
-      return {
-        framework: "react",
-        frameworkVersion: allDeps["react"] || allDeps["react-dom"] || null
-      };
+      frameworks.push("react");
+      if (!framework) {
+        framework = "react";
+        frameworkVersion = allDeps["react"] || allDeps["react-dom"] || null;
+      }
     }
     if ("vue" in allDeps) {
-      return { framework: "vue", frameworkVersion: allDeps["vue"] || null };
+      frameworks.push("vue");
+      if (!framework) {
+        framework = "vue";
+        frameworkVersion = allDeps["vue"] || null;
+      }
     }
     if ("svelte" in allDeps) {
-      return { framework: "svelte", frameworkVersion: allDeps["svelte"] || null };
+      frameworks.push("svelte");
+      if (!framework) {
+        framework = "svelte";
+        frameworkVersion = allDeps["svelte"] || null;
+      }
+    }
+    if ("next" in allDeps) {
+      frameworks.push("nextjs");
+      framework = "next";
+      frameworkVersion = allDeps["next"] || null;
+    }
+    if ("@sveltejs/kit" in allDeps) {
+      frameworks.push("sveltekit");
+      framework = "sveltekit";
+      frameworkVersion = allDeps["@sveltejs/kit"] || null;
+    }
+    if ("nuxt" in allDeps) {
+      frameworks.push("nuxt");
+      framework = "nuxt";
+      frameworkVersion = allDeps["nuxt"] || null;
+    }
+    if ("astro" in allDeps) {
+      frameworks.push("astro");
+      framework = "astro";
+      frameworkVersion = allDeps["astro"] || null;
     }
 
-    return { framework: null, frameworkVersion: null };
+    return { framework, frameworks, frameworkVersion };
+  }
+
+  private detectProjectType(framework: FrameworkType, packageJson?: PackageJsonData): ProjectType {
+    if (framework === "next" || framework === "nuxt" || framework === "sveltekit" || framework === "astro") {
+      return "fullstack";
+    }
+    if (framework === "react" || framework === "vue" || framework === "svelte") {
+      return "frontend";
+    }
+
+    const allDeps = {
+      ...(packageJson?.dependencies || {}),
+      ...(packageJson?.devDependencies || {})
+    };
+
+    const isBackend = ["express", "fastify", "koa", "nestjs", "apollo-server"].some(dep => dep in allDeps);
+    if (isBackend) {
+      return "backend";
+    }
+
+    // Default heuristic for backend if no UI framework but Node stuff
+    if (!framework && ("@types/node" in allDeps || "typescript" in allDeps)) {
+      // Very basic heuristic
+      return "unknown";
+    }
+
+    return "unknown";
   }
 
   private detectBuildTool(
@@ -310,33 +372,73 @@ export class ProjectDetector {
   }
 
   private async detectSourceDirectories(projectRoot: string): Promise<string[]> {
-    const candidates = ["src", "app", "pages", "lib"];
-    const found: string[] = [];
-
-    for (const candidate of candidates) {
-      if (await dirExists(path.join(projectRoot, candidate))) {
-        found.push(candidate);
-      }
-    }
-
-    return found;
+    const candidates = [
+      "src", "app", "pages", "components", "features", 
+      "lib", "utils", "hooks", "layouts", "routes", 
+      "public", "tests", "__tests__",
+      "src/components", "src/features", "src/lib",
+      "src/utils", "src/hooks", "src/layouts", "src/routes"
+    ];
+    return this.findExistingDirectories(projectRoot, candidates);
   }
 
   private async detectComponentDirectories(projectRoot: string): Promise<string[]> {
     const candidates = [
       "src/components",
-      "app/components",
       "components",
-      "pages/components"
+      "src/ui",
+      "src/components/ui"
     ];
-    const found: string[] = [];
+    return this.findExistingDirectories(projectRoot, candidates);
+  }
 
+  private async detectRouteDirectories(projectRoot: string): Promise<string[]> {
+    const candidates = ["app", "pages", "routes", "src/pages", "src/routes", "src/router"];
+    return this.findExistingDirectories(projectRoot, candidates);
+  }
+
+  private async detectTestDirectories(projectRoot: string): Promise<string[]> {
+    const candidates = ["tests", "__tests__", "e2e", "integration", "unit"];
+    return this.findExistingDirectories(projectRoot, candidates);
+  }
+
+  private async detectAssetDirectories(projectRoot: string): Promise<string[]> {
+    const candidates = ["public", "static", "assets"];
+    return this.findExistingDirectories(projectRoot, candidates);
+  }
+
+  private async findExistingDirectories(projectRoot: string, candidates: string[]): Promise<string[]> {
+    const found: string[] = [];
     for (const candidate of candidates) {
       if (await dirExists(path.join(projectRoot, candidate))) {
         found.push(candidate);
       }
     }
+    return found.sort();
+  }
 
-    return found;
+  private detectScripts(packageJson?: PackageJsonData): PackageScripts {
+    if (!packageJson?.scripts) return {};
+    
+    // Create a copy and sort keys deterministically
+    const scriptsObj = packageJson.scripts;
+    const sortedKeys = Object.keys(scriptsObj).sort();
+    
+    const result: PackageScripts = {};
+    for (const key of sortedKeys) {
+      result[key] = scriptsObj[key];
+    }
+    
+    return result;
+  }
+
+  private buildConfigurationMap(configFiles: string[]): ConfigurationMap {
+    const sortedConfigs = [...configFiles].sort();
+    return {
+      framework: sortedConfigs.filter(f => f.startsWith("next.config.") || f.startsWith("nuxt.config.") || f.startsWith("svelte.config.") || f.startsWith("astro.config.")),
+      styling: sortedConfigs.filter(f => f.startsWith("tailwind.config.") || f.startsWith("postcss.config.")),
+      build: sortedConfigs.filter(f => f.startsWith("vite.config.") || f.startsWith("webpack.config.") || f.startsWith("rollup.config.")),
+      testing: sortedConfigs.filter(f => f.startsWith("vitest.") || f.startsWith("jest.") || f.startsWith("playwright.") || f.startsWith("cypress."))
+    };
   }
 }

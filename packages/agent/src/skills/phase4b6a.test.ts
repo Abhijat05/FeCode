@@ -6,16 +6,29 @@ import type { ProjectContext } from "../project/types.js";
 
 const reactCtx: ProjectContext = {
   projectRoot: "/test",
+  projectType: "frontend",
   languages: ["typescript"],
   framework: "react",
+  frameworks: ["react"],
   frameworkVersion: "18.3.1",
   buildTool: "vite",
   styling: [],
   testing: ["vitest"],
   packageManager: "npm",
-  sourceDirectories: ["src"],
-  componentDirectories: ["src/components"],
-  configFiles: []
+  structure: {
+    sourceDirectories: ["src"],
+    componentDirectories: ["src/components"],
+    routeDirectories: [],
+    testDirectories: [],
+    assetDirectories: []
+  },
+  scripts: {},
+  configuration: {
+    framework: [],
+    styling: [],
+    build: [],
+    testing: []
+  }
 };
 
 const nextCtx: ProjectContext = {
