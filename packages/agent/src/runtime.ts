@@ -24,6 +24,8 @@ import type { ProjectContext } from "./project/types.js";
 import type { SkillRegistry } from "./skills/types.js";
 import { SkillActivationPolicy } from "./skills/activation.js";
 import { composeSystemPrompt } from "./skills/composer.js";
+import type { TokenOptimizer } from "./optimization/types.js";
+import { DefaultTokenOptimizer } from "./optimization/defaultOptimizer.js";
 
 export type AgentStatus =
   | "idle"
@@ -51,6 +53,7 @@ export interface AgentRuntimeOptions {
   projectContext?: ProjectContext;
   skillRegistry?: SkillRegistry;
   activationPolicy?: SkillActivationPolicy;
+  tokenOptimizer?: TokenOptimizer;
 }
 
 export class AgentRuntime implements Agent {
@@ -64,6 +67,7 @@ export class AgentRuntime implements Agent {
   private readonly projectContext?: ProjectContext;
   private readonly skillRegistry?: SkillRegistry;
   private readonly activationPolicy?: SkillActivationPolicy;
+  private readonly tokenOptimizer: TokenOptimizer;
   private state: AgentState;
   private activeController: AbortController | null = null;
 
@@ -80,6 +84,7 @@ export class AgentRuntime implements Agent {
     this.projectContext = options.projectContext;
     this.skillRegistry = options.skillRegistry;
     this.activationPolicy = options.activationPolicy;
+    this.tokenOptimizer = options.tokenOptimizer || new DefaultTokenOptimizer();
 
     this.state = {
       sessionId:
@@ -129,7 +134,8 @@ export class AgentRuntime implements Agent {
       activeSystemPrompt = composeSystemPrompt({
         baseSystemPrompt: this.systemPrompt,
         projectContext: this.projectContext,
-        activeSkills: activated.skills
+        activeSkills: activated.skills,
+        tokenOptimizer: this.tokenOptimizer
       });
     } else if (this.projectContext) {
       activeSystemPrompt = composeSystemPrompt({

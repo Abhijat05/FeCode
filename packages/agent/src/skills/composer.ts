@@ -1,14 +1,16 @@
 import type { ProjectContext } from "../project/types.js";
 import type { Skill } from "./types.js";
+import type { TokenOptimizer } from "../optimization/types.js";
 import { DEFAULT_SYSTEM_PROMPT } from "../systemPrompt.js";
+import { SkillContextFormatter } from "./formatter.js";
 
 export interface ComposeSystemPromptOptions {
   baseSystemPrompt?: string;
   projectContext?: ProjectContext;
   activeSkills?: Skill[];
+  tokenOptimizer?: TokenOptimizer;
+  activeSkillsContext?: string;
 }
-
-import { SkillContextFormatter } from "./formatter.js";
 
 export function composeSystemPrompt(options: ComposeSystemPromptOptions = {}): string {
   const base = options.baseSystemPrompt || DEFAULT_SYSTEM_PROMPT;
@@ -50,10 +52,20 @@ export function composeSystemPrompt(options: ComposeSystemPromptOptions = {}): s
     }
   }
 
-  if (options.activeSkills && options.activeSkills.length > 0) {
+  if (options.activeSkillsContext) {
+    sections.push(options.activeSkillsContext);
+  } else if (options.activeSkills && options.activeSkills.length > 0) {
     const formatter = new SkillContextFormatter();
     const result = formatter.format(options.activeSkills);
-    sections.push(result.content);
+    if (options.tokenOptimizer) {
+      const optimized = options.tokenOptimizer.optimize({
+        text: result.content,
+        metadata: { activeSkills: options.activeSkills.map((s) => s.name) }
+      });
+      sections.push(optimized.text);
+    } else {
+      sections.push(result.content);
+    }
   }
 
   return sections.join("\n\n");

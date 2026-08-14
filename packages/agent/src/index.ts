@@ -58,3 +58,4 @@ export * from "./skills/parser.js";
 export * from "./skills/loader.js";
 export * from "./skills/requestRecommender.js";
 export * from "./skills/activation.js";
+export * from "./optimization/index.js";

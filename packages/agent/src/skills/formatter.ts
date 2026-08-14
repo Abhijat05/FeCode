@@ -1,4 +1,5 @@
 import type { Skill, SkillExample } from "./types.js";
+import { estimateTokens } from "../optimization/estimator.js";
 
 export interface SkillContextDiagnostics {
   activeSkills: string[];
@@ -25,9 +26,8 @@ export class SkillContextFormatter {
     this.maxTokens = options?.maxTokens ?? 6000;
   }
 
-  // Token estimate: ~4 chars per token is a standard heuristic for GPT-style models
   public estimateTokens(text: string): number {
-    return Math.ceil(text.length / 4);
+    return estimateTokens(text);
   }
 
   public format(skills: Skill[]): FormattedSkillContext {
