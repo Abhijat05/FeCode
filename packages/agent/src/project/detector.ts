@@ -11,6 +11,7 @@ import type {
   ProjectStructure,
   ProjectType
 } from "./types.js";
+import { ProjectIntelligence } from "./intelligence.js";
 
 async function fileExists(filePath: string): Promise<boolean> {
   try {
@@ -66,6 +67,9 @@ export class ProjectDetector {
     const scripts = this.detectScripts(packageJson);
     const configuration = this.buildConfigurationMap(configFiles);
 
+    const intelligence = new ProjectIntelligence();
+    const profile = await intelligence.inspect(projectRoot);
+
     return {
       projectRoot,
       projectType,
@@ -74,13 +78,21 @@ export class ProjectDetector {
       frameworks,
       frameworkVersion,
       buildTool,
+      buildTools: profile.buildTools,
       styling,
       testing,
+      testTools: profile.testTools,
+      lintTools: profile.lintTools,
+      formatTools: profile.formatTools,
       packageManager,
       structure,
       scripts,
       configuration,
-      packageJson
+      packageJson,
+      workspaces: profile.workspaces,
+      importantDirectories: profile.importantDirectories,
+      configFiles: profile.configFiles,
+      profile
     };
   }
 

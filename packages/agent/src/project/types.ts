@@ -17,6 +17,7 @@ export type FrameworkType =
   | "svelte"
   | "sveltekit"
   | "astro"
+  | "angular"
   | null;
 
 export type BuildToolType =
@@ -26,6 +27,9 @@ export type BuildToolType =
   | "astro"
   | "sveltekit"
   | "webpack"
+  | "rollup"
+  | "turborepo"
+  | "tsc"
   | null;
 
 export type PackageManagerType = "npm" | "pnpm" | "yarn" | "bun" | null;
@@ -52,8 +56,33 @@ export interface PackageScripts {
   build?: string;
   test?: string;
   lint?: string;
+  format?: string;
   typecheck?: string;
   [key: string]: string | undefined;
+}
+
+export interface WorkspaceInfo {
+  isMonorepo: boolean;
+  type?: "npm" | "pnpm" | "yarn" | "turborepo" | "lerna" | null;
+  packages?: string[];
+}
+
+export interface ProjectProfile {
+  root: string;
+  projectType: ProjectType;
+  packageManager: PackageManagerType;
+  languages: string[];
+  frameworks: string[];
+  framework?: string | null;
+  frameworkVersion?: string | null;
+  buildTools: string[];
+  testTools: string[];
+  lintTools: string[];
+  formatTools: string[];
+  packageScripts: PackageScripts;
+  workspaces: WorkspaceInfo;
+  importantDirectories: string[];
+  configFiles: string[];
 }
 
 export interface ProjectContext {
@@ -64,11 +93,19 @@ export interface ProjectContext {
   frameworks: string[];
   frameworkVersion: string | null;
   buildTool: BuildToolType;
+  buildTools?: string[];
   styling: Array<"tailwind" | "css-modules" | "sass" | "styled-components" | "emotion" | string>;
   testing: Array<"vitest" | "jest" | "playwright" | "cypress" | string>;
+  testTools?: string[];
+  lintTools?: string[];
+  formatTools?: string[];
   packageManager: PackageManagerType;
   structure: ProjectStructure;
   scripts: PackageScripts;
   configuration: ConfigurationMap;
   packageJson?: PackageJsonData;
+  workspaces?: WorkspaceInfo;
+  importantDirectories?: string[];
+  configFiles?: string[];
+  profile?: ProjectProfile;
 }

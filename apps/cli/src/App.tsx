@@ -204,6 +204,62 @@ export const App: React.FC<AppProps> = ({
                 : t
             )
           );
+        } else if (event.type === "plan_created") {
+          const planText =
+            `\n● Plan: ${event.plan.goal}\n\n` +
+            event.plan.steps
+              .map((s, i) => `  ${i + 1}. ${s.description}`)
+              .join("\n") +
+            "\n\n";
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    status: "streaming",
+                    response: t.response + planText
+                  }
+                : t
+            )
+          );
+        } else if (event.type === "plan_step_started") {
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    status: "streaming",
+                    response: t.response + `● Step ${event.stepIndex + 1}\n`
+                  }
+                : t
+            )
+          );
+        } else if (event.type === "plan_step_completed") {
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    status: "streaming",
+                    response: t.response + `✓ Step ${event.stepIndex + 1} completed\n\n`
+                  }
+                : t
+            )
+          );
+        } else if (event.type === "plan_step_failed") {
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    status: "streaming",
+                    response:
+                      t.response +
+                      `✗ Step ${event.stepIndex + 1} failed${event.error ? `: ${event.error}` : ""}\n\n`
+                  }
+                : t
+            )
+          );
         } else if (event.type === "done") {
           setPendingApproval(null);
           setTurns((prev) =>

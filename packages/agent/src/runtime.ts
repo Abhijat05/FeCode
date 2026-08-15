@@ -26,6 +26,10 @@ import { SkillActivationPolicy } from "./skills/activation.js";
 import { composeSystemPrompt } from "./skills/composer.js";
 import type { TokenOptimizer } from "./optimization/types.js";
 import { DefaultTokenOptimizer } from "./optimization/defaultOptimizer.js";
+import type { AgentPolicyRegistry } from "./policies/types.js";
+import { DefaultAgentPolicyRegistry } from "./policies/registry.js";
+import type { TaskPlan } from "./tasks/types.js";
+import { failTaskStep } from "./tasks/taskPlan.js";
 
 export type AgentStatus =
   | "idle"
@@ -40,6 +44,7 @@ export interface AgentState {
   messages: ModelMessage[];
   tokenUsage?: TokenUsage;
   verificationAttempts?: number;
+  activePlan?: TaskPlan;
 }
 
 export interface AgentRuntimeOptions {
@@ -54,6 +59,7 @@ export interface AgentRuntimeOptions {
   skillRegistry?: SkillRegistry;
   activationPolicy?: SkillActivationPolicy;
   tokenOptimizer?: TokenOptimizer;
+  policyRegistry?: AgentPolicyRegistry;
 }
 
 export class AgentRuntime implements Agent {
@@ -68,6 +74,7 @@ export class AgentRuntime implements Agent {
   private readonly skillRegistry?: SkillRegistry;
   private readonly activationPolicy?: SkillActivationPolicy;
   private readonly tokenOptimizer: TokenOptimizer;
+  private readonly policyRegistry: AgentPolicyRegistry;
   private state: AgentState;
   private activeController: AbortController | null = null;
 
@@ -85,6 +92,7 @@ export class AgentRuntime implements Agent {
     this.skillRegistry = options.skillRegistry;
     this.activationPolicy = options.activationPolicy;
     this.tokenOptimizer = options.tokenOptimizer || new DefaultTokenOptimizer();
+    this.policyRegistry = options.policyRegistry || new DefaultAgentPolicyRegistry();
 
     this.state = {
       sessionId:
@@ -104,8 +112,22 @@ export class AgentRuntime implements Agent {
     return {
       ...this.state,
       messages: [...this.state.messages],
-      tokenUsage: this.state.tokenUsage ? { ...this.state.tokenUsage } : undefined
+      tokenUsage: this.state.tokenUsage ? { ...this.state.tokenUsage } : undefined,
+      activePlan: this.state.activePlan
+        ? {
+            ...this.state.activePlan,
+            steps: this.state.activePlan.steps.map((s) => ({ ...s }))
+          }
+        : undefined
     };
+  }
+
+  public getPlan(): TaskPlan | undefined {
+    return this.state.activePlan;
+  }
+
+  public setPlan(plan: TaskPlan): void {
+    this.state.activePlan = plan;
   }
 
   async *run(input: AgentInput): AsyncIterable<AgentEvent> {
@@ -121,6 +143,7 @@ export class AgentRuntime implements Agent {
       content: input.message
     });
 
+    const policies = this.policyRegistry.list();
     let activeSystemPrompt = this.systemPrompt;
     if (this.skillRegistry && this.activationPolicy) {
       const activated = this.activationPolicy.activate(
@@ -133,13 +156,15 @@ export class AgentRuntime implements Agent {
       }
       activeSystemPrompt = composeSystemPrompt({
         baseSystemPrompt: this.systemPrompt,
+        policies,
         projectContext: this.projectContext,
         activeSkills: activated.skills,
         tokenOptimizer: this.tokenOptimizer
       });
-    } else if (this.projectContext) {
+    } else {
       activeSystemPrompt = composeSystemPrompt({
         baseSystemPrompt: this.systemPrompt,
+        policies,
         projectContext: this.projectContext,
         activeSkills: []
       });
@@ -344,6 +369,14 @@ export class AgentRuntime implements Agent {
   }
 
   async cancel(): Promise<void> {
+    if (this.state.activePlan && this.state.activePlan.status === "in_progress") {
+      const currentIdx = this.state.activePlan.currentStep ?? 0;
+      this.state.activePlan = failTaskStep(
+        this.state.activePlan,
+        currentIdx,
+        "Cancelled"
+      );
+    }
     if (this.activeController) {
       this.state.status = "cancelled";
       this.activeController.abort();

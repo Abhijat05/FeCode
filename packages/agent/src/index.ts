@@ -19,6 +19,8 @@ export interface AgentInput {
   id?: ID;
 }
 
+import type { TaskPlan } from "./tasks/types.js";
+
 export type AgentEvent =
   | { type: "text"; content: string }
   | { type: "tool_call"; call: ToolCall }
@@ -26,7 +28,11 @@ export type AgentEvent =
   | { type: "tool_result"; result: ToolResult; callId: string }
   | { type: "done" }
   | { type: "error"; error: Error }
-  | { type: "skills_activated"; skills: string[] };
+  | { type: "skills_activated"; skills: string[] }
+  | { type: "plan_created"; plan: TaskPlan }
+  | { type: "plan_step_started"; planId: string; stepId: string; stepIndex: number }
+  | { type: "plan_step_completed"; planId: string; stepId: string; stepIndex: number }
+  | { type: "plan_step_failed"; planId: string; stepId: string; stepIndex: number; error?: string };
 
 export * from "./runtime.js";
 export * from "./systemPrompt.js";
@@ -59,3 +65,5 @@ export * from "./skills/loader.js";
 export * from "./skills/requestRecommender.js";
 export * from "./skills/activation.js";
 export * from "./optimization/index.js";
+export * from "./policies/index.js";
+export * from "./tasks/index.js";
