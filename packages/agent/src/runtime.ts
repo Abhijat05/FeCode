@@ -47,6 +47,9 @@ export interface AgentState {
   activePlan?: TaskPlan;
 }
 
+import type { RepositoryExplorer, ExplorationResult } from "./exploration/types.js";
+import type { CodeContextSelector, CodeContextResult } from "./context/types.js";
+
 export interface AgentRuntimeOptions {
   systemPrompt?: string;
   sessionId?: string;
@@ -60,6 +63,8 @@ export interface AgentRuntimeOptions {
   activationPolicy?: SkillActivationPolicy;
   tokenOptimizer?: TokenOptimizer;
   policyRegistry?: AgentPolicyRegistry;
+  repositoryExplorer?: RepositoryExplorer;
+  codeContextSelector?: CodeContextSelector;
 }
 
 export class AgentRuntime implements Agent {
@@ -75,6 +80,8 @@ export class AgentRuntime implements Agent {
   private readonly activationPolicy?: SkillActivationPolicy;
   private readonly tokenOptimizer: TokenOptimizer;
   private readonly policyRegistry: AgentPolicyRegistry;
+  private readonly repositoryExplorer?: RepositoryExplorer;
+  private readonly codeContextSelector?: CodeContextSelector;
   private state: AgentState;
   private activeController: AbortController | null = null;
 
@@ -93,6 +100,8 @@ export class AgentRuntime implements Agent {
     this.activationPolicy = options.activationPolicy;
     this.tokenOptimizer = options.tokenOptimizer || new DefaultTokenOptimizer();
     this.policyRegistry = options.policyRegistry || new DefaultAgentPolicyRegistry();
+    this.repositoryExplorer = options.repositoryExplorer;
+    this.codeContextSelector = options.codeContextSelector;
 
     this.state = {
       sessionId:
@@ -143,6 +152,35 @@ export class AgentRuntime implements Agent {
       content: input.message
     });
 
+    let explorationResult: ExplorationResult | undefined;
+    if (this.repositoryExplorer) {
+      try {
+        explorationResult = await this.repositoryExplorer.explore(input.message, {
+          cwd: input.cwd,
+          projectProfile: this.projectContext?.profile,
+          signal: this.activeController.signal
+        });
+      } catch {
+        // ignore exploration errors
+      }
+    }
+
+    let codeContext: CodeContextResult | undefined;
+    if (this.codeContextSelector && explorationResult) {
+      try {
+        codeContext = await this.codeContextSelector.selectContext(
+          explorationResult,
+          input.message,
+          {
+            cwd: input.cwd,
+            signal: this.activeController.signal
+          }
+        );
+      } catch {
+        // ignore selection error
+      }
+    }
+
     const policies = this.policyRegistry.list();
     let activeSystemPrompt = this.systemPrompt;
     if (this.skillRegistry && this.activationPolicy) {
@@ -159,14 +197,18 @@ export class AgentRuntime implements Agent {
         policies,
         projectContext: this.projectContext,
         activeSkills: activated.skills,
-        tokenOptimizer: this.tokenOptimizer
+        tokenOptimizer: this.tokenOptimizer,
+        explorationResult,
+        codeContext
       });
     } else {
       activeSystemPrompt = composeSystemPrompt({
         baseSystemPrompt: this.systemPrompt,
         policies,
         projectContext: this.projectContext,
-        activeSkills: []
+        activeSkills: [],
+        explorationResult,
+        codeContext
       });
     }
 
@@ -331,6 +373,20 @@ export class AgentRuntime implements Agent {
             name: call.name,
             content: JSON.stringify(result)
           });
+
+          // Invalidate repository exploration & code context caches if file was modified
+          if (
+            result.success &&
+            (call.name === "write_file" || call.name === "edit_file")
+          ) {
+            const targetPath = (call.arguments as { path?: string })?.path;
+            if (this.repositoryExplorer) {
+              this.repositoryExplorer.invalidate(targetPath);
+            }
+            if (this.codeContextSelector) {
+              this.codeContextSelector.invalidate(targetPath);
+            }
+          }
 
           // Check if this was a command execution that failed
           if (call.name === "execute_command") {

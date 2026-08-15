@@ -2,6 +2,10 @@ import type { ProjectContext } from "../project/types.js";
 import type { Skill } from "./types.js";
 import type { AgentPolicy } from "../policies/types.js";
 import type { TokenOptimizer } from "../optimization/types.js";
+import type { ExplorationResult } from "../exploration/types.js";
+import { RepositoryExplorationFormatter } from "../exploration/formatter.js";
+import type { CodeContextResult } from "../context/types.js";
+import { CodeContextFormatter } from "../context/formatter.js";
 import { DEFAULT_SYSTEM_PROMPT } from "../systemPrompt.js";
 import { SkillContextFormatter } from "./formatter.js";
 
@@ -12,6 +16,8 @@ export interface ComposeSystemPromptOptions {
   activeSkills?: Skill[];
   tokenOptimizer?: TokenOptimizer;
   activeSkillsContext?: string;
+  explorationResult?: ExplorationResult | string;
+  codeContext?: CodeContextResult | string;
 }
 
 export function composeSystemPrompt(options: ComposeSystemPromptOptions = {}): string {
@@ -88,6 +94,34 @@ export function composeSystemPrompt(options: ComposeSystemPromptOptions = {}): s
 
     if (ctxLines.length > 1) {
       sections.push(ctxLines.join("\n"));
+    }
+  }
+
+  if (options.explorationResult) {
+    if (typeof options.explorationResult === "string") {
+      if (options.explorationResult.trim().length > 0) {
+        sections.push(options.explorationResult.trim());
+      }
+    } else {
+      const formatter = new RepositoryExplorationFormatter();
+      const formatted = formatter.format(options.explorationResult);
+      if (formatted.trim().length > 0) {
+        sections.push(formatted.trim());
+      }
+    }
+  }
+
+  if (options.codeContext) {
+    if (typeof options.codeContext === "string") {
+      if (options.codeContext.trim().length > 0) {
+        sections.push(options.codeContext.trim());
+      }
+    } else {
+      const formatter = new CodeContextFormatter();
+      const formatted = formatter.format(options.codeContext);
+      if (formatted.trim().length > 0) {
+        sections.push(formatted.trim());
+      }
     }
   }
 
