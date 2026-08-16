@@ -159,6 +159,22 @@ export class AgentRuntime implements Agent {
     this.state.activePlan = plan;
   }
 
+  public clear(): void {
+    this.state.messages = [];
+    this.state.activePlan = undefined;
+    this.state.verificationAttempts = 0;
+    this.lastToolCallKey = null;
+    this.consecutiveToolCallCount = 0;
+    this.completionTracker.reset();
+    this.state.status = "idle";
+    if (this.repositoryExplorer) {
+      this.repositoryExplorer.invalidate();
+    }
+    if (this.codeContextSelector) {
+      this.codeContextSelector.invalidate();
+    }
+  }
+
   async *run(input: AgentInput): AsyncIterable<AgentEvent> {
     if (input.sessionId && this.state.messages.length === 0) {
       this.state.sessionId = input.sessionId;
@@ -167,6 +183,9 @@ export class AgentRuntime implements Agent {
     this.state.status = "running";
     this.activeController = new AbortController();
     this.completionTracker.reset();
+    this.lastToolCallKey = null;
+    this.consecutiveToolCallCount = 0;
+    this.state.verificationAttempts = 0;
 
     this.state.messages.push({
       role: "user",
@@ -472,7 +491,7 @@ export class AgentRuntime implements Agent {
             }
 
             if (isFailure) {
-              const attempts = (this.state.verificationAttempts || 0) + 1;
+              const attempts: number = (this.state.verificationAttempts || 0) + 1;
               this.state.verificationAttempts = attempts;
 
               if (attempts >= this.maxVerificationAttempts) {

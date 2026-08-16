@@ -9,6 +9,8 @@ import type { ID } from "@fecode/shared";
 export interface Agent {
   run(input: AgentInput): AsyncIterable<AgentEvent>;
   cancel(): Promise<void>;
+  clear?(): void;
+  getCompletionSummary?(): TaskCompletionSummary;
 }
 
 export interface AgentInput {
@@ -73,3 +75,4 @@ export * from "./context/index.js";
 export * from "./editing/index.js";
 export * from "./strategy/index.js";
 export * from "./completion/index.js";
+export * from "./session/index.js";

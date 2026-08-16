@@ -44,6 +44,10 @@ export const App: React.FC<AppProps> = ({
   const [isGenerating, setIsGenerating] = useState(false);
   const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(null);
   const [approvalInput, setApprovalInput] = useState("");
+  const [taskCount, setTaskCount] = useState(0);
+  const [lastTaskStatus, setLastTaskStatus] = useState<
+    "idle" | "in_progress" | "completed" | "blocked" | "cancelled" | "pending"
+  >("idle");
 
   const handleExit = useCallback(() => {
     if (onExit) {
@@ -68,6 +72,7 @@ export const App: React.FC<AppProps> = ({
         if (isGenerating && agent) {
           agent.cancel().catch(() => {});
           setIsGenerating(false);
+          setLastTaskStatus("cancelled");
           setTurns((prev) => {
             if (prev.length === 0) return prev;
             const updated = [...prev];
@@ -100,8 +105,91 @@ export const App: React.FC<AppProps> = ({
     const trimmed = value.trim();
     if (!trimmed || isGenerating) return;
 
+    if (trimmed.startsWith("/")) {
+      const parts = trimmed.split(/\s+/);
+      const cmd = parts[0].toLowerCase();
+
+      if (cmd === "/help") {
+        setQuery("");
+        const helpText =
+          `Available commands:\n` +
+          `  /help    - Show available FeCode commands\n` +
+          `  /status  - Show current session information\n` +
+          `  /clear   - Clear conversation and task context\n` +
+          `  /exit    - Cleanly terminate the session\n`;
+        setTurns((prev) => [
+          ...prev,
+          {
+            id: `cmd-${Date.now()}`,
+            prompt: trimmed,
+            response: helpText,
+            status: "done"
+          }
+        ]);
+        return;
+      }
+
+      if (cmd === "/status") {
+        setQuery("");
+        const statusText =
+          `FeCode\n\n` +
+          `Provider:\n  ${providerName || "unknown"}\n\n` +
+          `Model:\n  ${modelName || "unknown"}\n\n` +
+          `Working directory:\n  ${cwd}\n\n` +
+          `Session:\n  ${taskCount} task${taskCount === 1 ? "" : "s"}\n\n` +
+          `Current task:\n  ${lastTaskStatus}\n`;
+        setTurns((prev) => [
+          ...prev,
+          {
+            id: `cmd-${Date.now()}`,
+            prompt: trimmed,
+            response: statusText,
+            status: "done"
+          }
+        ]);
+        return;
+      }
+
+      if (cmd === "/clear") {
+        setQuery("");
+        if (agent?.clear) {
+          agent.clear();
+        }
+        setTurns([
+          {
+            id: `cmd-${Date.now()}`,
+            prompt: trimmed,
+            response: "✓ Session context cleared.\n",
+            status: "done"
+          }
+        ]);
+        setLastTaskStatus("idle");
+        return;
+      }
+
+      if (cmd === "/exit" || cmd === "/quit") {
+        setQuery("");
+        handleExit();
+        return;
+      }
+
+      setQuery("");
+      setTurns((prev) => [
+        ...prev,
+        {
+          id: `cmd-${Date.now()}`,
+          prompt: trimmed,
+          response: `✗ Unknown command: ${cmd}. Type /help for available commands.\n`,
+          status: "done"
+        }
+      ]);
+      return;
+    }
+
     setQuery("");
     setIsGenerating(true);
+    setTaskCount((prev) => prev + 1);
+    setLastTaskStatus("in_progress");
 
     const turnId = `turn-${Date.now()}`;
     const newTurn: Turn = {
@@ -160,13 +248,27 @@ export const App: React.FC<AppProps> = ({
           );
         } else if (event.type === "tool_call") {
           toolCallNames.set(event.call.id, event.call.name);
+          let toolIndicator = `● ${event.call.name}`;
+          if (event.call.name === "search_files") {
+            toolIndicator = "● Exploring...";
+          } else if (event.call.name === "read_file") {
+            toolIndicator = "● Inspecting...";
+          } else if (
+            event.call.name === "write_file" ||
+            event.call.name === "edit_file"
+          ) {
+            toolIndicator = "● Implementing...";
+          } else if (event.call.name === "execute_command") {
+            toolIndicator = "● Verifying...";
+          }
+
           setTurns((prev) =>
             prev.map((t) =>
               t.id === turnId
                 ? {
                     ...t,
                     status: "streaming",
-                    response: t.response + `\n● ${event.call.name}\n`
+                    response: t.response + `\n${toolIndicator}\n`
                   }
                 : t
             )
@@ -274,6 +376,7 @@ export const App: React.FC<AppProps> = ({
             )
           );
         } else if (event.type === "task_summary") {
+          setLastTaskStatus(event.summary.status);
           let summaryText = "";
           if (
             event.summary.status === "completed" &&
@@ -314,6 +417,7 @@ export const App: React.FC<AppProps> = ({
           }
         } else if (event.type === "done") {
           setPendingApproval(null);
+          setLastTaskStatus((prev) => (prev === "in_progress" ? "completed" : prev));
           setTurns((prev) =>
             prev.map((t) =>
               t.id === turnId ? { ...t, status: "done" } : t
@@ -321,6 +425,7 @@ export const App: React.FC<AppProps> = ({
           );
         } else if (event.type === "error") {
           setPendingApproval(null);
+          setLastTaskStatus("blocked");
           setTurns((prev) =>
             prev.map((t) =>
               t.id === turnId
@@ -336,6 +441,7 @@ export const App: React.FC<AppProps> = ({
       }
     } catch (err: unknown) {
       setPendingApproval(null);
+      setLastTaskStatus("blocked");
       const message = err instanceof Error ? err.message : String(err);
       setTurns((prev) =>
         prev.map((t) =>

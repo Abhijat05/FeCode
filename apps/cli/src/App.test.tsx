@@ -369,4 +369,111 @@ describe("CLI App Component", () => {
     expect(frame).toContain("Remaining:");
     expect(frame).toContain("Run integration tests");
   });
+
+  it("handles /help command", async () => {
+    const mockAgent = new MockAgent();
+    const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+    await delay(50);
+
+    await typeAndSubmit(stdin, "/help");
+    await delay(100);
+
+    const frame = lastFrame();
+    expect(frame).toContain("Available commands:");
+    expect(frame).toContain("/help");
+    expect(frame).toContain("/status");
+    expect(frame).toContain("/clear");
+    expect(frame).toContain("/exit");
+  });
+
+  it("handles /status command without leaking secrets", async () => {
+    const mockAgent = new MockAgent();
+    const { lastFrame, stdin } = render(
+      <App
+        agent={mockAgent}
+        cwd="/test/workspace"
+        providerName="gemini"
+        modelName="gemini-2.5-flash"
+      />
+    );
+    await delay(50);
+
+    await typeAndSubmit(stdin, "/status");
+    await delay(100);
+
+    const frame = lastFrame();
+    expect(frame).toContain("FeCode");
+    expect(frame).toContain("Provider:");
+    expect(frame).toContain("gemini");
+    expect(frame).toContain("Model:");
+    expect(frame).toContain("gemini-2.5-flash");
+    expect(frame).toContain("Working directory:");
+    expect(frame).toContain("/test/workspace");
+    expect(frame).toContain("Session:");
+    expect(frame).not.toContain("sk-");
+    expect(frame).not.toContain("AIza");
+  });
+
+  it("handles /clear command", async () => {
+    const mockAgent = new MockAgent();
+    const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+    await delay(50);
+
+    await typeAndSubmit(stdin, "Hello turn");
+    await delay(100);
+    expect(lastFrame()).toContain("Response to: Hello turn");
+
+    await typeAndSubmit(stdin, "/clear");
+    await delay(100);
+
+    const frame = lastFrame();
+    expect(frame).toContain("✓ Session context cleared.");
+    expect(frame).not.toContain("Hello turn");
+  });
+
+  it("handles /exit command", async () => {
+    let exited = false;
+    const mockAgent = new MockAgent();
+    const { stdin } = render(
+      <App agent={mockAgent} cwd="/test" onExit={() => (exited = true)} />
+    );
+    await delay(50);
+
+    await typeAndSubmit(stdin, "/exit");
+    await delay(100);
+
+    expect(exited).toBe(true);
+  });
+
+  it("handles unknown slash commands", async () => {
+    const mockAgent = new MockAgent();
+    const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+    await delay(50);
+
+    await typeAndSubmit(stdin, "/unknown_cmd");
+    await delay(100);
+
+    const frame = lastFrame();
+    expect(frame).toContain("✗ Unknown command: /unknown_cmd. Type /help for available commands.");
+  });
+
+  it("safely ignores empty and whitespace-only input", async () => {
+    let callCount = 0;
+    const mockAgent = new MockAgent();
+    mockAgent.runFn = async function* () {
+      callCount++;
+      yield { type: "text", content: "Response" };
+      yield { type: "done" };
+    };
+
+    const { stdin } = render(<App agent={mockAgent} cwd="/test" />);
+    await delay(50);
+
+    await typeAndSubmit(stdin, "");
+    await delay(50);
+    await typeAndSubmit(stdin, "   ");
+    await delay(50);
+
+    expect(callCount).toBe(0);
+  });
 });
