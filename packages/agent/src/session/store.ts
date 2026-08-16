@@ -34,7 +34,8 @@ export class DefaultSessionStore implements SessionStore {
     const sanitizedData: PersistedSessionData = {
       ...session,
       version: 1,
-      updatedAt: new Date().toISOString(),
+      startedAt: session.startedAt || new Date().toISOString(),
+      updatedAt: session.updatedAt || new Date().toISOString(),
       messages: sanitizedMessages
     };
 
@@ -146,7 +147,12 @@ export class DefaultSessionStore implements SessionStore {
     return summaries.sort((a, b) => {
       const timeA = new Date(a.updatedAt).getTime();
       const timeB = new Date(b.updatedAt).getTime();
-      return timeB - timeA;
+
+      if (timeA !== timeB) {
+        return timeB - timeA;
+      }
+
+      return b.sessionId.localeCompare(a.sessionId);
     });
   }
 
