@@ -2,11 +2,15 @@ import * as fs from "fs/promises";
 import type { Tool, ToolContext, ToolResult } from "@fecode/models";
 import { resolveSafePath } from "./pathUtils.js";
 import { createUnifiedDiff } from "./diffUtils.js";
+import { writeAtomic } from "../editing/atomicWriter.js";
+import { isSecretFile } from "../editing/validator.js";
+import { createContentHash } from "../editing/hashUtils.js";
 
 export interface EditFileInput {
   path: string;
   oldText: string;
   newText: string;
+  expectedHash?: string;
 }
 
 export interface EditFileOutput {
@@ -16,6 +20,7 @@ export interface EditFileOutput {
   changed: boolean;
   reason?: string;
   diff?: string;
+  contentHash?: string;
 }
 
 export interface EditFileToolOptions {
@@ -96,6 +101,16 @@ export class EditFileTool
 
     const { targetPath, displayPath } = pathRes;
 
+    if (isSecretFile(displayPath)) {
+      return {
+        success: false,
+        error: {
+          message: `Editing secret files is prohibited (${displayPath}).`,
+          code: "SECRET_FILE"
+        }
+      };
+    }
+
     if (input.oldText === input.newText) {
       return {
         success: true,
@@ -122,6 +137,17 @@ export class EditFileTool
       }
 
       const originalContent = await fs.readFile(targetPath, "utf-8");
+      const currentHash = createContentHash(originalContent);
+
+      if (input.expectedHash && currentHash !== input.expectedHash) {
+        return {
+          success: false,
+          error: {
+            message: `File content has changed since context was selected (${displayPath}).`,
+            code: "EDIT_CONFLICT"
+          }
+        };
+      }
 
       const matchCount = countOccurrences(originalContent, input.oldText);
       if (matchCount === 0) {
@@ -176,7 +202,7 @@ export class EditFileTool
         };
       }
 
-      await fs.writeFile(targetPath, proposedContent, "utf-8");
+      await writeAtomic(targetPath, proposedContent, context.signal);
 
       return {
         success: true,
@@ -185,7 +211,8 @@ export class EditFileTool
           replacements: 1,
           bytesWritten,
           changed: true,
-          diff
+          diff,
+          contentHash: createContentHash(proposedContent)
         }
       };
     } catch (err: unknown) {

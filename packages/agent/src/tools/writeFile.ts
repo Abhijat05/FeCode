@@ -1,7 +1,8 @@
 import * as fs from "fs/promises";
-import * as path from "path";
 import type { Tool, ToolContext, ToolResult } from "@fecode/models";
 import { resolveSafePath } from "./pathUtils.js";
+import { writeAtomic } from "../editing/atomicWriter.js";
+import { isSecretFile } from "../editing/validator.js";
 
 export interface WriteFileInput {
   path: string;
@@ -71,6 +72,16 @@ export class WriteFileTool
 
     const { targetPath, displayPath } = pathRes;
 
+    if (isSecretFile(displayPath)) {
+      return {
+        success: false,
+        error: {
+          message: `Writing to secret files is prohibited (${displayPath}).`,
+          code: "SECRET_FILE"
+        }
+      };
+    }
+
     const bytesWritten = Buffer.byteLength(input.content, "utf-8");
     if (bytesWritten > this.maxBytes) {
       return {
@@ -103,8 +114,7 @@ export class WriteFileTool
         }
       }
 
-      await fs.mkdir(path.dirname(targetPath), { recursive: true });
-      await fs.writeFile(targetPath, input.content, "utf-8");
+      await writeAtomic(targetPath, input.content, context.signal);
 
       return {
         success: true,

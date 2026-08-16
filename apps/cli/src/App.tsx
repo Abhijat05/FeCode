@@ -386,7 +386,10 @@ export const App: React.FC<AppProps> = ({
           padding={1}
         >
           <Text bold color="yellow">
-            ⚠ FeCode wants to use a tool
+            {pendingApproval.toolName === "edit_file" ||
+            pendingApproval.toolName === "write_file"
+              ? "⚠ FeCode wants to edit a file"
+              : "⚠ FeCode wants to use a tool"}
           </Text>
           <Box marginY={1} flexDirection="column">
             <Text>

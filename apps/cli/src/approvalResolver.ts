@@ -23,7 +23,16 @@ export function formatApprovalArguments(
 
   if (typeof rec.diff === "string" && rec.diff) {
     const pathStr = typeof rec.path === "string" ? rec.path : "";
-    return `${pathStr ? `path: ${pathStr}\n` : ""}Diff:\n${rec.diff}`;
+    const lines = rec.diff.split("\n");
+    let displayDiff = rec.diff;
+    if (lines.length > 30) {
+      const half = 15;
+      const top = lines.slice(0, half);
+      const bottom = lines.slice(lines.length - half);
+      const omitted = lines.length - 30;
+      displayDiff = [...top, `... (${omitted} lines omitted) ...`, ...bottom].join("\n");
+    }
+    return `${pathStr ? `File:\n  ${pathStr}\n\n` : ""}Changes:\n${displayDiff}`;
   }
 
   const entries: string[] = [];

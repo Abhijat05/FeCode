@@ -62,10 +62,33 @@ export function createUnifiedDiff(
   }
 
   if (diffLines.length > maxDisplayLines) {
-    const truncatedLines = diffLines.slice(0, maxDisplayLines);
-    truncatedLines.push(`... (diff display truncated; ${diffLines.length - maxDisplayLines} lines omitted) ...`);
-    return truncatedLines.join("\n");
+    const half = Math.floor(maxDisplayLines / 2);
+    const topLines = diffLines.slice(0, half);
+    const bottomLines = diffLines.slice(diffLines.length - half);
+    const omitted = diffLines.length - maxDisplayLines;
+    return [
+      ...topLines,
+      `... (diff display truncated; ${omitted} lines omitted) ...`,
+      ...bottomLines
+    ].join("\n");
   }
 
   return diffLines.join("\n");
 }
+
+export function formatDiffForDisplay(
+  diff: string,
+  maxDisplayLines: number = 30
+): string {
+  if (!diff) return "";
+  const lines = diff.split("\n");
+  if (lines.length <= maxDisplayLines) {
+    return diff;
+  }
+  const half = Math.floor(maxDisplayLines / 2);
+  const top = lines.slice(0, half);
+  const bottom = lines.slice(lines.length - half);
+  const omitted = lines.length - maxDisplayLines;
+  return [...top, `... (${omitted} lines omitted) ...`, ...bottom].join("\n");
+}
+
