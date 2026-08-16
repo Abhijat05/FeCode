@@ -218,8 +218,8 @@ describe("FeCode Phase 5A — Multi-Task Session & Runtime Reuse", () => {
             name: "edit_file",
             arguments: {
               path: "src/utils/auth.ts",
-              oldText: "token !== null",
-              newText: "token !== undefined"
+              oldText: "Boolean(token && token.length > 5)",
+              newText: "Boolean(token && token.length > 8)"
             }
           }
         };

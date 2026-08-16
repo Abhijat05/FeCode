@@ -15,6 +15,7 @@ export interface ApprovalRequest {
   category: ToolPermissionCategory;
   arguments?: unknown;
   reason?: string;
+  changeReview?: unknown;
 }
 
 export type ApprovalDecision =

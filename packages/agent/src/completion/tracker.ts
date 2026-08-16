@@ -3,7 +3,8 @@ import type {
   TaskCompletionStatus,
   TaskCompletionSummary,
   TaskRequirement,
-  RequirementStatus
+  RequirementStatus,
+  FileChangeStats
 } from "./types.js";
 
 export class TaskCompletionTracker {
@@ -12,6 +13,7 @@ export class TaskCompletionTracker {
   private request?: string;
   private startedAt?: string;
   private modifiedFiles: Set<string> = new Set();
+  private fileChangesMap: Map<string, FileChangeStats> = new Map();
   private verifiedCommands: Set<string> = new Set();
   private failedCommands: Set<string> = new Set();
   private requirements: Map<string, TaskRequirement> = new Map();
@@ -40,7 +42,18 @@ export class TaskCompletionTracker {
 
   public recordFileModified(filePath: string): void {
     if (filePath && filePath.trim()) {
-      this.modifiedFiles.add(filePath.trim());
+      const clean = filePath.trim().replace(/\\/g, "/");
+      this.modifiedFiles.add(clean);
+      this.status = "in_progress";
+      this.isNoOp = false;
+    }
+  }
+
+  public recordFileChange(change: FileChangeStats): void {
+    if (change && change.path) {
+      const clean = change.path.trim().replace(/\\/g, "/");
+      this.modifiedFiles.add(clean);
+      this.fileChangesMap.set(clean, { ...change, path: clean });
       this.status = "in_progress";
       this.isNoOp = false;
     }
@@ -144,6 +157,10 @@ export class TaskCompletionTracker {
       }
     }
 
+    const fileChanges = Array.from(this.fileChangesMap.values()).sort((a, b) =>
+      a.path.localeCompare(b.path)
+    );
+
     return {
       taskId: this.taskId,
       taskIndex: this.taskIndex,
@@ -152,6 +169,7 @@ export class TaskCompletionTracker {
       startedAt: this.startedAt,
       completedAt: new Date().toISOString(),
       completedFiles: Array.from(this.modifiedFiles).sort(),
+      fileChanges: fileChanges.length > 0 ? fileChanges : undefined,
       verifiedCommands: Array.from(this.verifiedCommands).sort(),
       failedCommands:
         this.failedCommands.size > 0
@@ -177,7 +195,14 @@ export class TaskCompletionTracker {
       if (summary.request) {
         text += `\nRequest:\n  ${summary.request}\n`;
       }
-      if (summary.completedFiles.length > 0) {
+      if (summary.fileChanges && summary.fileChanges.length > 0) {
+        text += `\nChanged:\n${summary.fileChanges
+          .map(
+            (fc) =>
+              `  ${fc.path.padEnd(36)} +${fc.additions} -${fc.deletions}`
+          )
+          .join("\n")}\n`;
+      } else if (summary.completedFiles.length > 0) {
         text += `\nChanged:\n${summary.completedFiles.map((f) => `  ${f}`).join("\n")}\n`;
       }
       if (summary.verifiedCommands.length > 0) {
@@ -200,7 +225,14 @@ export class TaskCompletionTracker {
       if (summary.blockedReason) {
         text += `\nReason:\n  ${summary.blockedReason}\n`;
       }
-      if (summary.completedFiles.length > 0) {
+      if (summary.fileChanges && summary.fileChanges.length > 0) {
+        text += `\nChanged:\n${summary.fileChanges
+          .map(
+            (fc) =>
+              `  ${fc.path.padEnd(36)} +${fc.additions} -${fc.deletions}`
+          )
+          .join("\n")}\n`;
+      } else if (summary.completedFiles.length > 0) {
         text += `\nChanged:\n${summary.completedFiles.map((f) => `  ${f}`).join("\n")}\n`;
       }
       return text;
@@ -229,6 +261,7 @@ export class TaskCompletionTracker {
     this.request = undefined;
     this.startedAt = undefined;
     this.modifiedFiles.clear();
+    this.fileChangesMap.clear();
     this.verifiedCommands.clear();
     this.failedCommands.clear();
     this.requirements.clear();

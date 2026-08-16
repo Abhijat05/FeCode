@@ -200,4 +200,125 @@ export class SafeEditValidator {
       };
     }
   }
+
+  public async validateWrite(
+    filePath: string,
+    content: string,
+    cwd: string,
+    options: SafeEditOptions = {}
+  ): Promise<ValidatedEdit> {
+    if (options.signal?.aborted) {
+      return {
+        path: filePath,
+        targetPath: "",
+        displayPath: filePath,
+        originalContent: "",
+        proposedContent: "",
+        diff: "",
+        contentHash: "",
+        valid: false,
+        error: {
+          message: "Operation was cancelled.",
+          code: "CANCELLED"
+        }
+      };
+    }
+
+    const pathRes = resolveSafePath(cwd, filePath);
+    if ("error" in pathRes) {
+      return {
+        path: filePath,
+        targetPath: "",
+        displayPath: filePath,
+        originalContent: "",
+        proposedContent: "",
+        diff: "",
+        contentHash: "",
+        valid: false,
+        error: {
+          message: pathRes.error.message,
+          code: "PATH_OUT_OF_BOUNDS"
+        }
+      };
+    }
+
+    const { targetPath, displayPath } = pathRes;
+
+    if (isSecretFile(displayPath)) {
+      return {
+        path: filePath,
+        targetPath,
+        displayPath,
+        originalContent: "",
+        proposedContent: "",
+        diff: "",
+        contentHash: "",
+        valid: false,
+        error: {
+          message: `Writing to secret files is prohibited (${displayPath}).`,
+          code: "SECRET_FILE"
+        }
+      };
+    }
+
+    let originalContent = "";
+    let fileExists = false;
+
+    try {
+      const stats = await fs.stat(targetPath);
+      if (stats.isDirectory()) {
+        return {
+          path: filePath,
+          targetPath,
+          displayPath,
+          originalContent: "",
+          proposedContent: "",
+          diff: "",
+          contentHash: "",
+          valid: false,
+          error: {
+            message: `Cannot write to path because it is a directory: ${displayPath}`,
+            code: "EDIT_INVALID"
+          }
+        };
+      }
+      fileExists = true;
+      originalContent = await fs.readFile(targetPath, "utf-8");
+    } catch (err: unknown) {
+      const error = err as NodeJS.ErrnoException;
+      if (error.code !== "ENOENT") {
+        return {
+          path: filePath,
+          targetPath,
+          displayPath,
+          originalContent: "",
+          proposedContent: "",
+          diff: "",
+          contentHash: "",
+          valid: false,
+          error: {
+            message: error.message || "Failed to inspect file.",
+            code: "EDIT_INVALID"
+          }
+        };
+      }
+    }
+
+    const diff = createUnifiedDiff(
+      displayPath,
+      fileExists ? originalContent : "",
+      content
+    );
+
+    return {
+      path: filePath,
+      targetPath,
+      displayPath,
+      originalContent,
+      proposedContent: content,
+      diff,
+      contentHash: createContentHash(content),
+      valid: true
+    };
+  }
 }

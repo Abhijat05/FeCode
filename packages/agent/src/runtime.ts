@@ -30,6 +30,12 @@ import type { AgentPolicyRegistry } from "./policies/types.js";
 import { DefaultAgentPolicyRegistry } from "./policies/registry.js";
 import type { TaskPlan } from "./tasks/types.js";
 import { failTaskStep } from "./tasks/taskPlan.js";
+import { SafeEditValidator } from "./editing/validator.js";
+import {
+  calculateDiffStats,
+  createChangeReview,
+  type ChangeReviewFile
+} from "./editing/changeReview.js";
 
 export type AgentStatus =
   | "idle"
@@ -94,6 +100,7 @@ export class AgentRuntime implements Agent {
   private readonly codeContextSelector?: CodeContextSelector;
   private readonly executionStrategy: AgentExecutionStrategy;
   private readonly completionTracker: TaskCompletionTracker = new TaskCompletionTracker();
+  private readonly safeEditValidator: SafeEditValidator = new SafeEditValidator();
   private state: AgentState;
   private activeController: AbortController | null = null;
   private lastToolCallKey: string | null = null;
@@ -382,7 +389,13 @@ export class AgentRuntime implements Agent {
           };
 
           const tool = this.registry.get(call.name);
-          let result: ToolResult;
+          let result: ToolResult = {
+            success: false,
+            error: {
+              message: "Tool execution failed",
+              code: "UNEXPECTED_ERROR"
+            }
+          };
 
           const callKey = `${call.name}::${JSON.stringify(call.arguments || {})}`;
           if (this.lastToolCallKey === callKey) {
@@ -423,39 +436,168 @@ export class AgentRuntime implements Agent {
                 }
               };
             } else if (decision.type === "requires_approval") {
-              const approvalRequest: ApprovalRequest = {
-                id: `approval-${call.id}`,
-                toolName: tool.name,
-                category: tool.permissionCategory || "write",
-                arguments: call.arguments,
-                reason: decision.reason
-              };
+              let skipApproval = false;
+              let changeReview: unknown;
 
-              yield { type: "approval_required", request: approvalRequest };
+              if (call.name === "edit_file") {
+                const args = (call.arguments || {}) as {
+                  path?: string;
+                  oldText?: string;
+                  newText?: string;
+                  expectedHash?: string;
+                };
 
-              let approvalDecision: ApprovalDecision = {
-                approved: false,
-                reason: "Approval required but no resolver configured."
-              };
+                if (
+                  args.oldText !== undefined &&
+                  args.newText !== undefined &&
+                  args.oldText === args.newText
+                ) {
+                  // No-op edit: identical oldText and newText
+                  skipApproval = true;
+                  result = {
+                    success: true,
+                    output: {
+                      path: args.path || "",
+                      replacements: 0,
+                      bytesWritten: 0,
+                      changed: false,
+                      reason: "NO_CHANGE"
+                    }
+                  };
+                } else {
+                  const validated = await this.safeEditValidator.validateEdit(
+                    args.path || "",
+                    args.oldText || "",
+                    args.newText || "",
+                    toolContext.cwd,
+                    {
+                      expectedHash: args.expectedHash,
+                      signal: toolContext.signal
+                    }
+                  );
 
-              if (this.approvalResolver) {
-                approvalDecision = await this.approvalResolver.resolve(
-                  approvalRequest
+                  if (!validated.valid) {
+                    skipApproval = true;
+                    result = {
+                      success: false,
+                      error: validated.error
+                    };
+                  } else {
+                    const stats = calculateDiffStats(validated.diff);
+                    if (stats.additions === 0 && stats.deletions === 0) {
+                      // No-op (+0 -0)
+                      skipApproval = true;
+                      result = {
+                        success: true,
+                        output: {
+                          path: validated.displayPath,
+                          replacements: 0,
+                          bytesWritten: 0,
+                          changed: false,
+                          reason: "NO_CHANGE"
+                        }
+                      };
+                    } else {
+                      const fileReview: ChangeReviewFile = {
+                        path: validated.displayPath,
+                        operation: "modified",
+                        additions: stats.additions,
+                        deletions: stats.deletions,
+                        diff: validated.diff
+                      };
+                      changeReview = createChangeReview([fileReview]);
+                    }
+                  }
+                }
+              } else if (call.name === "write_file") {
+                const args = (call.arguments || {}) as {
+                  path?: string;
+                  content?: string;
+                };
+
+                const validated = await this.safeEditValidator.validateWrite(
+                  args.path || "",
+                  args.content || "",
+                  toolContext.cwd,
+                  { signal: toolContext.signal }
                 );
+
+                if (!validated.valid) {
+                  skipApproval = true;
+                  result = {
+                    success: false,
+                    error: validated.error
+                  };
+                } else if (
+                  validated.originalContent === validated.proposedContent &&
+                  validated.originalContent !== ""
+                ) {
+                  // No-op write: identical content
+                  skipApproval = true;
+                  result = {
+                    success: true,
+                    output: {
+                      path: validated.displayPath,
+                      created: false,
+                      overwritten: true,
+                      bytesWritten: Buffer.byteLength(
+                        validated.proposedContent,
+                        "utf-8"
+                      ),
+                      changed: false,
+                      reason: "NO_CHANGE"
+                    }
+                  };
+                } else {
+                  const stats = calculateDiffStats(validated.diff);
+                  const isNew = validated.originalContent === "";
+                  const fileReview: ChangeReviewFile = {
+                    path: validated.displayPath,
+                    operation: isNew ? "added" : "modified",
+                    additions: stats.additions,
+                    deletions: stats.deletions,
+                    diff: validated.diff
+                  };
+                  changeReview = createChangeReview([fileReview]);
+                }
               }
 
-              if (approvalDecision.approved) {
-                result = await this.executor.execute(call, toolContext);
-              } else {
-                result = {
-                  success: false,
-                  error: {
-                    message:
-                      approvalDecision.reason ||
-                      "Tool execution was denied by the user.",
-                    code: "PERMISSION_DENIED"
-                  }
+              if (!skipApproval) {
+                const approvalRequest: ApprovalRequest = {
+                  id: `approval-${call.id}`,
+                  toolName: tool.name,
+                  category: tool.permissionCategory || "write",
+                  arguments: call.arguments,
+                  reason: decision.reason,
+                  changeReview
                 };
+
+                yield { type: "approval_required", request: approvalRequest };
+
+                let approvalDecision: ApprovalDecision = {
+                  approved: false,
+                  reason: "Approval required but no resolver configured."
+                };
+
+                if (this.approvalResolver) {
+                  approvalDecision = await this.approvalResolver.resolve(
+                    approvalRequest
+                  );
+                }
+
+                if (approvalDecision.approved) {
+                  result = await this.executor.execute(call, toolContext);
+                } else {
+                  result = {
+                    success: false,
+                    error: {
+                      message:
+                        approvalDecision.reason ||
+                        "Tool execution was denied by the user.",
+                      code: "PERMISSION_DENIED"
+                    }
+                  };
+                }
               }
             } else {
               result = await this.executor.execute(call, toolContext);
@@ -479,7 +621,27 @@ export class AgentRuntime implements Agent {
             this.lastToolCallKey = null;
             this.consecutiveToolCallCount = 0;
             const targetPath = (call.arguments as { path?: string })?.path;
-            if (targetPath) {
+            const output = result.output as {
+              path?: string;
+              diff?: string;
+              changed?: boolean;
+              created?: boolean;
+            };
+
+            if (targetPath && output?.changed !== false) {
+              const diffStr = output?.diff || "";
+              const stats = calculateDiffStats(diffStr);
+              const op =
+                call.name === "write_file" && output?.created
+                  ? "added"
+                  : "modified";
+              this.completionTracker.recordFileChange({
+                path: targetPath,
+                operation: op,
+                additions: stats.additions,
+                deletions: stats.deletions
+              });
+            } else if (targetPath) {
               this.completionTracker.recordFileModified(targetPath);
             }
             if (this.repositoryExplorer) {

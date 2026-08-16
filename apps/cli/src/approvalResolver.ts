@@ -3,6 +3,27 @@ import type {
   ApprovalRequest,
   ApprovalResolver
 } from "@fecode/models";
+import {
+  ChangeReviewFormatter,
+  type ChangeReview,
+  type ChangeReviewFile
+} from "@fecode/agent";
+
+export function formatApprovalRequest(request: ApprovalRequest): string {
+  if (request.changeReview) {
+    return ChangeReviewFormatter.format(
+      request.changeReview as ChangeReview | ChangeReviewFile
+    );
+  }
+
+  if (request.toolName === "execute_command") {
+    const args = request.arguments as { command?: string } | undefined;
+    const cmd = args?.command || "";
+    return `⚠ FeCode wants to run a command\n\nCommand:\n  ${cmd}\n`;
+  }
+
+  return formatApprovalArguments(request.arguments);
+}
 
 export function formatApprovalArguments(
   args: unknown,

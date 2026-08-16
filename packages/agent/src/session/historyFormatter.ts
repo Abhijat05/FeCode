@@ -92,7 +92,15 @@ export class SessionHistoryFormatter {
 
       if (task.status === "completed") {
         text += `   Completed\n`;
-        if (task.completedFiles && task.completedFiles.length > 0) {
+        if (task.fileChanges && task.fileChanges.length > 0) {
+          const fileItems = task.fileChanges
+            .slice(0, maxFiles)
+            .map((fc) => `${fc.path} +${fc.additions} -${fc.deletions}`);
+          if (task.fileChanges.length > maxFiles) {
+            fileItems.push(`+${task.fileChanges.length - maxFiles} more`);
+          }
+          text += `   Changed: ${fileItems.join(", ")}\n`;
+        } else if (task.completedFiles && task.completedFiles.length > 0) {
           const files = truncateList(task.completedFiles, maxFiles);
           text += `   Changed: ${files.join(", ")}\n`;
         }
@@ -167,7 +175,13 @@ export class SessionHistoryFormatter {
     }
 
     if (task.status === "completed") {
-      if (task.completedFiles && task.completedFiles.length > 0) {
+      if (task.fileChanges && task.fileChanges.length > 0) {
+        const changes = task.fileChanges.slice(0, maxFiles);
+        text += `Changed:\n${changes.map((fc) => `  ${fc.path}\n  +${fc.additions} -${fc.deletions}`).join("\n\n")}\n\n`;
+        if (task.fileChanges.length > maxFiles) {
+          text += `  ... (+${task.fileChanges.length - maxFiles} more files)\n\n`;
+        }
+      } else if (task.completedFiles && task.completedFiles.length > 0) {
         const files = truncateList(task.completedFiles, maxFiles);
         text += `Changed:\n${files.map((f) => `  ${f}`).join("\n")}\n\n`;
       }
@@ -184,7 +198,13 @@ export class SessionHistoryFormatter {
       if (task.blockedReason) {
         text += `Reason:\n  ${sanitizeText(task.blockedReason)}\n\n`;
       }
-      if (task.completedFiles && task.completedFiles.length > 0) {
+      if (task.fileChanges && task.fileChanges.length > 0) {
+        const changes = task.fileChanges.slice(0, maxFiles);
+        text += `Changed:\n${changes.map((fc) => `  ${fc.path}\n  +${fc.additions} -${fc.deletions}`).join("\n\n")}\n\n`;
+        if (task.fileChanges.length > maxFiles) {
+          text += `  ... (+${task.fileChanges.length - maxFiles} more files)\n\n`;
+        }
+      } else if (task.completedFiles && task.completedFiles.length > 0) {
         const files = truncateList(task.completedFiles, maxFiles);
         text += `Changed:\n${files.map((f) => `  ${f}`).join("\n")}\n\n`;
       }

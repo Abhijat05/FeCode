@@ -18,6 +18,13 @@ export interface TaskRequirement {
   targetPath?: string;
 }
 
+export interface FileChangeStats {
+  path: string;
+  operation: "added" | "modified" | "deleted";
+  additions: number;
+  deletions: number;
+}
+
 export interface TaskCompletionSummary {
   taskId?: string;
   taskIndex?: number;
@@ -26,6 +33,7 @@ export interface TaskCompletionSummary {
   startedAt?: string;
   completedAt?: string;
   completedFiles: string[];
+  fileChanges?: FileChangeStats[];
   verifiedCommands: string[];
   failedCommands?: string[];
   completedRequirements: string[];

@@ -15,7 +15,8 @@ import {
 import type { ApprovalRequest, ModelMessage } from "@fecode/models";
 import {
   InteractiveApprovalResolver,
-  formatApprovalArguments
+  formatApprovalArguments,
+  formatApprovalRequest
 } from "./approvalResolver.js";
 
 export interface Turn {
@@ -780,7 +781,9 @@ export const App: React.FC<AppProps> = ({
               if (fullSummary.request) {
                 summaryText += `\nRequest:\n  ${fullSummary.request}\n`;
               }
-              if (fullSummary.completedFiles.length > 0) {
+              if (fullSummary.fileChanges && fullSummary.fileChanges.length > 0) {
+                summaryText += `\nChanged:\n${fullSummary.fileChanges.map((fc) => `  ${fc.path.padEnd(36)} +${fc.additions} -${fc.deletions}`).join("\n")}\n`;
+              } else if (fullSummary.completedFiles.length > 0) {
                 summaryText += `\nChanged:\n${fullSummary.completedFiles.map((f) => `  ${f}`).join("\n")}\n`;
               }
               if (fullSummary.verifiedCommands.length > 0) {
@@ -801,7 +804,9 @@ export const App: React.FC<AppProps> = ({
             if (fullSummary.blockedReason) {
               summaryText += `\nReason:\n  ${fullSummary.blockedReason}\n`;
             }
-            if (fullSummary.completedFiles.length > 0) {
+            if (fullSummary.fileChanges && fullSummary.fileChanges.length > 0) {
+              summaryText += `\nChanged:\n${fullSummary.fileChanges.map((fc) => `  ${fc.path.padEnd(36)} +${fc.additions} -${fc.deletions}`).join("\n")}\n`;
+            } else if (fullSummary.completedFiles.length > 0) {
               summaryText += `\nChanged:\n${fullSummary.completedFiles.map((f) => `  ${f}`).join("\n")}\n`;
             }
           }
@@ -955,31 +960,40 @@ export const App: React.FC<AppProps> = ({
           borderColor="yellow"
           padding={1}
         >
-          <Text bold color="yellow">
-            {pendingApproval.toolName === "edit_file" ||
-            pendingApproval.toolName === "write_file"
-              ? "⚠ FeCode wants to edit a file"
-              : "⚠ FeCode wants to use a tool"}
-          </Text>
-          <Box marginY={1} flexDirection="column">
-            <Text>
-              <Text color="gray">Tool:</Text> {pendingApproval.toolName}
-            </Text>
-            <Text>
-              <Text color="gray">Category:</Text> {pendingApproval.category}
-            </Text>
-            {pendingApproval.reason && (
-              <Text>
-                <Text color="gray">Reason:</Text> {pendingApproval.reason}
+          {pendingApproval.changeReview ? (
+            <Box flexDirection="column">
+              <Text color="cyan">
+                {formatApprovalRequest(pendingApproval)}
               </Text>
-            )}
-            <Text>
-              <Text color="gray">Arguments:</Text>
-            </Text>
-            <Text color="cyan">
-              {formatApprovalArguments(pendingApproval.arguments)}
-            </Text>
-          </Box>
+            </Box>
+          ) : (
+            <Box marginY={1} flexDirection="column">
+              <Text bold color="yellow">
+                {pendingApproval.toolName === "execute_command"
+                  ? "⚠ FeCode wants to run a command"
+                  : "⚠ FeCode wants to use a tool"}
+              </Text>
+              <Box marginY={1} flexDirection="column">
+                <Text>
+                  <Text color="gray">Tool:</Text> {pendingApproval.toolName}
+                </Text>
+                <Text>
+                  <Text color="gray">Category:</Text> {pendingApproval.category}
+                </Text>
+                {pendingApproval.reason && (
+                  <Text>
+                    <Text color="gray">Reason:</Text> {pendingApproval.reason}
+                  </Text>
+                )}
+                <Text>
+                  <Text color="gray">Arguments:</Text>
+                </Text>
+                <Text color="cyan">
+                  {formatApprovalArguments(pendingApproval.arguments)}
+                </Text>
+              </Box>
+            </Box>
+          )}
           <Box marginTop={1}>
             <Text bold color="yellow">
               Allow? [y/N]:{" "}

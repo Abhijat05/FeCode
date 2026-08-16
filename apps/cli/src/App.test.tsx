@@ -168,7 +168,7 @@ describe("CLI App Component", () => {
     expect(finalFrame).toContain("✓ tool");
   });
 
-  it("renders file edit approval specifically with '⚠ FeCode wants to edit a file'", async () => {
+  it("renders file edit approval specifically with structured change review", async () => {
     const mockAgent = new MockAgent();
     const resolver = new InteractiveApprovalResolver();
 
@@ -180,8 +180,21 @@ describe("CLI App Component", () => {
           toolName: "edit_file",
           category: "write",
           arguments: {
-            path: "src/components/Header.tsx",
-            diff: "--- src/components/Header.tsx\n+++ src/components/Header.tsx\n@@ -1,2 @@\n-old\n+new"
+            path: "src/components/Header.tsx"
+          },
+          changeReview: {
+            files: [
+              {
+                path: "src/components/Header.tsx",
+                operation: "modified",
+                additions: 1,
+                deletions: 1,
+                diff: "--- src/components/Header.tsx\n+++ src/components/Header.tsx\n@@ -1,2 @@\n-old\n+new"
+              }
+            ],
+            totalAddedLines: 1,
+            totalRemovedLines: 1,
+            truncated: false
           },
           reason: "File modification requires approval"
         }
@@ -213,9 +226,10 @@ describe("CLI App Component", () => {
     await delay(100);
 
     const frame = lastFrame();
-    expect(frame).toContain("⚠ FeCode wants to edit a file");
+    expect(frame).toContain("⚠ FeCode wants to modify a file");
     expect(frame).toContain("src/components/Header.tsx");
-    expect(frame).toContain("Changes:");
+    expect(frame).toContain("Change:");
+    expect(frame).toContain("+1 -1");
     expect(frame).toContain("+new");
   });
 
