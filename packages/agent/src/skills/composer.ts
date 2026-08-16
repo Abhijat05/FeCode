@@ -18,6 +18,7 @@ export interface ComposeSystemPromptOptions {
   activeSkillsContext?: string;
   explorationResult?: ExplorationResult | string;
   codeContext?: CodeContextResult | string;
+  strategyGuidance?: string;
 }
 
 export function composeSystemPrompt(options: ComposeSystemPromptOptions = {}): string {
@@ -139,6 +140,10 @@ export function composeSystemPrompt(options: ComposeSystemPromptOptions = {}): s
     } else {
       sections.push(result.content);
     }
+  }
+
+  if (options.strategyGuidance && options.strategyGuidance.trim().length > 0) {
+    sections.push(`## Execution Strategy Guidance\n\n${options.strategyGuidance.trim()}`);
   }
 
   return sections.join("\n\n");

@@ -69,3 +69,4 @@ export * from "./tasks/index.js";
 export * from "./exploration/index.js";
 export * from "./context/index.js";
 export * from "./editing/index.js";
+export * from "./strategy/index.js";

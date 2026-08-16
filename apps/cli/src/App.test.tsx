@@ -161,4 +161,91 @@ describe("CLI App Component", () => {
     const finalFrame = lastFrame();
     expect(finalFrame).toContain("✓ tool");
   });
+
+  it("renders file edit approval specifically with '⚠ FeCode wants to edit a file'", async () => {
+    const mockAgent = new MockAgent();
+    const resolver = new InteractiveApprovalResolver();
+
+    mockAgent.runFn = async function* () {
+      yield {
+        type: "approval_required",
+        request: {
+          id: "req-edit-1",
+          toolName: "edit_file",
+          category: "write",
+          arguments: {
+            path: "src/components/Header.tsx",
+            diff: "--- src/components/Header.tsx\n+++ src/components/Header.tsx\n@@ -1,2 @@\n-old\n+new"
+          },
+          reason: "File modification requires approval"
+        }
+      };
+
+      const decision = await resolver.resolve({
+        id: "req-edit-1",
+        toolName: "edit_file",
+        category: "write",
+        arguments: { path: "src/components/Header.tsx" }
+      });
+
+      if (decision.approved) {
+        yield {
+          type: "tool_result",
+          result: { success: true, output: { path: "src/components/Header.tsx" } },
+          callId: "call-edit-1"
+        };
+      }
+      yield { type: "done" };
+    };
+
+    const { lastFrame, stdin } = render(
+      <App agent={mockAgent} approvalResolver={resolver} cwd="/test" />
+    );
+    await delay(50);
+
+    await typeAndSubmit(stdin, "Edit header");
+    await delay(100);
+
+    const frame = lastFrame();
+    expect(frame).toContain("⚠ FeCode wants to edit a file");
+    expect(frame).toContain("src/components/Header.tsx");
+    expect(frame).toContain("Changes:");
+    expect(frame).toContain("+new");
+  });
+
+  it("renders plan creation and step lifecycle cleanly without chain-of-thought", async () => {
+    const mockAgent = new MockAgent();
+
+    mockAgent.runFn = async function* () {
+      yield {
+        type: "plan_created",
+        plan: {
+          id: "plan-1",
+          goal: "Add authentication",
+          currentStep: 0,
+          steps: [
+            { id: "step-1", description: "Inspect auth utils", status: "pending" },
+            { id: "step-2", description: "Implement auth provider", status: "pending" }
+          ]
+        }
+      };
+      yield { type: "plan_step_started", planId: "plan-1", stepId: "step-1", stepIndex: 0 };
+      yield { type: "plan_step_completed", planId: "plan-1", stepId: "step-1", stepIndex: 0 };
+      yield { type: "text", content: "Auth structure inspected." };
+      yield { type: "done" };
+    };
+
+    const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+    await delay(50);
+
+    await typeAndSubmit(stdin, "Add authentication");
+    await delay(200);
+
+    const frame = lastFrame();
+    expect(frame).toContain("Plan: Add authentication");
+    expect(frame).toContain("Inspect auth utils");
+    expect(frame).toContain("Auth structure inspected.");
+    // Verify no internal reasoning/chain-of-thought dumped
+    expect(frame).not.toContain("chain-of-thought");
+  });
 });

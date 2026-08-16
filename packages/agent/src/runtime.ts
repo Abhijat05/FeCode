@@ -49,6 +49,8 @@ export interface AgentState {
 
 import type { RepositoryExplorer, ExplorationResult } from "./exploration/types.js";
 import type { CodeContextSelector, CodeContextResult } from "./context/types.js";
+import type { AgentExecutionStrategy } from "./strategy/types.js";
+import { DefaultAgentExecutionStrategy } from "./strategy/executionStrategy.js";
 
 export interface AgentRuntimeOptions {
   systemPrompt?: string;
@@ -65,6 +67,7 @@ export interface AgentRuntimeOptions {
   policyRegistry?: AgentPolicyRegistry;
   repositoryExplorer?: RepositoryExplorer;
   codeContextSelector?: CodeContextSelector;
+  executionStrategy?: AgentExecutionStrategy;
 }
 
 export class AgentRuntime implements Agent {
@@ -82,6 +85,7 @@ export class AgentRuntime implements Agent {
   private readonly policyRegistry: AgentPolicyRegistry;
   private readonly repositoryExplorer?: RepositoryExplorer;
   private readonly codeContextSelector?: CodeContextSelector;
+  private readonly executionStrategy: AgentExecutionStrategy;
   private state: AgentState;
   private activeController: AbortController | null = null;
 
@@ -102,6 +106,7 @@ export class AgentRuntime implements Agent {
     this.policyRegistry = options.policyRegistry || new DefaultAgentPolicyRegistry();
     this.repositoryExplorer = options.repositoryExplorer;
     this.codeContextSelector = options.codeContextSelector;
+    this.executionStrategy = options.executionStrategy || new DefaultAgentExecutionStrategy();
 
     this.state = {
       sessionId:
@@ -152,8 +157,14 @@ export class AgentRuntime implements Agent {
       content: input.message
     });
 
+    const decision = this.executionStrategy.decide(input.message, {
+      projectProfile: this.projectContext?.profile,
+      activePlan: this.state.activePlan,
+      verificationAttempts: this.state.verificationAttempts
+    });
+
     let explorationResult: ExplorationResult | undefined;
-    if (this.repositoryExplorer) {
+    if (decision.shouldExplore && this.repositoryExplorer) {
       try {
         explorationResult = await this.repositoryExplorer.explore(input.message, {
           cwd: input.cwd,
@@ -166,7 +177,7 @@ export class AgentRuntime implements Agent {
     }
 
     let codeContext: CodeContextResult | undefined;
-    if (this.codeContextSelector && explorationResult) {
+    if (decision.shouldSelectContext && this.codeContextSelector && explorationResult) {
       try {
         codeContext = await this.codeContextSelector.selectContext(
           explorationResult,
@@ -199,7 +210,8 @@ export class AgentRuntime implements Agent {
         activeSkills: activated.skills,
         tokenOptimizer: this.tokenOptimizer,
         explorationResult,
-        codeContext
+        codeContext,
+        strategyGuidance: decision.guidance
       });
     } else {
       activeSystemPrompt = composeSystemPrompt({
@@ -208,7 +220,8 @@ export class AgentRuntime implements Agent {
         projectContext: this.projectContext,
         activeSkills: [],
         explorationResult,
-        codeContext
+        codeContext,
+        strategyGuidance: decision.guidance
       });
     }
 
