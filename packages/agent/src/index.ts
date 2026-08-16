@@ -6,11 +6,16 @@ import type {
 } from "@fecode/models";
 import type { ID } from "@fecode/shared";
 
+import type { TaskPlan } from "./tasks/types.js";
+import type { TaskCompletionSummary } from "./completion/types.js";
+import type { PersistedSessionData } from "./session/types.js";
+
 export interface Agent {
   run(input: AgentInput): AsyncIterable<AgentEvent>;
   cancel(): Promise<void>;
   clear?(): void;
   getCompletionSummary?(): TaskCompletionSummary;
+  restoreSession?(data: PersistedSessionData): void;
 }
 
 export interface AgentInput {
@@ -20,9 +25,6 @@ export interface AgentInput {
   provider?: ModelProvider;
   id?: ID;
 }
-
-import type { TaskPlan } from "./tasks/types.js";
-import type { TaskCompletionSummary } from "./completion/types.js";
 
 export type AgentEvent =
   | { type: "text"; content: string }

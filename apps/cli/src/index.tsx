@@ -3,7 +3,17 @@ import React from "react";
 import { render } from "ink";
 import { loadConfig } from "@fecode/shared";
 import { createModelProvider } from "@fecode/models";
-import { AgentRuntime, createDefaultToolRegistry, ProjectDetector, SkillLoader, DefaultSkillRegistry, SkillActivationPolicy } from "@fecode/agent";
+import * as fs from "fs/promises";
+import {
+  AgentRuntime,
+  createDefaultToolRegistry,
+  ProjectDetector,
+  SkillLoader,
+  DefaultSkillRegistry,
+  SkillActivationPolicy,
+  DefaultSessionStore,
+  type PersistedSessionData
+} from "@fecode/agent";
 import type { ProjectContext } from "@fecode/agent";
 import { App } from "./App.js";
 import { InteractiveApprovalResolver } from "./approvalResolver.js";
@@ -12,9 +22,44 @@ async function main(): Promise<void> {
   let agent: AgentRuntime | undefined;
   let configError: string | undefined;
   let projectContext: ProjectContext | undefined;
+  let initialSessionData: PersistedSessionData | undefined;
 
-  const cwd = process.cwd();
-  
+  const sessionStore = new DefaultSessionStore();
+  let cwd = process.cwd();
+
+  // Parse --resume / -r argument
+  const args = process.argv.slice(2);
+  let resumeId: string | undefined;
+  for (let i = 0; i < args.length; i++) {
+    if ((args[i] === "--resume" || args[i] === "-r") && i + 1 < args.length) {
+      resumeId = args[i + 1];
+      break;
+    }
+  }
+
+  if (resumeId) {
+    try {
+      initialSessionData = await sessionStore.load(resumeId);
+      cwd = initialSessionData.workingDirectory;
+      try {
+        await fs.stat(cwd);
+      } catch {
+        console.error(
+          `⚠ Working directory no longer exists\n\nPath:\n  ${cwd}\n`
+        );
+        process.exit(1);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("Session not found") || msg.includes("corrupted") || msg.includes("version")) {
+        console.error(`✗ ${msg}`);
+      } else {
+        console.error(`✗ Unable to load session\n\nSession:\n  ${resumeId}\n\nReason:\n  ${msg}\n`);
+      }
+      process.exit(1);
+    }
+  }
+
   try {
     const detector = new ProjectDetector();
     projectContext = await detector.detect(cwd);
@@ -23,8 +68,9 @@ async function main(): Promise<void> {
   }
 
   const config = loadConfig();
-  const providerName = config.provider;
-  const modelName = config.model;
+  // Precedence: explicit config > persisted session config > defaults
+  const providerName = config.provider || initialSessionData?.provider || "gemini";
+  const modelName = config.model || initialSessionData?.model || (providerName === "openai" ? "gpt-4o" : "gemini-2.5-flash");
 
   const approvalResolver = new InteractiveApprovalResolver();
 
@@ -47,7 +93,7 @@ async function main(): Promise<void> {
     const skillLoader = new SkillLoader();
     const skillRegistry = new DefaultSkillRegistry();
     const activationPolicy = new SkillActivationPolicy();
-    
+
     // We can lazily load built-in skills asynchronously.
     const builtinSkills = await skillLoader.discoverSkills(skillLoader.getBuiltinSkillsDir());
     for (const s of builtinSkills) {
@@ -59,8 +105,13 @@ async function main(): Promise<void> {
       approvalResolver,
       projectContext,
       skillRegistry,
-      activationPolicy
+      activationPolicy,
+      sessionId: initialSessionData?.sessionId
     });
+
+    if (initialSessionData) {
+      agent.restoreSession(initialSessionData);
+    }
   } catch (err: unknown) {
     configError = err instanceof Error ? err.message : String(err);
   }
@@ -74,6 +125,8 @@ async function main(): Promise<void> {
       approvalResolver={approvalResolver}
       configError={configError}
       projectContext={projectContext}
+      sessionStore={sessionStore}
+      initialSessionData={initialSessionData}
     />
   );
 }

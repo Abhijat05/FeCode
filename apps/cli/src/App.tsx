@@ -1,9 +1,17 @@
 import React, { useState, useCallback } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import TextInput from "ink-text-input";
-import type { Agent } from "@fecode/agent";
-import type { ProjectContext } from "@fecode/agent";
-import type { ApprovalRequest } from "@fecode/models";
+import * as fs from "fs/promises";
+import {
+  DefaultSessionStore,
+  type Agent,
+  type ProjectContext,
+  type SessionStore,
+  type PersistedSessionData,
+  type SessionStatus,
+  type TaskCompletionSummary
+} from "@fecode/agent";
+import type { ApprovalRequest, ModelMessage } from "@fecode/models";
 import {
   InteractiveApprovalResolver,
   formatApprovalArguments
@@ -26,6 +34,8 @@ export interface AppProps {
   onExit?: () => void;
   configError?: string;
   projectContext?: ProjectContext;
+  sessionStore?: SessionStore;
+  initialSessionData?: PersistedSessionData;
 }
 
 export const App: React.FC<AppProps> = ({
@@ -36,26 +46,121 @@ export const App: React.FC<AppProps> = ({
   approvalResolver,
   onExit,
   configError,
-  projectContext
+  projectContext,
+  sessionStore,
+  initialSessionData
 }) => {
   const { exit } = useApp();
   const [query, setQuery] = useState("");
-  const [turns, setTurns] = useState<Turn[]>([]);
+  const [store] = useState<SessionStore>(
+    () => sessionStore || new DefaultSessionStore()
+  );
+  const [sessionId, setSessionId] = useState<string>(
+    () =>
+      initialSessionData?.sessionId ||
+      `session-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
+  );
+  const [taskCount, setTaskCount] = useState<number>(
+    () => initialSessionData?.taskCount || 0
+  );
+  const [completedSummaries, setCompletedSummaries] = useState<
+    TaskCompletionSummary[]
+  >(() => initialSessionData?.completedTaskSummaries || []);
+  const [lastTaskStatus, setLastTaskStatus] = useState<SessionStatus>(
+    () => initialSessionData?.status || "idle"
+  );
+  const startedAtRef = React.useRef<Date>(
+    initialSessionData?.startedAt
+      ? new Date(initialSessionData.startedAt)
+      : new Date()
+  );
+
+  const [turns, setTurns] = useState<Turn[]>(() => {
+    if (
+      !initialSessionData?.messages ||
+      initialSessionData.messages.length === 0
+    ) {
+      return [];
+    }
+    const initialTurns: Turn[] = [];
+    let currentPrompt = "";
+    for (const msg of initialSessionData.messages) {
+      if (msg.role === "user" && typeof msg.content === "string") {
+        currentPrompt = msg.content;
+      } else if (msg.role === "assistant" && typeof msg.content === "string") {
+        initialTurns.push({
+          id: `turn-${initialTurns.length + 1}`,
+          prompt: currentPrompt || "Turn",
+          response: msg.content,
+          status: "done"
+        });
+        currentPrompt = "";
+      }
+    }
+    return initialTurns;
+  });
+
   const [isGenerating, setIsGenerating] = useState(false);
-  const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(null);
+  const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(
+    null
+  );
   const [approvalInput, setApprovalInput] = useState("");
-  const [taskCount, setTaskCount] = useState(0);
-  const [lastTaskStatus, setLastTaskStatus] = useState<
-    "idle" | "in_progress" | "completed" | "blocked" | "cancelled" | "pending"
-  >("idle");
+
+  const persistState = useCallback(
+    async (
+      status: SessionStatus,
+      newSummary?: TaskCompletionSummary,
+      explicitTaskCount?: number
+    ) => {
+      try {
+        const summaries = newSummary
+          ? [...completedSummaries, newSummary]
+          : completedSummaries;
+        if (newSummary) {
+          setCompletedSummaries(summaries);
+        }
+        const state = (
+          agent as { getState?: () => { messages?: ModelMessage[] } }
+        )?.getState?.();
+        const messages = state?.messages || [];
+        await store.save({
+          version: 1,
+          sessionId,
+          workingDirectory: cwd,
+          provider: providerName || "unknown",
+          model: modelName || "unknown",
+          startedAt: startedAtRef.current.toISOString(),
+          updatedAt: new Date().toISOString(),
+          taskCount:
+            explicitTaskCount !== undefined ? explicitTaskCount : taskCount,
+          status,
+          completedTaskSummaries: summaries,
+          messages
+        });
+      } catch {
+        // Silently catch persistence error
+      }
+    },
+    [
+      store,
+      sessionId,
+      cwd,
+      providerName,
+      modelName,
+      taskCount,
+      completedSummaries,
+      agent
+    ]
+  );
 
   const handleExit = useCallback(() => {
+    persistState(lastTaskStatus).catch(() => {});
     if (onExit) {
       onExit();
     } else {
       exit();
     }
-  }, [onExit, exit]);
+  }, [onExit, exit, persistState, lastTaskStatus]);
 
   useInput(
     (input, key) => {
@@ -73,6 +178,7 @@ export const App: React.FC<AppProps> = ({
           agent.cancel().catch(() => {});
           setIsGenerating(false);
           setLastTaskStatus("cancelled");
+          persistState("cancelled").catch(() => {});
           setTurns((prev) => {
             if (prev.length === 0) return prev;
             const updated = [...prev];
@@ -113,10 +219,13 @@ export const App: React.FC<AppProps> = ({
         setQuery("");
         const helpText =
           `Available commands:\n` +
-          `  /help    - Show available FeCode commands\n` +
-          `  /status  - Show current session information\n` +
-          `  /clear   - Clear conversation and task context\n` +
-          `  /exit    - Cleanly terminate the session\n`;
+          `  /help                - Show available FeCode commands\n` +
+          `  /status              - Show current session information\n` +
+          `  /sessions            - List saved sessions\n` +
+          `  /resume <sessionId>  - Resume a saved session\n` +
+          `  /delete-session <id> - Delete a saved session\n` +
+          `  /clear               - Clear conversation and task context\n` +
+          `  /exit                - Cleanly terminate the session\n`;
         setTurns((prev) => [
           ...prev,
           {
@@ -150,6 +259,184 @@ export const App: React.FC<AppProps> = ({
         return;
       }
 
+      if (cmd === "/sessions") {
+        setQuery("");
+        try {
+          const summaries = await store.list();
+          let text = "";
+          if (summaries.length === 0) {
+            text = "No saved sessions found.\n";
+          } else {
+            text =
+              "Sessions:\n\n" +
+              summaries
+                .map(
+                  (s) =>
+                    `  ${s.sessionId}\n    ${s.workingDirectory}\n    ${s.model}\n    ${s.taskCount} task${s.taskCount === 1 ? "" : "s"}`
+                )
+                .join("\n\n") +
+              "\n";
+          }
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: text,
+              status: "done"
+            }
+          ]);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: `✗ Failed to list sessions: ${msg}\n`,
+              status: "done"
+            }
+          ]);
+        }
+        return;
+      }
+
+      if (cmd === "/resume") {
+        setQuery("");
+        const targetId = parts[1];
+        if (!targetId) {
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: "✗ Please specify a sessionId: /resume <sessionId>\n",
+              status: "done"
+            }
+          ]);
+          return;
+        }
+
+        try {
+          const loaded = await store.load(targetId);
+          try {
+            await fs.stat(loaded.workingDirectory);
+          } catch {
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: `⚠ Working directory no longer exists\n\nPath:\n  ${loaded.workingDirectory}\n`,
+                status: "done"
+              }
+            ]);
+            return;
+          }
+
+          setSessionId(loaded.sessionId);
+          setTaskCount(loaded.taskCount);
+          setCompletedSummaries(loaded.completedTaskSummaries || []);
+          setLastTaskStatus(loaded.status);
+          if (agent?.restoreSession) {
+            agent.restoreSession(loaded);
+          }
+
+          const restoredTurns: Turn[] = [];
+          let curPrompt = "";
+          for (const msg of loaded.messages || []) {
+            if (msg.role === "user" && typeof msg.content === "string") {
+              curPrompt = msg.content;
+            } else if (
+              msg.role === "assistant" &&
+              typeof msg.content === "string"
+            ) {
+              restoredTurns.push({
+                id: `turn-${restoredTurns.length + 1}`,
+                prompt: curPrompt || "Turn",
+                response: msg.content,
+                status: "done"
+              });
+              curPrompt = "";
+            }
+          }
+          restoredTurns.push({
+            id: `cmd-${Date.now()}`,
+            prompt: trimmed,
+            response: `✓ Resumed session: ${loaded.sessionId}\n`,
+            status: "done"
+          });
+          setTurns(restoredTurns);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: `✗ ${msg}\n`,
+              status: "done"
+            }
+          ]);
+        }
+        return;
+      }
+
+      if (cmd === "/delete-session") {
+        setQuery("");
+        const targetId = parts[1];
+        if (!targetId) {
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response:
+                "✗ Please specify a sessionId: /delete-session <sessionId>\n",
+              status: "done"
+            }
+          ]);
+          return;
+        }
+
+        try {
+          const deleted = await store.delete(targetId);
+          if (deleted) {
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: `✓ Deleted session: ${targetId}\n`,
+                status: "done"
+              }
+            ]);
+          } else {
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: `✗ Session not found: ${targetId}\n`,
+                status: "done"
+              }
+            ]);
+          }
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: `✗ Failed to delete session: ${msg}\n`,
+              status: "done"
+            }
+          ]);
+        }
+        return;
+      }
+
       if (cmd === "/clear") {
         setQuery("");
         if (agent?.clear) {
@@ -164,6 +451,7 @@ export const App: React.FC<AppProps> = ({
           }
         ]);
         setLastTaskStatus("idle");
+        persistState("idle").catch(() => {});
         return;
       }
 
@@ -188,7 +476,8 @@ export const App: React.FC<AppProps> = ({
 
     setQuery("");
     setIsGenerating(true);
-    setTaskCount((prev) => prev + 1);
+    const nextTaskCount = taskCount + 1;
+    setTaskCount(nextTaskCount);
     setLastTaskStatus("in_progress");
 
     const turnId = `turn-${Date.now()}`;
@@ -377,6 +666,7 @@ export const App: React.FC<AppProps> = ({
           );
         } else if (event.type === "task_summary") {
           setLastTaskStatus(event.summary.status);
+          persistState(event.summary.status, event.summary).catch(() => {});
           let summaryText = "";
           if (
             event.summary.status === "completed" &&
@@ -418,6 +708,7 @@ export const App: React.FC<AppProps> = ({
         } else if (event.type === "done") {
           setPendingApproval(null);
           setLastTaskStatus((prev) => (prev === "in_progress" ? "completed" : prev));
+          persistState("completed").catch(() => {});
           setTurns((prev) =>
             prev.map((t) =>
               t.id === turnId ? { ...t, status: "done" } : t
@@ -426,6 +717,7 @@ export const App: React.FC<AppProps> = ({
         } else if (event.type === "error") {
           setPendingApproval(null);
           setLastTaskStatus("blocked");
+          persistState("blocked").catch(() => {});
           setTurns((prev) =>
             prev.map((t) =>
               t.id === turnId
@@ -442,6 +734,7 @@ export const App: React.FC<AppProps> = ({
     } catch (err: unknown) {
       setPendingApproval(null);
       setLastTaskStatus("blocked");
+      persistState("blocked").catch(() => {});
       const message = err instanceof Error ? err.message : String(err);
       setTurns((prev) =>
         prev.map((t) =>

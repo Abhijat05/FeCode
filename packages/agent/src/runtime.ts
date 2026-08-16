@@ -53,6 +53,7 @@ import type { AgentExecutionStrategy } from "./strategy/types.js";
 import { DefaultAgentExecutionStrategy } from "./strategy/executionStrategy.js";
 import { TaskCompletionTracker } from "./completion/tracker.js";
 import type { TaskCompletionSummary } from "./completion/types.js";
+import type { PersistedSessionData } from "./session/types.js";
 
 export interface AgentRuntimeOptions {
   systemPrompt?: string;
@@ -173,6 +174,23 @@ export class AgentRuntime implements Agent {
     if (this.codeContextSelector) {
       this.codeContextSelector.invalidate();
     }
+  }
+
+  public restoreSession(data: PersistedSessionData): void {
+    this.state.sessionId = data.sessionId;
+    this.state.messages = [...(data.messages || [])];
+    this.state.status =
+      data.status === "completed"
+        ? "completed"
+        : data.status === "cancelled"
+          ? "cancelled"
+          : data.status === "blocked"
+            ? "failed"
+            : "idle";
+    this.state.verificationAttempts = 0;
+    this.lastToolCallKey = null;
+    this.consecutiveToolCallCount = 0;
+    this.completionTracker.reset();
   }
 
   async *run(input: AgentInput): AsyncIterable<AgentEvent> {

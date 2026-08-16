@@ -1,7 +1,13 @@
 import React from "react";
 import { describe, it, expect } from "vitest";
 import { render } from "ink-testing-library";
-import type { Agent, AgentEvent, AgentInput } from "@fecode/agent";
+import type {
+  Agent,
+  AgentEvent,
+  AgentInput,
+  PersistedSessionData,
+  SessionStore
+} from "@fecode/agent";
 import { App } from "./App.js";
 import { InteractiveApprovalResolver } from "./approvalResolver.js";
 
@@ -475,5 +481,97 @@ describe("CLI App Component", () => {
     await delay(50);
 
     expect(callCount).toBe(0);
+  });
+
+  it("handles /sessions, /resume, and /delete-session commands", async () => {
+    const mockAgent = new MockAgent();
+
+    // Mock SessionStore
+    const savedSessions = new Map<string, PersistedSessionData>();
+    savedSessions.set("session-demo-1", {
+      version: 1,
+      sessionId: "session-demo-1",
+      workingDirectory: process.cwd(),
+      provider: "gemini",
+      model: "gemini-2.5-flash",
+      startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      taskCount: 2,
+      status: "completed",
+      completedTaskSummaries: [],
+      messages: [
+        { role: "user", content: "Previous question" },
+        { role: "assistant", content: "Previous answer" }
+      ]
+    });
+    savedSessions.set("session-missing-dir", {
+      version: 1,
+      sessionId: "session-missing-dir",
+      workingDirectory: "/nonexistent/path/for/test",
+      provider: "gemini",
+      model: "gemini-2.5-flash",
+      startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      taskCount: 1,
+      status: "completed",
+      completedTaskSummaries: [],
+      messages: []
+    });
+
+    const mockStore: SessionStore = {
+      save: async (session: PersistedSessionData) => {
+        savedSessions.set(session.sessionId, session);
+      },
+      load: async (sessionId: string) => {
+        const found = savedSessions.get(sessionId);
+        if (!found) throw new Error(`Session not found: ${sessionId}`);
+        return found;
+      },
+      list: async () => {
+        return Array.from(savedSessions.values()).map((s) => ({
+          sessionId: s.sessionId,
+          workingDirectory: s.workingDirectory,
+          provider: s.provider,
+          model: s.model,
+          startedAt: s.startedAt,
+          updatedAt: s.updatedAt,
+          taskCount: s.taskCount,
+          status: s.status
+        }));
+      },
+      delete: async (sessionId: string) => {
+        return savedSessions.delete(sessionId);
+      }
+    };
+
+    const { lastFrame, stdin } = render(
+      <App agent={mockAgent} cwd={process.cwd()} sessionStore={mockStore} />
+    );
+    await delay(50);
+
+    // Test /sessions
+    await typeAndSubmit(stdin, "/sessions");
+    await delay(100);
+    expect(lastFrame()).toContain("Sessions:");
+    expect(lastFrame()).toContain("session-demo-1");
+    expect(lastFrame()).toContain("gemini-2.5-flash");
+
+    // Test /resume with missing directory
+    await typeAndSubmit(stdin, "/resume session-missing-dir");
+    await delay(100);
+    expect(lastFrame()).toContain("⚠ Working directory no longer exists");
+
+    // Test /resume session-demo-1
+    await typeAndSubmit(stdin, "/resume session-demo-1");
+    await delay(100);
+    const resumeFrame = lastFrame();
+    expect(resumeFrame).toContain("✓ Resumed session: session-demo-1");
+    expect(resumeFrame).toContain("Previous question");
+    expect(resumeFrame).toContain("Previous answer");
+
+    // Test /delete-session session-demo-1
+    await typeAndSubmit(stdin, "/delete-session session-demo-1");
+    await delay(100);
+    expect(lastFrame()).toContain("✓ Deleted session: session-demo-1");
   });
 });
