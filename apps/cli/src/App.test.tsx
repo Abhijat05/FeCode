@@ -388,6 +388,10 @@ describe("CLI App Component", () => {
     expect(frame).toContain("Available commands:");
     expect(frame).toContain("/help");
     expect(frame).toContain("/status");
+    expect(frame).toContain("/history");
+    expect(frame).toContain("/tasks");
+    expect(frame).toContain("/task");
+    expect(frame).toContain("/sessions");
     expect(frame).toContain("/clear");
     expect(frame).toContain("/exit");
   });
@@ -433,8 +437,94 @@ describe("CLI App Component", () => {
     await delay(100);
 
     const frame = lastFrame();
-    expect(frame).toContain("✓ Session context cleared.");
+    expect(frame).toContain("✓ Conversation cleared");
+    expect(frame).toContain("Session history remains available through:");
     expect(frame).not.toContain("Hello turn");
+  });
+
+  it("handles /history, /tasks, and /task commands", async () => {
+    const mockAgent = new MockAgent();
+    const initialSessionData: PersistedSessionData = {
+      version: 1,
+      sessionId: "session-hist-test",
+      workingDirectory: process.cwd(),
+      provider: "gemini",
+      model: "gemini-2.5-flash",
+      startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      taskCount: 2,
+      status: "completed",
+      completedTaskSummaries: [
+        {
+          taskIndex: 1,
+          request: "Add login validation",
+          status: "completed",
+          completedFiles: ["src/components/LoginForm.tsx"],
+          verifiedCommands: ["npm test"],
+          completedRequirements: [],
+          remainingRequirements: []
+        },
+        {
+          taskIndex: 2,
+          request: "Fix auth tests",
+          status: "blocked",
+          blockedReason: "Verification failed after 3 attempts",
+          completedFiles: [],
+          verifiedCommands: [],
+          completedRequirements: [],
+          remainingRequirements: ["Integration test suite"]
+        }
+      ],
+      messages: []
+    };
+
+    const { lastFrame, stdin } = render(
+      <App
+        agent={mockAgent}
+        cwd={process.cwd()}
+        initialSessionData={initialSessionData}
+      />
+    );
+    await delay(50);
+
+    // Test /history
+    await typeAndSubmit(stdin, "/history");
+    await delay(100);
+    const histFrame = lastFrame();
+    expect(histFrame).toContain("Session History");
+    expect(histFrame).toContain("Fix auth tests");
+    expect(histFrame).toContain("Add login validation");
+
+    // Test /tasks
+    await typeAndSubmit(stdin, "/tasks");
+    await delay(100);
+    const tasksFrame = lastFrame();
+    expect(tasksFrame).toContain("Tasks");
+    expect(tasksFrame).toContain("✓ 1  Add login validation");
+    expect(tasksFrame).toContain("⚠ 2  Fix auth tests");
+
+    // Test /task (no active task)
+    await typeAndSubmit(stdin, "/task");
+    await delay(100);
+    expect(lastFrame()).toContain("Current Task");
+    expect(lastFrame()).toContain("No active task.");
+
+    // Test /task 1
+    await typeAndSubmit(stdin, "/task 1");
+    await delay(100);
+    const t1Frame = lastFrame();
+    expect(t1Frame).toContain("Task 1");
+    expect(t1Frame).toContain("Status:");
+    expect(t1Frame).toContain("completed");
+    expect(t1Frame).toContain("Request:");
+    expect(t1Frame).toContain("Add login validation");
+    expect(t1Frame).toContain("Changed:");
+    expect(t1Frame).toContain("src/components/LoginForm.tsx");
+
+    // Test /task 99 (invalid)
+    await typeAndSubmit(stdin, "/task 99");
+    await delay(100);
+    expect(lastFrame()).toContain("✗ Task not found: 99");
   });
 
   it("handles /exit command", async () => {
@@ -498,7 +588,17 @@ describe("CLI App Component", () => {
       updatedAt: new Date().toISOString(),
       taskCount: 2,
       status: "completed",
-      completedTaskSummaries: [],
+      completedTaskSummaries: [
+        {
+          taskIndex: 1,
+          request: "Previous task 1",
+          status: "completed",
+          completedFiles: [],
+          verifiedCommands: [],
+          completedRequirements: [],
+          remainingRequirements: []
+        }
+      ],
       messages: [
         { role: "user", content: "Previous question" },
         { role: "assistant", content: "Previous answer" }
@@ -536,7 +636,8 @@ describe("CLI App Component", () => {
           startedAt: s.startedAt,
           updatedAt: s.updatedAt,
           taskCount: s.taskCount,
-          status: s.status
+          status: s.status,
+          latestTaskSummary: s.completedTaskSummaries?.[0]
         }));
       },
       delete: async (sessionId: string) => {
@@ -552,7 +653,7 @@ describe("CLI App Component", () => {
     // Test /sessions
     await typeAndSubmit(stdin, "/sessions");
     await delay(100);
-    expect(lastFrame()).toContain("Sessions:");
+    expect(lastFrame()).toContain("Saved Sessions");
     expect(lastFrame()).toContain("session-demo-1");
     expect(lastFrame()).toContain("gemini-2.5-flash");
 
@@ -565,9 +666,10 @@ describe("CLI App Component", () => {
     await typeAndSubmit(stdin, "/resume session-demo-1");
     await delay(100);
     const resumeFrame = lastFrame();
-    expect(resumeFrame).toContain("✓ Resumed session: session-demo-1");
-    expect(resumeFrame).toContain("Previous question");
-    expect(resumeFrame).toContain("Previous answer");
+    expect(resumeFrame).toContain("Resumed session");
+    expect(resumeFrame).toContain("session-demo-1");
+    expect(resumeFrame).toContain("Previous tasks:");
+    expect(resumeFrame).toContain("✓ Previous task 1");
 
     // Test /delete-session session-demo-1
     await typeAndSubmit(stdin, "/delete-session session-demo-1");

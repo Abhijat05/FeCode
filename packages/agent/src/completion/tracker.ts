@@ -7,22 +7,55 @@ import type {
 } from "./types.js";
 
 export class TaskCompletionTracker {
+  private taskId?: string;
+  private taskIndex?: number;
+  private request?: string;
+  private startedAt?: string;
   private modifiedFiles: Set<string> = new Set();
   private verifiedCommands: Set<string> = new Set();
+  private failedCommands: Set<string> = new Set();
   private requirements: Map<string, TaskRequirement> = new Map();
   private status: TaskCompletionStatus = "pending";
   private blockedReason?: string;
+  private isNoOp = false;
+
+  public setRequest(request: string): void {
+    this.request = request;
+    if (!this.startedAt) {
+      this.startedAt = new Date().toISOString();
+    }
+  }
+
+  public setTaskIndex(index: number): void {
+    this.taskIndex = index;
+  }
+
+  public setTaskId(id: string): void {
+    this.taskId = id;
+  }
+
+  public setNoOp(noOp: boolean): void {
+    this.isNoOp = noOp;
+  }
 
   public recordFileModified(filePath: string): void {
     if (filePath && filePath.trim()) {
       this.modifiedFiles.add(filePath.trim());
       this.status = "in_progress";
+      this.isNoOp = false;
     }
   }
 
   public recordCommandVerified(command: string): void {
     if (command && command.trim()) {
       this.verifiedCommands.add(command.trim());
+      this.failedCommands.delete(command.trim());
+    }
+  }
+
+  public recordCommandFailed(command: string): void {
+    if (command && command.trim()) {
+      this.failedCommands.add(command.trim());
     }
   }
 
@@ -112,18 +145,38 @@ export class TaskCompletionTracker {
     }
 
     return {
+      taskId: this.taskId,
+      taskIndex: this.taskIndex,
+      request: this.request,
       status: this.status,
+      startedAt: this.startedAt,
+      completedAt: new Date().toISOString(),
       completedFiles: Array.from(this.modifiedFiles).sort(),
       verifiedCommands: Array.from(this.verifiedCommands).sort(),
+      failedCommands:
+        this.failedCommands.size > 0
+          ? Array.from(this.failedCommands).sort()
+          : undefined,
       completedRequirements: completedReqs.sort(),
       remainingRequirements: remainingReqs.sort(),
-      blockedReason: this.blockedReason
+      blockedReason: this.blockedReason,
+      isNoOp: this.isNoOp
     };
   }
 
   public formatSummary(summary: TaskCompletionSummary): string {
     if (summary.status === "completed") {
+      if (summary.isNoOp) {
+        return (
+          `✓ No changes needed\n\n` +
+          `The requested behavior is already implemented.\n`
+        );
+      }
+
       let text = "✓ Task completed\n";
+      if (summary.request) {
+        text += `\nRequest:\n  ${summary.request}\n`;
+      }
       if (summary.completedFiles.length > 0) {
         text += `\nChanged:\n${summary.completedFiles.map((f) => `  ${f}`).join("\n")}\n`;
       }
@@ -135,30 +188,52 @@ export class TaskCompletionTracker {
 
     if (summary.status === "blocked") {
       let text = "⚠ Task blocked\n";
+      if (summary.request) {
+        text += `\nRequest:\n  ${summary.request}\n`;
+      }
+      if (summary.completedRequirements.length > 0) {
+        text += `\nCompleted:\n${summary.completedRequirements.map((r) => `  ✓ ${r}`).join("\n")}\n`;
+      }
+      if (summary.remainingRequirements.length > 0) {
+        text += `\nRemaining:\n${summary.remainingRequirements.map((r) => `  ⚠ ${r}`).join("\n")}\n`;
+      }
       if (summary.blockedReason) {
         text += `\nReason:\n  ${summary.blockedReason}\n`;
       }
       if (summary.completedFiles.length > 0) {
         text += `\nChanged:\n${summary.completedFiles.map((f) => `  ${f}`).join("\n")}\n`;
       }
-      if (summary.remainingRequirements.length > 0) {
-        text += `\nRemaining:\n${summary.remainingRequirements.map((r) => `  ${r}`).join("\n")}\n`;
-      }
       return text;
     }
 
     if (summary.status === "cancelled") {
-      return "⚠ Task cancelled\n";
+      let text = "⚠ Task cancelled\n";
+      if (summary.request) {
+        text += `\nRequest:\n  ${summary.request}\n`;
+      }
+      if (summary.completedRequirements.length > 0) {
+        text += `\nCompleted:\n${summary.completedRequirements.map((r) => `  ✓ ${r}`).join("\n")}\n`;
+      }
+      if (summary.remainingRequirements.length > 0) {
+        text += `\nRemaining:\n${summary.remainingRequirements.map((r) => `  ⚠ ${r}`).join("\n")}\n`;
+      }
+      return text;
     }
 
     return `● Task in progress\n`;
   }
 
   public reset(): void {
+    this.taskId = undefined;
+    this.taskIndex = undefined;
+    this.request = undefined;
+    this.startedAt = undefined;
     this.modifiedFiles.clear();
     this.verifiedCommands.clear();
+    this.failedCommands.clear();
     this.requirements.clear();
     this.status = "pending";
     this.blockedReason = undefined;
+    this.isNoOp = false;
   }
 }

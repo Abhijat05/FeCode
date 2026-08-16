@@ -4,6 +4,7 @@ import TextInput from "ink-text-input";
 import * as fs from "fs/promises";
 import {
   DefaultSessionStore,
+  SessionHistoryFormatter,
   type Agent,
   type ProjectContext,
   type SessionStore,
@@ -69,6 +70,9 @@ export const App: React.FC<AppProps> = ({
   const [lastTaskStatus, setLastTaskStatus] = useState<SessionStatus>(
     () => initialSessionData?.status || "idle"
   );
+  const [activeRequest, setActiveRequest] = useState<string | undefined>(
+    undefined
+  );
   const startedAtRef = React.useRef<Date>(
     initialSessionData?.startedAt
       ? new Date(initialSessionData.startedAt)
@@ -76,28 +80,19 @@ export const App: React.FC<AppProps> = ({
   );
 
   const [turns, setTurns] = useState<Turn[]>(() => {
-    if (
-      !initialSessionData?.messages ||
-      initialSessionData.messages.length === 0
-    ) {
-      return [];
-    }
-    const initialTurns: Turn[] = [];
-    let currentPrompt = "";
-    for (const msg of initialSessionData.messages) {
-      if (msg.role === "user" && typeof msg.content === "string") {
-        currentPrompt = msg.content;
-      } else if (msg.role === "assistant" && typeof msg.content === "string") {
-        initialTurns.push({
-          id: `turn-${initialTurns.length + 1}`,
-          prompt: currentPrompt || "Turn",
-          response: msg.content,
+    if (initialSessionData) {
+      return [
+        {
+          id: `init-${Date.now()}`,
+          prompt: `--resume ${initialSessionData.sessionId}`,
+          response: SessionHistoryFormatter.formatResumeSummary(
+            initialSessionData
+          ),
           status: "done"
-        });
-        currentPrompt = "";
-      }
+        }
+      ];
     }
-    return initialTurns;
+    return [];
   });
 
   const [isGenerating, setIsGenerating] = useState(false);
@@ -178,7 +173,20 @@ export const App: React.FC<AppProps> = ({
           agent.cancel().catch(() => {});
           setIsGenerating(false);
           setLastTaskStatus("cancelled");
-          persistState("cancelled").catch(() => {});
+          setActiveRequest(undefined);
+
+          const cancelledSummary: TaskCompletionSummary = {
+            taskIndex: taskCount,
+            request: activeRequest || "Task",
+            status: "cancelled",
+            completedFiles: [],
+            verifiedCommands: [],
+            completedRequirements: [],
+            remainingRequirements: []
+          };
+          setCompletedSummaries((prev) => [...prev, cancelledSummary]);
+          persistState("cancelled", cancelledSummary).catch(() => {});
+
           setTurns((prev) => {
             if (prev.length === 0) return prev;
             const updated = [...prev];
@@ -221,10 +229,13 @@ export const App: React.FC<AppProps> = ({
           `Available commands:\n` +
           `  /help                - Show available FeCode commands\n` +
           `  /status              - Show current session information\n` +
+          `  /history             - Show recent session task history\n` +
+          `  /tasks               - List summary of session tasks\n` +
+          `  /task [number]       - Show current task or details of a specific task\n` +
           `  /sessions            - List saved sessions\n` +
           `  /resume <sessionId>  - Resume a saved session\n` +
           `  /delete-session <id> - Delete a saved session\n` +
-          `  /clear               - Clear conversation and task context\n` +
+          `  /clear               - Clear conversation context while preserving history\n` +
           `  /exit                - Cleanly terminate the session\n`;
         setTurns((prev) => [
           ...prev,
@@ -240,13 +251,22 @@ export const App: React.FC<AppProps> = ({
 
       if (cmd === "/status") {
         setQuery("");
-        const statusText =
-          `FeCode\n\n` +
-          `Provider:\n  ${providerName || "unknown"}\n\n` +
-          `Model:\n  ${modelName || "unknown"}\n\n` +
-          `Working directory:\n  ${cwd}\n\n` +
-          `Session:\n  ${taskCount} task${taskCount === 1 ? "" : "s"}\n\n` +
-          `Current task:\n  ${lastTaskStatus}\n`;
+        const completedCount = completedSummaries.filter(
+          (s) => s.status === "completed"
+        ).length;
+        const blockedCount = completedSummaries.filter(
+          (s) => s.status === "blocked"
+        ).length;
+        const statusText = SessionHistoryFormatter.formatSessionStatus({
+          sessionId,
+          workingDirectory: cwd,
+          provider: providerName || "unknown",
+          model: modelName || "unknown",
+          taskCount,
+          completedCount,
+          blockedCount,
+          currentStatus: lastTaskStatus
+        });
         setTurns((prev) => [
           ...prev,
           {
@@ -259,24 +279,106 @@ export const App: React.FC<AppProps> = ({
         return;
       }
 
+      if (cmd === "/history") {
+        setQuery("");
+        const historyText = SessionHistoryFormatter.formatHistory(
+          completedSummaries
+        );
+        setTurns((prev) => [
+          ...prev,
+          {
+            id: `cmd-${Date.now()}`,
+            prompt: trimmed,
+            response: historyText,
+            status: "done"
+          }
+        ]);
+        return;
+      }
+
+      if (cmd === "/tasks") {
+        setQuery("");
+        const tasksText = SessionHistoryFormatter.formatTaskList(
+          completedSummaries
+        );
+        setTurns((prev) => [
+          ...prev,
+          {
+            id: `cmd-${Date.now()}`,
+            prompt: trimmed,
+            response: tasksText,
+            status: "done"
+          }
+        ]);
+        return;
+      }
+
+      if (cmd === "/task") {
+        setQuery("");
+        const targetNumStr = parts[1];
+        if (targetNumStr) {
+          const num = parseInt(targetNumStr, 10);
+          if (isNaN(num) || num < 1 || num > completedSummaries.length) {
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: `✗ Task not found: ${targetNumStr}\n`,
+                status: "done"
+              }
+            ]);
+            return;
+          }
+          const taskDetail = SessionHistoryFormatter.formatTaskDetail(
+            completedSummaries[num - 1],
+            num
+          );
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: taskDetail,
+              status: "done"
+            }
+          ]);
+          return;
+        }
+
+        let currentDetail = "";
+        if (isGenerating) {
+          currentDetail = SessionHistoryFormatter.formatCurrentTask(
+            {
+              status: "in_progress",
+              completedFiles: [],
+              verifiedCommands: [],
+              completedRequirements: [],
+              remainingRequirements: [],
+              request: activeRequest
+            },
+            activeRequest
+          );
+        } else {
+          currentDetail = SessionHistoryFormatter.formatCurrentTask(null);
+        }
+        setTurns((prev) => [
+          ...prev,
+          {
+            id: `cmd-${Date.now()}`,
+            prompt: trimmed,
+            response: currentDetail,
+            status: "done"
+          }
+        ]);
+        return;
+      }
+
       if (cmd === "/sessions") {
         setQuery("");
         try {
           const summaries = await store.list();
-          let text = "";
-          if (summaries.length === 0) {
-            text = "No saved sessions found.\n";
-          } else {
-            text =
-              "Sessions:\n\n" +
-              summaries
-                .map(
-                  (s) =>
-                    `  ${s.sessionId}\n    ${s.workingDirectory}\n    ${s.model}\n    ${s.taskCount} task${s.taskCount === 1 ? "" : "s"}`
-                )
-                .join("\n\n") +
-              "\n";
-          }
+          const text = SessionHistoryFormatter.formatSessionsList(summaries);
           setTurns((prev) => [
             ...prev,
             {
@@ -342,31 +444,17 @@ export const App: React.FC<AppProps> = ({
             agent.restoreSession(loaded);
           }
 
-          const restoredTurns: Turn[] = [];
-          let curPrompt = "";
-          for (const msg of loaded.messages || []) {
-            if (msg.role === "user" && typeof msg.content === "string") {
-              curPrompt = msg.content;
-            } else if (
-              msg.role === "assistant" &&
-              typeof msg.content === "string"
-            ) {
-              restoredTurns.push({
-                id: `turn-${restoredTurns.length + 1}`,
-                prompt: curPrompt || "Turn",
-                response: msg.content,
-                status: "done"
-              });
-              curPrompt = "";
+          const resumeSummary =
+            SessionHistoryFormatter.formatResumeSummary(loaded);
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: resumeSummary,
+              status: "done"
             }
-          }
-          restoredTurns.push({
-            id: `cmd-${Date.now()}`,
-            prompt: trimmed,
-            response: `✓ Resumed session: ${loaded.sessionId}\n`,
-            status: "done"
-          });
-          setTurns(restoredTurns);
+          ]);
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           setTurns((prev) => [
@@ -446,7 +534,11 @@ export const App: React.FC<AppProps> = ({
           {
             id: `cmd-${Date.now()}`,
             prompt: trimmed,
-            response: "✓ Session context cleared.\n",
+            response:
+              "✓ Conversation cleared\n\n" +
+              "Session history remains available through:\n" +
+              "  /history\n" +
+              "  /tasks\n",
             status: "done"
           }
         ]);
@@ -478,6 +570,7 @@ export const App: React.FC<AppProps> = ({
     setIsGenerating(true);
     const nextTaskCount = taskCount + 1;
     setTaskCount(nextTaskCount);
+    setActiveRequest(trimmed);
     setLastTaskStatus("in_progress");
 
     const turnId = `turn-${Date.now()}`;
@@ -665,31 +758,51 @@ export const App: React.FC<AppProps> = ({
             )
           );
         } else if (event.type === "task_summary") {
-          setLastTaskStatus(event.summary.status);
-          persistState(event.summary.status, event.summary).catch(() => {});
+          const fullSummary: TaskCompletionSummary = {
+            ...event.summary,
+            taskIndex: nextTaskCount,
+            request: trimmed
+          };
+          setLastTaskStatus(fullSummary.status);
+          setCompletedSummaries((prev) => {
+            const filtered = prev.filter((p) => p.taskIndex !== nextTaskCount);
+            return [...filtered, fullSummary];
+          });
+          persistState(fullSummary.status, fullSummary, nextTaskCount).catch(() => {});
+
           let summaryText = "";
-          if (
-            event.summary.status === "completed" &&
-            (event.summary.completedFiles.length > 0 ||
-              event.summary.verifiedCommands.length > 0)
-          ) {
-            summaryText = `\n✓ Task completed\n`;
-            if (event.summary.completedFiles.length > 0) {
-              summaryText += `\nChanged:\n${event.summary.completedFiles.map((f) => `  ${f}`).join("\n")}\n`;
+          if (fullSummary.status === "completed") {
+            if (fullSummary.isNoOp) {
+              summaryText =
+                "\n✓ No changes needed\n\nThe requested behavior is already implemented.\n";
+            } else {
+              summaryText = "\n✓ Task completed\n";
+              if (fullSummary.request) {
+                summaryText += `\nRequest:\n  ${fullSummary.request}\n`;
+              }
+              if (fullSummary.completedFiles.length > 0) {
+                summaryText += `\nChanged:\n${fullSummary.completedFiles.map((f) => `  ${f}`).join("\n")}\n`;
+              }
+              if (fullSummary.verifiedCommands.length > 0) {
+                summaryText += `\nVerified:\n${fullSummary.verifiedCommands.map((c) => `  ${c}`).join("\n")}\n`;
+              }
             }
-            if (event.summary.verifiedCommands.length > 0) {
-              summaryText += `\nVerified:\n${event.summary.verifiedCommands.map((c) => `  ${c}`).join("\n")}\n`;
+          } else if (fullSummary.status === "blocked") {
+            summaryText = "\n⚠ Task blocked\n";
+            if (fullSummary.request) {
+              summaryText += `\nRequest:\n  ${fullSummary.request}\n`;
             }
-          } else if (event.summary.status === "blocked") {
-            summaryText = `\n⚠ Task blocked\n`;
-            if (event.summary.blockedReason) {
-              summaryText += `\nReason:\n  ${event.summary.blockedReason}\n`;
+            if (fullSummary.completedRequirements.length > 0) {
+              summaryText += `\nCompleted:\n${fullSummary.completedRequirements.map((r) => `  ✓ ${r}`).join("\n")}\n`;
             }
-            if (event.summary.completedFiles.length > 0) {
-              summaryText += `\nChanged:\n${event.summary.completedFiles.map((f) => `  ${f}`).join("\n")}\n`;
+            if (fullSummary.remainingRequirements.length > 0) {
+              summaryText += `\nRemaining:\n${fullSummary.remainingRequirements.map((r) => `  ⚠ ${r}`).join("\n")}\n`;
             }
-            if (event.summary.remainingRequirements.length > 0) {
-              summaryText += `\nRemaining:\n${event.summary.remainingRequirements.map((r) => `  ${r}`).join("\n")}\n`;
+            if (fullSummary.blockedReason) {
+              summaryText += `\nReason:\n  ${fullSummary.blockedReason}\n`;
+            }
+            if (fullSummary.completedFiles.length > 0) {
+              summaryText += `\nChanged:\n${fullSummary.completedFiles.map((f) => `  ${f}`).join("\n")}\n`;
             }
           }
           if (summaryText) {
@@ -707,6 +820,8 @@ export const App: React.FC<AppProps> = ({
           }
         } else if (event.type === "done") {
           setPendingApproval(null);
+          setIsGenerating(false);
+          setActiveRequest(undefined);
           setLastTaskStatus((prev) => (prev === "in_progress" ? "completed" : prev));
           persistState("completed").catch(() => {});
           setTurns((prev) =>
@@ -716,6 +831,8 @@ export const App: React.FC<AppProps> = ({
           );
         } else if (event.type === "error") {
           setPendingApproval(null);
+          setIsGenerating(false);
+          setActiveRequest(undefined);
           setLastTaskStatus("blocked");
           persistState("blocked").catch(() => {});
           setTurns((prev) =>
@@ -733,6 +850,8 @@ export const App: React.FC<AppProps> = ({
       }
     } catch (err: unknown) {
       setPendingApproval(null);
+      setIsGenerating(false);
+      setActiveRequest(undefined);
       setLastTaskStatus("blocked");
       persistState("blocked").catch(() => {});
       const message = err instanceof Error ? err.message : String(err);

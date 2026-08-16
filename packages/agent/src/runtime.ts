@@ -201,6 +201,7 @@ export class AgentRuntime implements Agent {
     this.state.status = "running";
     this.activeController = new AbortController();
     this.completionTracker.reset();
+    this.completionTracker.setRequest(input.message);
     this.lastToolCallKey = null;
     this.consecutiveToolCallCount = 0;
     this.state.verificationAttempts = 0;
@@ -509,6 +510,7 @@ export class AgentRuntime implements Agent {
             }
 
             if (isFailure) {
+              this.completionTracker.recordCommandFailed(cmd);
               const attempts: number = (this.state.verificationAttempts || 0) + 1;
               this.state.verificationAttempts = attempts;
 

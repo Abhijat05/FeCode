@@ -128,6 +128,14 @@ export class DefaultSessionStore implements SessionStore {
         const raw = await fs.readFile(filePath, "utf-8");
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed === "object" && parsed.version === 1) {
+          const taskSummaries = Array.isArray(parsed.completedTaskSummaries)
+            ? parsed.completedTaskSummaries
+            : [];
+          const latestTaskSummary =
+            taskSummaries.length > 0
+              ? taskSummaries[taskSummaries.length - 1]
+              : undefined;
+
           summaries.push({
             sessionId: parsed.sessionId || file.replace(/\.json$/, ""),
             workingDirectory: parsed.workingDirectory || "",
@@ -136,7 +144,8 @@ export class DefaultSessionStore implements SessionStore {
             startedAt: parsed.startedAt || new Date().toISOString(),
             updatedAt: parsed.updatedAt || parsed.startedAt || new Date().toISOString(),
             taskCount: typeof parsed.taskCount === "number" ? parsed.taskCount : 0,
-            status: parsed.status || "idle"
+            status: parsed.status || "idle",
+            latestTaskSummary
           });
         }
       } catch {

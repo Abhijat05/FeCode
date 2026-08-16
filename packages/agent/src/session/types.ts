@@ -28,6 +28,7 @@ export interface SessionSummary {
   updatedAt: string;
   taskCount: number;
   status: SessionStatus;
+  latestTaskSummary?: TaskCompletionSummary;
 }
 
 export interface PersistedSessionData {

@@ -19,10 +19,17 @@ export interface TaskRequirement {
 }
 
 export interface TaskCompletionSummary {
+  taskId?: string;
+  taskIndex?: number;
+  request?: string;
   status: TaskCompletionStatus;
+  startedAt?: string;
+  completedAt?: string;
   completedFiles: string[];
   verifiedCommands: string[];
+  failedCommands?: string[];
   completedRequirements: string[];
   remainingRequirements: string[];
   blockedReason?: string;
+  isNoOp?: boolean;
 }
