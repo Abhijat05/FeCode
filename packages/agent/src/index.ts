@@ -20,6 +20,7 @@ export interface AgentInput {
 }
 
 import type { TaskPlan } from "./tasks/types.js";
+import type { TaskCompletionSummary } from "./completion/types.js";
 
 export type AgentEvent =
   | { type: "text"; content: string }
@@ -32,7 +33,8 @@ export type AgentEvent =
   | { type: "plan_created"; plan: TaskPlan }
   | { type: "plan_step_started"; planId: string; stepId: string; stepIndex: number }
   | { type: "plan_step_completed"; planId: string; stepId: string; stepIndex: number }
-  | { type: "plan_step_failed"; planId: string; stepId: string; stepIndex: number; error?: string };
+  | { type: "plan_step_failed"; planId: string; stepId: string; stepIndex: number; error?: string }
+  | { type: "task_summary"; summary: TaskCompletionSummary };
 
 export * from "./runtime.js";
 export * from "./systemPrompt.js";
@@ -70,3 +72,4 @@ export * from "./exploration/index.js";
 export * from "./context/index.js";
 export * from "./editing/index.js";
 export * from "./strategy/index.js";
+export * from "./completion/index.js";

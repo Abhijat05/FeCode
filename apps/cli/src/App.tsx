@@ -189,17 +189,30 @@ export const App: React.FC<AppProps> = ({
         } else if (event.type === "tool_result") {
           setPendingApproval(null);
           const toolName = toolCallNames.get(event.callId) || "tool";
+          let statusLine = "";
+          if (event.result.success) {
+            statusLine = `✓ ${toolName}\n\n`;
+          } else {
+            const err = event.result.error;
+            if (err?.code === "NOT_FOUND") {
+              statusLine = `⚠ ${toolName}: File not found — searching again\n\n`;
+            } else if (err?.code === "EDIT_CONFLICT") {
+              statusLine = `⚠ ${toolName}: Edit conflict — refreshing file context\n\n`;
+            } else if (err?.code === "REPEATED_CALL_LOOP") {
+              statusLine = `⚠ ${toolName}: Repeated call loop detected — adapting strategy\n\n`;
+            } else if (err?.code === "PERMISSION_DENIED") {
+              statusLine = `✗ ${toolName}: Permission denied (${err.message})\n\n`;
+            } else {
+              statusLine = `✗ ${toolName} failed: ${err?.message || "denied"}\n\n`;
+            }
+          }
           setTurns((prev) =>
             prev.map((t) =>
               t.id === turnId
                 ? {
                     ...t,
                     status: "streaming",
-                    response:
-                      t.response +
-                      (event.result.success
-                        ? `✓ ${toolName}\n\n`
-                        : `✗ ${toolName} failed: ${event.result.error?.message || "denied"}\n\n`)
+                    response: t.response + statusLine
                   }
                 : t
             )
@@ -260,6 +273,45 @@ export const App: React.FC<AppProps> = ({
                 : t
             )
           );
+        } else if (event.type === "task_summary") {
+          let summaryText = "";
+          if (
+            event.summary.status === "completed" &&
+            (event.summary.completedFiles.length > 0 ||
+              event.summary.verifiedCommands.length > 0)
+          ) {
+            summaryText = `\n✓ Task completed\n`;
+            if (event.summary.completedFiles.length > 0) {
+              summaryText += `\nChanged:\n${event.summary.completedFiles.map((f) => `  ${f}`).join("\n")}\n`;
+            }
+            if (event.summary.verifiedCommands.length > 0) {
+              summaryText += `\nVerified:\n${event.summary.verifiedCommands.map((c) => `  ${c}`).join("\n")}\n`;
+            }
+          } else if (event.summary.status === "blocked") {
+            summaryText = `\n⚠ Task blocked\n`;
+            if (event.summary.blockedReason) {
+              summaryText += `\nReason:\n  ${event.summary.blockedReason}\n`;
+            }
+            if (event.summary.completedFiles.length > 0) {
+              summaryText += `\nChanged:\n${event.summary.completedFiles.map((f) => `  ${f}`).join("\n")}\n`;
+            }
+            if (event.summary.remainingRequirements.length > 0) {
+              summaryText += `\nRemaining:\n${event.summary.remainingRequirements.map((r) => `  ${r}`).join("\n")}\n`;
+            }
+          }
+          if (summaryText) {
+            setTurns((prev) =>
+              prev.map((t) =>
+                t.id === turnId
+                  ? {
+                      ...t,
+                      status: "streaming",
+                      response: t.response + summaryText
+                    }
+                  : t
+              )
+            );
+          }
         } else if (event.type === "done") {
           setPendingApproval(null);
           setTurns((prev) =>

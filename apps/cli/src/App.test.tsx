@@ -248,4 +248,125 @@ describe("CLI App Component", () => {
     // Verify no internal reasoning/chain-of-thought dumped
     expect(frame).not.toContain("chain-of-thought");
   });
+
+  it("renders recovery status messages concisely in CLI UX", async () => {
+    const mockAgent = new MockAgent();
+
+    mockAgent.runFn = async function* () {
+      yield {
+        type: "tool_call",
+        call: { id: "call-read", name: "read_file", arguments: { path: "src/wrong.tsx" } }
+      };
+      yield {
+        type: "tool_result",
+        callId: "call-read",
+        result: {
+          success: false,
+          error: { message: "File not found", code: "NOT_FOUND" }
+        }
+      };
+      yield {
+        type: "tool_call",
+        call: { id: "call-edit", name: "edit_file", arguments: { path: "src/conflict.tsx" } }
+      };
+      yield {
+        type: "tool_result",
+        callId: "call-edit",
+        result: {
+          success: false,
+          error: { message: "Context stale", code: "EDIT_CONFLICT" }
+        }
+      };
+      yield {
+        type: "tool_call",
+        call: { id: "call-loop", name: "search_files", arguments: { query: "repeated" } }
+      };
+      yield {
+        type: "tool_result",
+        callId: "call-loop",
+        result: {
+          success: false,
+          error: { message: "Loop detected", code: "REPEATED_CALL_LOOP" }
+        }
+      };
+      yield { type: "text", content: "Recovery sequence complete." };
+      yield { type: "done" };
+    };
+
+    const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+    await delay(50);
+
+    await typeAndSubmit(stdin, "Trigger recovery statuses");
+    await delay(200);
+
+    const frame = lastFrame();
+    expect(frame).toContain("⚠ read_file: File not found — searching again");
+    expect(frame).toContain("⚠ edit_file: Edit conflict — refreshing file context");
+    expect(frame).toContain("⚠ search_files: Repeated call loop detected — adapting strategy");
+    expect(frame).toContain("Recovery sequence complete.");
+  });
+
+  it("renders completed task summary with changed files and verification commands", async () => {
+    const mockAgent = new MockAgent();
+
+    mockAgent.runFn = async function* () {
+      yield { type: "text", content: "Applied all changes." };
+      yield {
+        type: "task_summary",
+        summary: {
+          status: "completed",
+          completedFiles: ["src/components/LoginButton.tsx"],
+          verifiedCommands: ["npm test"],
+          completedRequirements: ["Update login button text"],
+          remainingRequirements: []
+        }
+      };
+      yield { type: "done" };
+    };
+
+    const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+    await delay(50);
+
+    await typeAndSubmit(stdin, "Complete login button");
+    await delay(200);
+
+    const frame = lastFrame();
+    expect(frame).toContain("✓ Task completed");
+    expect(frame).toContain("Changed:");
+    expect(frame).toContain("src/components/LoginButton.tsx");
+    expect(frame).toContain("Verified:");
+    expect(frame).toContain("npm test");
+  });
+
+  it("renders blocked task summary with reason and remaining requirements", async () => {
+    const mockAgent = new MockAgent();
+
+    mockAgent.runFn = async function* () {
+      yield {
+        type: "task_summary",
+        summary: {
+          status: "blocked",
+          completedFiles: ["src/components/LoginButton.tsx"],
+          verifiedCommands: [],
+          completedRequirements: ["UI update"],
+          remainingRequirements: ["Run integration tests"],
+          blockedReason: "Permission denied for execute_command"
+        }
+      };
+      yield { type: "done" };
+    };
+
+    const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+    await delay(50);
+
+    await typeAndSubmit(stdin, "Blocked task");
+    await delay(200);
+
+    const frame = lastFrame();
+    expect(frame).toContain("⚠ Task blocked");
+    expect(frame).toContain("Reason:");
+    expect(frame).toContain("Permission denied for execute_command");
+    expect(frame).toContain("Remaining:");
+    expect(frame).toContain("Run integration tests");
+  });
 });

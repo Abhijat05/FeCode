@@ -51,6 +51,8 @@ import type { RepositoryExplorer, ExplorationResult } from "./exploration/types.
 import type { CodeContextSelector, CodeContextResult } from "./context/types.js";
 import type { AgentExecutionStrategy } from "./strategy/types.js";
 import { DefaultAgentExecutionStrategy } from "./strategy/executionStrategy.js";
+import { TaskCompletionTracker } from "./completion/tracker.js";
+import type { TaskCompletionSummary } from "./completion/types.js";
 
 export interface AgentRuntimeOptions {
   systemPrompt?: string;
@@ -68,6 +70,8 @@ export interface AgentRuntimeOptions {
   repositoryExplorer?: RepositoryExplorer;
   codeContextSelector?: CodeContextSelector;
   executionStrategy?: AgentExecutionStrategy;
+  maxIdenticalToolCalls?: number;
+  maxTurns?: number;
 }
 
 export class AgentRuntime implements Agent {
@@ -78,6 +82,8 @@ export class AgentRuntime implements Agent {
   private readonly permissionManager: PermissionManager;
   private readonly approvalResolver?: ApprovalResolver;
   private readonly maxVerificationAttempts: number;
+  private readonly maxIdenticalToolCalls: number;
+  private readonly maxTurns: number;
   private readonly projectContext?: ProjectContext;
   private readonly skillRegistry?: SkillRegistry;
   private readonly activationPolicy?: SkillActivationPolicy;
@@ -86,8 +92,11 @@ export class AgentRuntime implements Agent {
   private readonly repositoryExplorer?: RepositoryExplorer;
   private readonly codeContextSelector?: CodeContextSelector;
   private readonly executionStrategy: AgentExecutionStrategy;
+  private readonly completionTracker: TaskCompletionTracker = new TaskCompletionTracker();
   private state: AgentState;
   private activeController: AbortController | null = null;
+  private lastToolCallKey: string | null = null;
+  private consecutiveToolCallCount: number = 0;
 
   constructor(modelProvider: ModelProvider, options: AgentRuntimeOptions = {}) {
     this.modelProvider = modelProvider;
@@ -99,6 +108,8 @@ export class AgentRuntime implements Agent {
       options.permissionManager || new DefaultPermissionManager();
     this.approvalResolver = options.approvalResolver;
     this.maxVerificationAttempts = options.maxVerificationAttempts ?? 3;
+    this.maxIdenticalToolCalls = options.maxIdenticalToolCalls ?? 3;
+    this.maxTurns = options.maxTurns ?? 50;
     this.projectContext = options.projectContext;
     this.skillRegistry = options.skillRegistry;
     this.activationPolicy = options.activationPolicy;
@@ -120,6 +131,10 @@ export class AgentRuntime implements Agent {
 
   public getRegistry(): ToolRegistry {
     return this.registry;
+  }
+
+  public getCompletionSummary(): TaskCompletionSummary {
+    return this.completionTracker.getSummary();
   }
 
   public getState(): AgentState {
@@ -151,6 +166,7 @@ export class AgentRuntime implements Agent {
 
     this.state.status = "running";
     this.activeController = new AbortController();
+    this.completionTracker.reset();
 
     this.state.messages.push({
       role: "user",
@@ -225,8 +241,10 @@ export class AgentRuntime implements Agent {
       });
     }
 
+    let turnCount = 0;
     try {
-      while (true) {
+      while (turnCount < this.maxTurns) {
+        turnCount++;
         if (this.activeController.signal.aborted) {
           throw new Error("Request aborted");
         }
@@ -299,6 +317,18 @@ export class AgentRuntime implements Agent {
 
         if (toolCallsForTurn.length === 0) {
           this.state.status = "completed";
+          const summary = this.completionTracker.evaluateCompletion({
+            activePlan: this.state.activePlan
+          });
+          if (
+            this.state.activePlan !== undefined ||
+            summary.completedFiles.length > 0 ||
+            summary.verifiedCommands.length > 0 ||
+            summary.completedRequirements.length > 0 ||
+            summary.status === "blocked"
+          ) {
+            yield { type: "task_summary", summary };
+          }
           yield { type: "done" };
           break;
         }
@@ -316,7 +346,23 @@ export class AgentRuntime implements Agent {
           const tool = this.registry.get(call.name);
           let result: ToolResult;
 
-          if (!tool) {
+          const callKey = `${call.name}::${JSON.stringify(call.arguments || {})}`;
+          if (this.lastToolCallKey === callKey) {
+            this.consecutiveToolCallCount++;
+          } else {
+            this.lastToolCallKey = callKey;
+            this.consecutiveToolCallCount = 1;
+          }
+
+          if (this.consecutiveToolCallCount > this.maxIdenticalToolCalls) {
+            result = {
+              success: false,
+              error: {
+                message: `Repeated identical tool call loop detected (${call.name} called ${this.consecutiveToolCallCount} times with identical arguments). Modify parameters, broaden search, or proceed with an alternative approach.`,
+                code: "REPEATED_CALL_LOOP"
+              }
+            };
+          } else if (!tool) {
             result = {
               success: false,
               error: {
@@ -392,7 +438,12 @@ export class AgentRuntime implements Agent {
             result.success &&
             (call.name === "write_file" || call.name === "edit_file")
           ) {
+            this.lastToolCallKey = null;
+            this.consecutiveToolCallCount = 0;
             const targetPath = (call.arguments as { path?: string })?.path;
+            if (targetPath) {
+              this.completionTracker.recordFileModified(targetPath);
+            }
             if (this.repositoryExplorer) {
               this.repositoryExplorer.invalidate(targetPath);
             }
@@ -401,7 +452,13 @@ export class AgentRuntime implements Agent {
             }
           }
 
-          // Check if this was a command execution that failed
+          if (!result.success && result.error?.code === "PERMISSION_DENIED") {
+            this.completionTracker.recordBlocked(
+              result.error.message || `Permission denied for ${call.name}`
+            );
+          }
+
+          // Check if this was a command execution
           if (call.name === "execute_command") {
             const cmdOutput = result.output as CommandResult | undefined;
             const isFailure =
@@ -409,11 +466,19 @@ export class AgentRuntime implements Agent {
               (cmdOutput && cmdOutput.exitCode !== 0) ||
               (cmdOutput && cmdOutput.timedOut);
 
+            const cmd = (call.arguments as { command?: string })?.command || "";
+            if (result.success && cmdOutput && cmdOutput.exitCode === 0) {
+              this.completionTracker.recordCommandVerified(cmd);
+            }
+
             if (isFailure) {
               const attempts = (this.state.verificationAttempts || 0) + 1;
               this.state.verificationAttempts = attempts;
 
               if (attempts >= this.maxVerificationAttempts) {
+                this.completionTracker.recordBlocked(
+                  `Verification failed after ${this.maxVerificationAttempts} attempts`
+                );
                 this.state.messages.push({
                   role: "user",
                   content: `[SYSTEM NOTICE] Maximum verification attempts (${this.maxVerificationAttempts}) reached. Do not attempt further verification commands. Report the current status, failure details, and remaining unresolved issues to the user.`
@@ -431,6 +496,11 @@ export class AgentRuntime implements Agent {
         error.message.toLowerCase().includes("cancel");
 
       this.state.status = isCancelled ? "cancelled" : "failed";
+      if (isCancelled) {
+        this.completionTracker.recordCancelled();
+      } else {
+        this.completionTracker.recordBlocked(error.message);
+      }
       yield { type: "error", error };
     } finally {
       this.activeController = null;
@@ -438,6 +508,7 @@ export class AgentRuntime implements Agent {
   }
 
   async cancel(): Promise<void> {
+    this.completionTracker.recordCancelled();
     if (this.state.activePlan && this.state.activePlan.status === "in_progress") {
       const currentIdx = this.state.activePlan.currentStep ?? 0;
       this.state.activePlan = failTaskStep(
