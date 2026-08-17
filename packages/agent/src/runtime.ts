@@ -664,15 +664,21 @@ export class AgentRuntime implements Agent {
             const isFailure =
               !result.success ||
               (cmdOutput && cmdOutput.exitCode !== 0) ||
-              (cmdOutput && cmdOutput.timedOut);
+              Boolean(cmdOutput && cmdOutput.timedOut);
 
             const cmd = (call.arguments as { command?: string })?.command || "";
-            if (result.success && cmdOutput && cmdOutput.exitCode === 0) {
-              this.completionTracker.recordCommandVerified(cmd);
-            }
+            const exitCode = cmdOutput ? cmdOutput.exitCode : (result.success ? 0 : 1);
+            const timedOut = Boolean(cmdOutput?.timedOut);
+            const succeeded = result.success && exitCode === 0 && !timedOut;
+
+            this.completionTracker.recordCommandExecution({
+              command: cmd,
+              exitCode,
+              timedOut,
+              succeeded
+            });
 
             if (isFailure) {
-              this.completionTracker.recordCommandFailed(cmd);
               const attempts: number = (this.state.verificationAttempts || 0) + 1;
               this.state.verificationAttempts = attempts;
 

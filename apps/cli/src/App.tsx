@@ -251,13 +251,16 @@ export const App: React.FC<AppProps> = ({
       }
 
       if (cmd === "/status") {
-        setQuery("");
         const completedCount = completedSummaries.filter(
           (s) => s.status === "completed"
         ).length;
         const blockedCount = completedSummaries.filter(
           (s) => s.status === "blocked"
         ).length;
+        const lastSummary =
+          completedSummaries.length > 0
+            ? completedSummaries[completedSummaries.length - 1]
+            : undefined;
         const statusText = SessionHistoryFormatter.formatSessionStatus({
           sessionId,
           workingDirectory: cwd,
@@ -266,7 +269,8 @@ export const App: React.FC<AppProps> = ({
           taskCount,
           completedCount,
           blockedCount,
-          currentStatus: lastTaskStatus
+          currentStatus: lastTaskStatus,
+          lastChangeSet: lastSummary?.changeSet
         });
         setTurns((prev) => [
           ...prev,

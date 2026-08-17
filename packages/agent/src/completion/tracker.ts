@@ -6,6 +6,8 @@ import type {
   RequirementStatus,
   FileChangeStats
 } from "./types.js";
+import { ChangeSetBuilder } from "../changes/changeSetBuilder.js";
+import type { ChangeSetCommand } from "../changes/types.js";
 
 export class TaskCompletionTracker {
   private taskId?: string;
@@ -13,7 +15,7 @@ export class TaskCompletionTracker {
   private request?: string;
   private startedAt?: string;
   private modifiedFiles: Set<string> = new Set();
-  private fileChangesMap: Map<string, FileChangeStats> = new Map();
+  private changeSetBuilder: ChangeSetBuilder = new ChangeSetBuilder();
   private verifiedCommands: Set<string> = new Set();
   private failedCommands: Set<string> = new Set();
   private requirements: Map<string, TaskRequirement> = new Map();
@@ -44,6 +46,12 @@ export class TaskCompletionTracker {
     if (filePath && filePath.trim()) {
       const clean = filePath.trim().replace(/\\/g, "/");
       this.modifiedFiles.add(clean);
+      this.changeSetBuilder.recordFileChange({
+        path: clean,
+        operation: "modified",
+        additions: 0,
+        deletions: 0
+      });
       this.status = "in_progress";
       this.isNoOp = false;
     }
@@ -53,7 +61,12 @@ export class TaskCompletionTracker {
     if (change && change.path) {
       const clean = change.path.trim().replace(/\\/g, "/");
       this.modifiedFiles.add(clean);
-      this.fileChangesMap.set(clean, { ...change, path: clean });
+      this.changeSetBuilder.recordFileChange({
+        path: clean,
+        operation: change.operation,
+        additions: change.additions,
+        deletions: change.deletions
+      });
       this.status = "in_progress";
       this.isNoOp = false;
     }
@@ -61,14 +74,46 @@ export class TaskCompletionTracker {
 
   public recordCommandVerified(command: string): void {
     if (command && command.trim()) {
-      this.verifiedCommands.add(command.trim());
-      this.failedCommands.delete(command.trim());
+      const clean = command.trim();
+      this.verifiedCommands.add(clean);
+      this.failedCommands.delete(clean);
+      this.changeSetBuilder.recordCommand({
+        command: clean,
+        exitCode: 0,
+        timedOut: false,
+        succeeded: true
+      });
     }
   }
 
-  public recordCommandFailed(command: string): void {
+  public recordCommandFailed(command: string, exitCode: number | null = 1, timedOut: boolean = false): void {
     if (command && command.trim()) {
-      this.failedCommands.add(command.trim());
+      const clean = command.trim();
+      this.failedCommands.add(clean);
+      this.changeSetBuilder.recordCommand({
+        command: clean,
+        exitCode,
+        timedOut,
+        succeeded: false
+      });
+    }
+  }
+
+  public recordCommandExecution(cmd: ChangeSetCommand): void {
+    if (cmd && cmd.command) {
+      const clean = cmd.command.trim();
+      this.changeSetBuilder.recordCommand({
+        command: clean,
+        exitCode: cmd.exitCode,
+        timedOut: Boolean(cmd.timedOut),
+        succeeded: Boolean(cmd.succeeded)
+      });
+      if (cmd.succeeded) {
+        this.verifiedCommands.add(clean);
+        this.failedCommands.delete(clean);
+      } else {
+        this.failedCommands.add(clean);
+      }
     }
   }
 
@@ -157,9 +202,7 @@ export class TaskCompletionTracker {
       }
     }
 
-    const fileChanges = Array.from(this.fileChangesMap.values()).sort((a, b) =>
-      a.path.localeCompare(b.path)
-    );
+    const changeSet = this.changeSetBuilder.build(this.taskId);
 
     return {
       taskId: this.taskId,
@@ -169,7 +212,8 @@ export class TaskCompletionTracker {
       startedAt: this.startedAt,
       completedAt: new Date().toISOString(),
       completedFiles: Array.from(this.modifiedFiles).sort(),
-      fileChanges: fileChanges.length > 0 ? fileChanges : undefined,
+      fileChanges: changeSet.files.length > 0 ? changeSet.files : undefined,
+      changeSet: changeSet.files.length > 0 || changeSet.commands.length > 0 ? changeSet : undefined,
       verifiedCommands: Array.from(this.verifiedCommands).sort(),
       failedCommands:
         this.failedCommands.size > 0
@@ -196,17 +240,26 @@ export class TaskCompletionTracker {
         text += `\nRequest:\n  ${summary.request}\n`;
       }
       if (summary.fileChanges && summary.fileChanges.length > 0) {
-        text += `\nChanged:\n${summary.fileChanges
+        const fileCount = summary.fileChanges.length;
+        const totalAdds = summary.changeSet?.stats.totalAdditions ?? summary.fileChanges.reduce((a, b) => a + b.additions, 0);
+        const totalDels = summary.changeSet?.stats.totalDeletions ?? summary.fileChanges.reduce((a, b) => a + b.deletions, 0);
+        text += `\nChanged:\n  ${fileCount} file${fileCount === 1 ? "" : "s"} · +${totalAdds} -${totalDels}\n`;
+        text += summary.fileChanges
           .map(
             (fc) =>
               `  ${fc.path.padEnd(36)} +${fc.additions} -${fc.deletions}`
           )
-          .join("\n")}\n`;
+          .join("\n") + "\n";
       } else if (summary.completedFiles.length > 0) {
         text += `\nChanged:\n${summary.completedFiles.map((f) => `  ${f}`).join("\n")}\n`;
       }
+
+      if (summary.changeSet?.areas && summary.changeSet.areas.length > 0) {
+        text += `\nAreas:\n${summary.changeSet.areas.map((a) => `  ${a}`).join("\n")}\n`;
+      }
+
       if (summary.verifiedCommands.length > 0) {
-        text += `\nVerified:\n${summary.verifiedCommands.map((c) => `  ${c}`).join("\n")}\n`;
+        text += `\nVerified:\n${summary.verifiedCommands.map((c) => `  ✓ ${c}`).join("\n")}\n`;
       }
       return text;
     }
@@ -235,6 +288,9 @@ export class TaskCompletionTracker {
       } else if (summary.completedFiles.length > 0) {
         text += `\nChanged:\n${summary.completedFiles.map((f) => `  ${f}`).join("\n")}\n`;
       }
+      if (summary.changeSet?.areas && summary.changeSet.areas.length > 0) {
+        text += `\nAreas:\n${summary.changeSet.areas.map((a) => `  ${a}`).join("\n")}\n`;
+      }
       return text;
     }
 
@@ -261,7 +317,7 @@ export class TaskCompletionTracker {
     this.request = undefined;
     this.startedAt = undefined;
     this.modifiedFiles.clear();
-    this.fileChangesMap.clear();
+    this.changeSetBuilder.reset();
     this.verifiedCommands.clear();
     this.failedCommands.clear();
     this.requirements.clear();

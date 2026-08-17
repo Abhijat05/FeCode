@@ -78,3 +78,4 @@ export * from "./editing/index.js";
 export * from "./strategy/index.js";
 export * from "./completion/index.js";
 export * from "./session/index.js";
+export * from "./changes/index.js";

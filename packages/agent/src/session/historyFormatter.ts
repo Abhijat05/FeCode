@@ -92,7 +92,14 @@ export class SessionHistoryFormatter {
 
       if (task.status === "completed") {
         text += `   Completed\n`;
-        if (task.fileChanges && task.fileChanges.length > 0) {
+        if (task.changeSet && task.changeSet.files.length > 0) {
+          const fileWord =
+            task.changeSet.stats.totalFiles === 1 ? "file" : "files";
+          text += `   ${task.changeSet.stats.totalFiles} ${fileWord} · +${task.changeSet.stats.totalAdditions} -${task.changeSet.stats.totalDeletions}\n`;
+          if (task.changeSet.areas.length > 0) {
+            text += `   ${task.changeSet.areas.join(", ")}\n`;
+          }
+        } else if (task.fileChanges && task.fileChanges.length > 0) {
           const fileItems = task.fileChanges
             .slice(0, maxFiles)
             .map((fc) => `${fc.path} +${fc.additions} -${fc.deletions}`);
@@ -109,6 +116,14 @@ export class SessionHistoryFormatter {
         }
       } else if (task.status === "blocked") {
         text += `   Blocked\n`;
+        if (task.changeSet && task.changeSet.files.length > 0) {
+          const fileWord =
+            task.changeSet.stats.totalFiles === 1 ? "file" : "files";
+          text += `   ${task.changeSet.stats.totalFiles} ${fileWord} · +${task.changeSet.stats.totalAdditions} -${task.changeSet.stats.totalDeletions}\n`;
+          if (task.changeSet.areas.length > 0) {
+            text += `   ${task.changeSet.areas.join(", ")}\n`;
+          }
+        }
         if (task.blockedReason) {
           text += `   ${sanitizeText(task.blockedReason)}\n`;
         }
@@ -175,7 +190,14 @@ export class SessionHistoryFormatter {
     }
 
     if (task.status === "completed") {
-      if (task.fileChanges && task.fileChanges.length > 0) {
+      if (task.changeSet && task.changeSet.files.length > 0) {
+        const fileWord =
+          task.changeSet.stats.totalFiles === 1 ? "file" : "files";
+        text += `Changes:\n  ${task.changeSet.stats.totalFiles} ${fileWord}\n  +${task.changeSet.stats.totalAdditions} -${task.changeSet.stats.totalDeletions}\n\n`;
+        if (task.changeSet.areas.length > 0) {
+          text += `Areas:\n${task.changeSet.areas.map((a) => `  ${a}`).join("\n")}\n\n`;
+        }
+      } else if (task.fileChanges && task.fileChanges.length > 0) {
         const changes = task.fileChanges.slice(0, maxFiles);
         text += `Changed:\n${changes.map((fc) => `  ${fc.path}\n  +${fc.additions} -${fc.deletions}`).join("\n\n")}\n\n`;
         if (task.fileChanges.length > maxFiles) {
@@ -185,7 +207,17 @@ export class SessionHistoryFormatter {
         const files = truncateList(task.completedFiles, maxFiles);
         text += `Changed:\n${files.map((f) => `  ${f}`).join("\n")}\n\n`;
       }
-      if (task.verifiedCommands && task.verifiedCommands.length > 0) {
+
+      if (task.changeSet?.verification?.attempted) {
+        text += `Verification:\n`;
+        for (const cmd of task.changeSet.verification.commands) {
+          text += `  ✓ ${sanitizeText(cmd)}\n`;
+        }
+        for (const cmd of task.changeSet.verification.failedCommands) {
+          text += `  ✗ ${sanitizeText(cmd)}\n`;
+        }
+        text += "\n";
+      } else if (task.verifiedCommands && task.verifiedCommands.length > 0) {
         text += `Verification:\n${task.verifiedCommands.map((c) => `  ${c}`).join("\n")}\n\n`;
       }
     } else if (task.status === "blocked") {
@@ -198,7 +230,14 @@ export class SessionHistoryFormatter {
       if (task.blockedReason) {
         text += `Reason:\n  ${sanitizeText(task.blockedReason)}\n\n`;
       }
-      if (task.fileChanges && task.fileChanges.length > 0) {
+      if (task.changeSet && task.changeSet.files.length > 0) {
+        const fileWord =
+          task.changeSet.stats.totalFiles === 1 ? "file" : "files";
+        text += `Changes:\n  ${task.changeSet.stats.totalFiles} ${fileWord}\n  +${task.changeSet.stats.totalAdditions} -${task.changeSet.stats.totalDeletions}\n\n`;
+        if (task.changeSet.areas.length > 0) {
+          text += `Areas:\n${task.changeSet.areas.map((a) => `  ${a}`).join("\n")}\n\n`;
+        }
+      } else if (task.fileChanges && task.fileChanges.length > 0) {
         const changes = task.fileChanges.slice(0, maxFiles);
         text += `Changed:\n${changes.map((fc) => `  ${fc.path}\n  +${fc.additions} -${fc.deletions}`).join("\n\n")}\n\n`;
         if (task.fileChanges.length > maxFiles) {
@@ -264,6 +303,7 @@ export class SessionHistoryFormatter {
     completedCount: number;
     blockedCount: number;
     currentStatus: string;
+    lastChangeSet?: import("../changes/types.js").ChangeSet;
   }): string {
     let text = "FeCode\n\n";
     text += `Provider:\n  ${info.provider || "unknown"}\n\n`;
@@ -274,6 +314,22 @@ export class SessionHistoryFormatter {
     text += `Completed:\n  ${info.completedCount}\n\n`;
     text += `Blocked:\n  ${info.blockedCount}\n\n`;
     text += `Current task:\n  ${info.currentStatus}\n`;
+
+    if (info.lastChangeSet && info.lastChangeSet.files.length > 0) {
+      const fileWord =
+        info.lastChangeSet.stats.totalFiles === 1 ? "file" : "files";
+      text += `\nLast change:\n  ${info.lastChangeSet.stats.totalFiles} ${fileWord} · +${info.lastChangeSet.stats.totalAdditions} -${info.lastChangeSet.stats.totalDeletions}\n`;
+      if (info.lastChangeSet.verification.attempted) {
+        text += `\nVerification:\n`;
+        for (const cmd of info.lastChangeSet.verification.commands) {
+          text += `  ✓ ${sanitizeText(cmd)}\n`;
+        }
+        for (const cmd of info.lastChangeSet.verification.failedCommands) {
+          text += `  ✗ ${sanitizeText(cmd)}\n`;
+        }
+      }
+    }
+
     return text;
   }
 

@@ -1,3 +1,5 @@
+import type { ChangeSet } from "../changes/types.js";
+
 export type TaskCompletionStatus =
   | "pending"
   | "in_progress"
@@ -34,6 +36,7 @@ export interface TaskCompletionSummary {
   completedAt?: string;
   completedFiles: string[];
   fileChanges?: FileChangeStats[];
+  changeSet?: ChangeSet;
   verifiedCommands: string[];
   failedCommands?: string[];
   completedRequirements: string[];
