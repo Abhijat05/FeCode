@@ -195,6 +195,10 @@ export class SessionHistoryFormatter {
       text += `Request:\n  ${sanitizeText(task.request)}\n\n`;
     }
 
+    if (task.checkpointId) {
+      text += `Checkpoint:\n  ${task.checkpointId}\n\n`;
+    }
+
     if (task.status === "completed") {
       if (task.changeSet && task.changeSet.files.length > 0) {
         const fileWord =

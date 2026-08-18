@@ -7,12 +7,15 @@ import {
   SessionHistoryFormatter,
   DefaultGitRepository,
   GitStatusFormatter,
+  DefaultCheckpointManager,
+  CheckpointFormatter,
   type Agent,
   type ProjectContext,
   type SessionStore,
   type PersistedSessionData,
   type SessionStatus,
-  type TaskCompletionSummary
+  type TaskCompletionSummary,
+  type CheckpointManager
 } from "@fecode/agent";
 import type { ApprovalRequest, ModelMessage } from "@fecode/models";
 import {
@@ -41,6 +44,7 @@ export interface AppProps {
   sessionStore?: SessionStore;
   initialSessionData?: PersistedSessionData;
   gitRepository?: import("@fecode/agent").GitRepository;
+  checkpointManager?: CheckpointManager;
 }
 
 export const App: React.FC<AppProps> = ({
@@ -54,9 +58,15 @@ export const App: React.FC<AppProps> = ({
   projectContext,
   sessionStore,
   initialSessionData,
-  gitRepository: gitRepoProp
+  gitRepository: gitRepoProp,
+  checkpointManager: checkpointManagerProp
 }) => {
   const gitRepo = gitRepoProp || new DefaultGitRepository();
+  const cpManager =
+    checkpointManagerProp ||
+    (agent && "getCheckpointManager" in agent && typeof (agent as unknown as { getCheckpointManager: () => CheckpointManager }).getCheckpointManager === "function"
+      ? (agent as unknown as { getCheckpointManager: () => CheckpointManager }).getCheckpointManager()
+      : new DefaultCheckpointManager(undefined, gitRepo));
   const { exit } = useApp();
   const [query, setQuery] = useState("");
   const [store] = useState<SessionStore>(
@@ -236,6 +246,10 @@ export const App: React.FC<AppProps> = ({
           `  /help                - Show available FeCode commands\n` +
           `  /status              - Show current session information\n` +
           `  /git                 - Show Git repository and change attribution status\n` +
+          `  /checkpoint          - Create a recovery checkpoint or inspect current checkpoint\n` +
+          `  /checkpoint <id>     - Inspect a specific checkpoint\n` +
+          `  /checkpoint diff <id>- Show changes compared to a checkpoint\n` +
+          `  /checkpoints         - List available checkpoints\n` +
           `  /history             - Show recent session task history\n` +
           `  /tasks               - List summary of session tasks\n` +
           `  /task [number]       - Show current task or details of a specific task\n` +
@@ -253,6 +267,129 @@ export const App: React.FC<AppProps> = ({
             status: "done"
           }
         ]);
+        return;
+      }
+
+      if (cmd === "/checkpoints") {
+        setQuery("");
+        const checkpoints = await cpManager.list();
+        const text = CheckpointFormatter.formatCheckpointsList(checkpoints);
+        setTurns((prev) => [
+          ...prev,
+          {
+            id: `cmd-${Date.now()}`,
+            prompt: trimmed,
+            response: text,
+            status: "done"
+          }
+        ]);
+        return;
+      }
+
+      if (cmd === "/checkpoint") {
+        setQuery("");
+        const subArg = parts[1];
+
+        if (subArg === "diff") {
+          const targetId = parts[2];
+          if (!targetId) {
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: "✗ Please specify a checkpoint ID: /checkpoint diff <id>\n",
+                status: "done"
+              }
+            ]);
+            return;
+          }
+
+          try {
+            const comparison = await cpManager.compare(targetId, cwd);
+            const text = CheckpointFormatter.formatCheckpointComparison(comparison);
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: text,
+                status: "done"
+              }
+            ]);
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: `✗ Failed to compare checkpoint: ${msg}\n`,
+                status: "done"
+              }
+            ]);
+          }
+          return;
+        }
+
+        if (subArg) {
+          // Inspect checkpoint with ID
+          const cp = await cpManager.inspect(subArg);
+          if (!cp) {
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: `✗ Checkpoint not found: ${subArg}\n`,
+                status: "done"
+              }
+            ]);
+            return;
+          }
+
+          const text = CheckpointFormatter.formatCheckpointDetail(cp);
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: text,
+              status: "done"
+            }
+          ]);
+          return;
+        }
+
+        // Create new checkpoint
+        const res = await cpManager.create({
+          cwd,
+          taskId: sessionId,
+          reason: "Explicit user checkpoint"
+        });
+
+        if (res.success && res.checkpoint) {
+          const text = CheckpointFormatter.formatCheckpointCreated(res.checkpoint);
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: text,
+              status: "done"
+            }
+          ]);
+        } else {
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: `✗ Failed to create checkpoint: ${res.error || "Unknown error"}\n`,
+              status: "done"
+            }
+          ]);
+        }
         return;
       }
 

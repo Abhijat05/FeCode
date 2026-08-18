@@ -63,6 +63,8 @@ import type { PersistedSessionData } from "./session/types.js";
 import type { GitRepository } from "./git/types.js";
 import { DefaultGitRepository } from "./git/gitRepository.js";
 import { computeChangeAttribution } from "./git/attribution.js";
+import type { CheckpointManager, CheckpointStore } from "./checkpoints/types.js";
+import { DefaultCheckpointManager } from "./checkpoints/checkpointManager.js";
 
 export interface AgentRuntimeOptions {
   systemPrompt?: string;
@@ -81,6 +83,8 @@ export interface AgentRuntimeOptions {
   codeContextSelector?: CodeContextSelector;
   executionStrategy?: AgentExecutionStrategy;
   gitRepository?: GitRepository;
+  checkpointManager?: CheckpointManager;
+  checkpointStore?: CheckpointStore;
   maxIdenticalToolCalls?: number;
   maxTurns?: number;
 }
@@ -104,6 +108,7 @@ export class AgentRuntime implements Agent {
   private readonly codeContextSelector?: CodeContextSelector;
   private readonly executionStrategy: AgentExecutionStrategy;
   private readonly gitRepository?: GitRepository;
+  private readonly checkpointManager: CheckpointManager;
   private readonly completionTracker: TaskCompletionTracker = new TaskCompletionTracker();
   private readonly safeEditValidator: SafeEditValidator = new SafeEditValidator();
   private state: AgentState;
@@ -132,6 +137,9 @@ export class AgentRuntime implements Agent {
     this.codeContextSelector = options.codeContextSelector;
     this.executionStrategy = options.executionStrategy || new DefaultAgentExecutionStrategy();
     this.gitRepository = options.gitRepository || new DefaultGitRepository();
+    this.checkpointManager =
+      options.checkpointManager ||
+      new DefaultCheckpointManager(options.checkpointStore, this.gitRepository);
 
     this.state = {
       sessionId:
@@ -149,6 +157,10 @@ export class AgentRuntime implements Agent {
 
   public getCompletionSummary(): TaskCompletionSummary {
     return this.completionTracker.getSummary();
+  }
+
+  public getCheckpointManager(): CheckpointManager {
+    return this.checkpointManager;
   }
 
   public getState(): AgentState {

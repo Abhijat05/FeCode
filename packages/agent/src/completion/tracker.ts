@@ -26,6 +26,11 @@ export class TaskCompletionTracker {
   private postTaskSnapshot?: import("../git/types.js").RepositorySnapshot;
   private gitBranch?: string | null;
   private gitAttribution?: import("../git/types.js").ChangeAttribution;
+  private checkpointId?: string;
+
+  public setCheckpointId(id: string | undefined): void {
+    this.checkpointId = id;
+  }
 
   public setBaselineSnapshot(snapshot: import("../git/types.js").RepositorySnapshot): void {
     this.baselineSnapshot = snapshot;
@@ -247,6 +252,7 @@ export class TaskCompletionTracker {
       gitBranch: this.gitBranch,
       gitAttribution: this.gitAttribution,
       baselineSnapshot: this.baselineSnapshot,
+      checkpointId: this.checkpointId,
       verifiedCommands: Array.from(this.verifiedCommands).sort(),
       failedCommands:
         this.failedCommands.size > 0
@@ -383,5 +389,6 @@ export class TaskCompletionTracker {
     this.postTaskSnapshot = undefined;
     this.gitBranch = undefined;
     this.gitAttribution = undefined;
+    this.checkpointId = undefined;
   }
 }

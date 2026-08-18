@@ -41,6 +41,7 @@ export interface TaskCompletionSummary {
   gitBranch?: string | null;
   gitAttribution?: ChangeAttribution;
   baselineSnapshot?: RepositorySnapshot;
+  checkpointId?: string;
   verifiedCommands: string[];
   failedCommands?: string[];
   completedRequirements: string[];

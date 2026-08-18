@@ -568,6 +568,34 @@ describe("CLI App Component", () => {
     expect(frame).toContain("Git");
   });
 
+  it("handles /checkpoints and /checkpoint commands", async () => {
+    const mockAgent = new MockAgent();
+    const mockGitRepo = new DefaultGitRepository(async () => ({
+      stdout: "",
+      stderr: "",
+      exitCode: 1
+    }));
+
+    const { lastFrame, stdin } = render(
+      <App
+        agent={mockAgent}
+        cwd="/test"
+        gitRepository={mockGitRepo}
+      />
+    );
+    await delay(50);
+
+    // Test /checkpoints (empty)
+    await typeAndSubmit(stdin, "/checkpoints");
+    await delay(100);
+    expect(lastFrame()).toContain("Checkpoints");
+
+    // Test /checkpoint (create new checkpoint)
+    await typeAndSubmit(stdin, "/checkpoint");
+    await delay(100);
+    expect(lastFrame()).toContain("Checkpoint created");
+  });
+
   it("handles unknown slash commands", async () => {
     const mockAgent = new MockAgent();
     const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
