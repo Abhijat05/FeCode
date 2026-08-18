@@ -60,6 +60,9 @@ import { DefaultAgentExecutionStrategy } from "./strategy/executionStrategy.js";
 import { TaskCompletionTracker } from "./completion/tracker.js";
 import type { TaskCompletionSummary } from "./completion/types.js";
 import type { PersistedSessionData } from "./session/types.js";
+import type { GitRepository } from "./git/types.js";
+import { DefaultGitRepository } from "./git/gitRepository.js";
+import { computeChangeAttribution } from "./git/attribution.js";
 
 export interface AgentRuntimeOptions {
   systemPrompt?: string;
@@ -77,6 +80,7 @@ export interface AgentRuntimeOptions {
   repositoryExplorer?: RepositoryExplorer;
   codeContextSelector?: CodeContextSelector;
   executionStrategy?: AgentExecutionStrategy;
+  gitRepository?: GitRepository;
   maxIdenticalToolCalls?: number;
   maxTurns?: number;
 }
@@ -99,6 +103,7 @@ export class AgentRuntime implements Agent {
   private readonly repositoryExplorer?: RepositoryExplorer;
   private readonly codeContextSelector?: CodeContextSelector;
   private readonly executionStrategy: AgentExecutionStrategy;
+  private readonly gitRepository?: GitRepository;
   private readonly completionTracker: TaskCompletionTracker = new TaskCompletionTracker();
   private readonly safeEditValidator: SafeEditValidator = new SafeEditValidator();
   private state: AgentState;
@@ -126,6 +131,7 @@ export class AgentRuntime implements Agent {
     this.repositoryExplorer = options.repositoryExplorer;
     this.codeContextSelector = options.codeContextSelector;
     this.executionStrategy = options.executionStrategy || new DefaultAgentExecutionStrategy();
+    this.gitRepository = options.gitRepository || new DefaultGitRepository();
 
     this.state = {
       sessionId:
@@ -212,6 +218,18 @@ export class AgentRuntime implements Agent {
     this.lastToolCallKey = null;
     this.consecutiveToolCallCount = 0;
     this.state.verificationAttempts = 0;
+
+    if (this.gitRepository) {
+      try {
+        const isRepo = await this.gitRepository.isRepository(input.cwd);
+        if (isRepo) {
+          const baseline = await this.gitRepository.getSnapshot(input.cwd);
+          this.completionTracker.setBaselineSnapshot(baseline);
+        }
+      } catch {
+        // ignore git errors
+      }
+    }
 
     this.state.messages.push({
       role: "user",
@@ -362,6 +380,32 @@ export class AgentRuntime implements Agent {
 
         if (toolCallsForTurn.length === 0) {
           this.state.status = "completed";
+
+          if (this.gitRepository) {
+            try {
+              const isRepo = await this.gitRepository.isRepository(input.cwd);
+              if (isRepo) {
+                const postTask = await this.gitRepository.getSnapshot(input.cwd);
+                this.completionTracker.setPostTaskSnapshot(postTask);
+
+                const baseline = this.completionTracker.getBaselineSnapshot() || null;
+                const currentSum = this.completionTracker.getSummary();
+                const fecodePaths = currentSum.changeSet
+                  ? currentSum.changeSet.files.map((f) => f.path)
+                  : currentSum.completedFiles;
+
+                const attribution = computeChangeAttribution(
+                  baseline,
+                  postTask,
+                  fecodePaths
+                );
+                this.completionTracker.setGitAttribution(attribution);
+              }
+            } catch {
+              // ignore git errors
+            }
+          }
+
           const summary = this.completionTracker.evaluateCompletion({
             activePlan: this.state.activePlan
           });

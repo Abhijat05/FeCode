@@ -96,7 +96,13 @@ export class SessionHistoryFormatter {
           const fileWord =
             task.changeSet.stats.totalFiles === 1 ? "file" : "files";
           text += `   ${task.changeSet.stats.totalFiles} ${fileWord} · +${task.changeSet.stats.totalAdditions} -${task.changeSet.stats.totalDeletions}\n`;
-          if (task.changeSet.areas.length > 0) {
+          if (task.gitAttribution) {
+            const preCount = task.gitAttribution.preExistingFiles.length;
+            text += `   ${preCount} pre-existing\n`;
+          }
+          if (task.gitBranch) {
+            text += `   ${task.gitBranch}\n`;
+          } else if (task.changeSet.areas.length > 0) {
             text += `   ${task.changeSet.areas.join(", ")}\n`;
           }
         } else if (task.fileChanges && task.fileChanges.length > 0) {
@@ -194,6 +200,13 @@ export class SessionHistoryFormatter {
         const fileWord =
           task.changeSet.stats.totalFiles === 1 ? "file" : "files";
         text += `Changes:\n  ${task.changeSet.stats.totalFiles} ${fileWord}\n  +${task.changeSet.stats.totalAdditions} -${task.changeSet.stats.totalDeletions}\n\n`;
+
+        if (task.gitAttribution) {
+          text += `Pre-existing before task:\n  ${task.gitAttribution.preExistingFiles.length} file${task.gitAttribution.preExistingFiles.length === 1 ? "" : "s"}\n\n`;
+          text += `FeCode-attributed:\n  ${task.gitAttribution.fecodeFiles.length} file${task.gitAttribution.fecodeFiles.length === 1 ? "" : "s"}\n\n`;
+          text += `Unattributed:\n  ${task.gitAttribution.unattributedFiles.length} file${task.gitAttribution.unattributedFiles.length === 1 ? "" : "s"}\n\n`;
+        }
+
         if (task.changeSet.areas.length > 0) {
           text += `Areas:\n${task.changeSet.areas.map((a) => `  ${a}`).join("\n")}\n\n`;
         }
@@ -304,6 +317,8 @@ export class SessionHistoryFormatter {
     blockedCount: number;
     currentStatus: string;
     lastChangeSet?: import("../changes/types.js").ChangeSet;
+    gitStatus?: import("../git/types.js").GitStatus;
+    lastAttribution?: import("../git/types.js").ChangeAttribution;
   }): string {
     let text = "FeCode\n\n";
     text += `Provider:\n  ${info.provider || "unknown"}\n\n`;
@@ -314,6 +329,20 @@ export class SessionHistoryFormatter {
     text += `Completed:\n  ${info.completedCount}\n\n`;
     text += `Blocked:\n  ${info.blockedCount}\n\n`;
     text += `Current task:\n  ${info.currentStatus}\n`;
+
+    if (info.gitStatus) {
+      if (info.gitStatus.isRepository) {
+        const branchStr = info.gitStatus.branch || "unknown";
+        const totalChanged = info.gitStatus.files.length;
+        text += `\nGit:\n  ${branchStr}\n  ${totalChanged} changed file${totalChanged === 1 ? "" : "s"}\n`;
+        if (info.lastAttribution) {
+          text += `  ${info.lastAttribution.preExistingFiles.length} pre-existing\n`;
+          text += `  ${info.lastAttribution.fecodeFiles.length} FeCode changes\n`;
+        }
+      } else {
+        text += `\nGit:\n  Not a Git repository\n`;
+      }
+    }
 
     if (info.lastChangeSet && info.lastChangeSet.files.length > 0) {
       const fileWord =

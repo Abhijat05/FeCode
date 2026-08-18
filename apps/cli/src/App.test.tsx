@@ -1,12 +1,13 @@
 import React from "react";
 import { describe, it, expect } from "vitest";
 import { render } from "ink-testing-library";
-import type {
-  Agent,
-  AgentEvent,
-  AgentInput,
-  PersistedSessionData,
-  SessionStore
+import {
+  DefaultGitRepository,
+  type Agent,
+  type AgentEvent,
+  type AgentInput,
+  type PersistedSessionData,
+  type SessionStore
 } from "@fecode/agent";
 import { App } from "./App.js";
 import { InteractiveApprovalResolver } from "./approvalResolver.js";
@@ -555,6 +556,18 @@ describe("CLI App Component", () => {
     expect(exited).toBe(true);
   });
 
+  it("handles /git command cleanly", async () => {
+    const mockAgent = new MockAgent();
+    const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+    await delay(50);
+
+    await typeAndSubmit(stdin, "/git");
+    await delay(100);
+
+    const frame = lastFrame();
+    expect(frame).toContain("Git");
+  });
+
   it("handles unknown slash commands", async () => {
     const mockAgent = new MockAgent();
     const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
@@ -659,8 +672,19 @@ describe("CLI App Component", () => {
       }
     };
 
+    const mockGitRepo = new DefaultGitRepository(async () => ({
+      stdout: "",
+      stderr: "",
+      exitCode: 1
+    }));
+
     const { lastFrame, stdin } = render(
-      <App agent={mockAgent} cwd={process.cwd()} sessionStore={mockStore} />
+      <App
+        agent={mockAgent}
+        cwd={process.cwd()}
+        sessionStore={mockStore}
+        gitRepository={mockGitRepo}
+      />
     );
     await delay(50);
 

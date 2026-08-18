@@ -22,6 +22,36 @@ export class TaskCompletionTracker {
   private status: TaskCompletionStatus = "pending";
   private blockedReason?: string;
   private isNoOp = false;
+  private baselineSnapshot?: import("../git/types.js").RepositorySnapshot;
+  private postTaskSnapshot?: import("../git/types.js").RepositorySnapshot;
+  private gitBranch?: string | null;
+  private gitAttribution?: import("../git/types.js").ChangeAttribution;
+
+  public setBaselineSnapshot(snapshot: import("../git/types.js").RepositorySnapshot): void {
+    this.baselineSnapshot = snapshot;
+    if (snapshot.branch) {
+      this.gitBranch = snapshot.branch;
+    }
+  }
+
+  public setPostTaskSnapshot(snapshot: import("../git/types.js").RepositorySnapshot): void {
+    this.postTaskSnapshot = snapshot;
+    if (snapshot.branch) {
+      this.gitBranch = snapshot.branch;
+    }
+  }
+
+  public setGitBranch(branch: string | null): void {
+    this.gitBranch = branch;
+  }
+
+  public setGitAttribution(attribution: import("../git/types.js").ChangeAttribution): void {
+    this.gitAttribution = attribution;
+  }
+
+  public getBaselineSnapshot(): import("../git/types.js").RepositorySnapshot | undefined {
+    return this.baselineSnapshot;
+  }
 
   public setRequest(request: string): void {
     this.request = request;
@@ -214,6 +244,9 @@ export class TaskCompletionTracker {
       completedFiles: Array.from(this.modifiedFiles).sort(),
       fileChanges: changeSet.files.length > 0 ? changeSet.files : undefined,
       changeSet: changeSet.files.length > 0 || changeSet.commands.length > 0 ? changeSet : undefined,
+      gitBranch: this.gitBranch,
+      gitAttribution: this.gitAttribution,
+      baselineSnapshot: this.baselineSnapshot,
       verifiedCommands: Array.from(this.verifiedCommands).sort(),
       failedCommands:
         this.failedCommands.size > 0
@@ -239,7 +272,29 @@ export class TaskCompletionTracker {
       if (summary.request) {
         text += `\nRequest:\n  ${summary.request}\n`;
       }
-      if (summary.fileChanges && summary.fileChanges.length > 0) {
+
+      if (summary.gitAttribution) {
+        if (summary.gitBranch) {
+          text += `\nGit:\n  ${summary.gitBranch}\n`;
+        }
+        const preCount = summary.gitAttribution.preExistingFiles.length;
+        text += `\nPre-existing:\n  ${preCount} file${preCount === 1 ? "" : "s"}\n`;
+
+        const totalAdds = summary.changeSet?.stats.totalAdditions ?? (summary.fileChanges ? summary.fileChanges.reduce((a, b) => a + b.additions, 0) : 0);
+        const totalDels = summary.changeSet?.stats.totalDeletions ?? (summary.fileChanges ? summary.fileChanges.reduce((a, b) => a + b.deletions, 0) : 0);
+        const feCount = summary.gitAttribution.fecodeFiles.length;
+        text += `\nFeCode changes:\n  ${feCount} file${feCount === 1 ? "" : "s"} · +${totalAdds} -${totalDels}\n`;
+
+        const unCount = summary.gitAttribution.unattributedFiles.length;
+        text += `\nUnattributed:\n  ${unCount} file${unCount === 1 ? "" : "s"}\n`;
+
+        if (summary.gitAttribution.preservedUserFiles.length > 0) {
+          text += `\nUser changes preserved:\n`;
+          for (const f of summary.gitAttribution.preservedUserFiles) {
+            text += `  ✓ ${f}\n`;
+          }
+        }
+      } else if (summary.fileChanges && summary.fileChanges.length > 0) {
         const fileCount = summary.fileChanges.length;
         const totalAdds = summary.changeSet?.stats.totalAdditions ?? summary.fileChanges.reduce((a, b) => a + b.additions, 0);
         const totalDels = summary.changeSet?.stats.totalDeletions ?? summary.fileChanges.reduce((a, b) => a + b.deletions, 0);
@@ -324,5 +379,9 @@ export class TaskCompletionTracker {
     this.status = "pending";
     this.blockedReason = undefined;
     this.isNoOp = false;
+    this.baselineSnapshot = undefined;
+    this.postTaskSnapshot = undefined;
+    this.gitBranch = undefined;
+    this.gitAttribution = undefined;
   }
 }

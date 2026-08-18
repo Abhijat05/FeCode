@@ -1,4 +1,5 @@
 import type { ChangeSet } from "../changes/types.js";
+import type { ChangeAttribution, RepositorySnapshot } from "../git/types.js";
 
 export type TaskCompletionStatus =
   | "pending"
@@ -37,6 +38,9 @@ export interface TaskCompletionSummary {
   completedFiles: string[];
   fileChanges?: FileChangeStats[];
   changeSet?: ChangeSet;
+  gitBranch?: string | null;
+  gitAttribution?: ChangeAttribution;
+  baselineSnapshot?: RepositorySnapshot;
   verifiedCommands: string[];
   failedCommands?: string[];
   completedRequirements: string[];

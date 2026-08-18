@@ -5,6 +5,8 @@ import * as fs from "fs/promises";
 import {
   DefaultSessionStore,
   SessionHistoryFormatter,
+  DefaultGitRepository,
+  GitStatusFormatter,
   type Agent,
   type ProjectContext,
   type SessionStore,
@@ -38,6 +40,7 @@ export interface AppProps {
   projectContext?: ProjectContext;
   sessionStore?: SessionStore;
   initialSessionData?: PersistedSessionData;
+  gitRepository?: import("@fecode/agent").GitRepository;
 }
 
 export const App: React.FC<AppProps> = ({
@@ -50,8 +53,10 @@ export const App: React.FC<AppProps> = ({
   configError,
   projectContext,
   sessionStore,
-  initialSessionData
+  initialSessionData,
+  gitRepository: gitRepoProp
 }) => {
+  const gitRepo = gitRepoProp || new DefaultGitRepository();
   const { exit } = useApp();
   const [query, setQuery] = useState("");
   const [store] = useState<SessionStore>(
@@ -230,6 +235,7 @@ export const App: React.FC<AppProps> = ({
           `Available commands:\n` +
           `  /help                - Show available FeCode commands\n` +
           `  /status              - Show current session information\n` +
+          `  /git                 - Show Git repository and change attribution status\n` +
           `  /history             - Show recent session task history\n` +
           `  /tasks               - List summary of session tasks\n` +
           `  /task [number]       - Show current task or details of a specific task\n` +
@@ -250,6 +256,29 @@ export const App: React.FC<AppProps> = ({
         return;
       }
 
+      if (cmd === "/git") {
+        setQuery("");
+        const gitStatus = await gitRepo.getStatus(cwd);
+        const lastSummary =
+          completedSummaries.length > 0
+            ? completedSummaries[completedSummaries.length - 1]
+            : undefined;
+        const gitText = GitStatusFormatter.formatGitStatus(
+          gitStatus,
+          lastSummary?.gitAttribution
+        );
+        setTurns((prev) => [
+          ...prev,
+          {
+            id: `cmd-${Date.now()}`,
+            prompt: trimmed,
+            response: gitText,
+            status: "done"
+          }
+        ]);
+        return;
+      }
+
       if (cmd === "/status") {
         const completedCount = completedSummaries.filter(
           (s) => s.status === "completed"
@@ -261,6 +290,7 @@ export const App: React.FC<AppProps> = ({
           completedSummaries.length > 0
             ? completedSummaries[completedSummaries.length - 1]
             : undefined;
+        const gitStatus = await gitRepo.getStatus(cwd);
         const statusText = SessionHistoryFormatter.formatSessionStatus({
           sessionId,
           workingDirectory: cwd,
@@ -270,7 +300,9 @@ export const App: React.FC<AppProps> = ({
           completedCount,
           blockedCount,
           currentStatus: lastTaskStatus,
-          lastChangeSet: lastSummary?.changeSet
+          lastChangeSet: lastSummary?.changeSet,
+          gitStatus,
+          lastAttribution: lastSummary?.gitAttribution
         });
         setTurns((prev) => [
           ...prev,
@@ -449,8 +481,41 @@ export const App: React.FC<AppProps> = ({
             agent.restoreSession(loaded);
           }
 
-          const resumeSummary =
+          let resumeSummary =
             SessionHistoryFormatter.formatResumeSummary(loaded);
+
+          try {
+            const isRepo = await gitRepo.isRepository(loaded.workingDirectory);
+            if (isRepo) {
+              const currentStatus = await gitRepo.getStatus(loaded.workingDirectory);
+              const lastTask = loaded.completedTaskSummaries?.length
+                ? loaded.completedTaskSummaries[loaded.completedTaskSummaries.length - 1]
+                : undefined;
+
+              if (
+                lastTask?.gitBranch &&
+                currentStatus.branch &&
+                lastTask.gitBranch !== currentStatus.branch
+              ) {
+                resumeSummary += `\n⚠ Branch changed\n\nPrevious:\n  ${lastTask.gitBranch}\n\nCurrent:\n  ${currentStatus.branch}\n`;
+              }
+
+              if (lastTask?.baselineSnapshot && currentStatus.files.length > 0) {
+                const prevPaths = new Set(
+                  lastTask.baselineSnapshot.files.map((f) => f.path)
+                );
+                const newChanges = currentStatus.files.filter(
+                  (f) => !prevPaths.has(f.path)
+                );
+                if (newChanges.length > 0) {
+                  resumeSummary += `\n⚠ Repository changed since this session was last active\n\nChanged externally:\n  ${newChanges.length} file${newChanges.length === 1 ? "" : "s"}\n`;
+                }
+              }
+            }
+          } catch {
+            // Ignore git inspection errors on resume
+          }
+
           setTurns((prev) => [
             ...prev,
             {
