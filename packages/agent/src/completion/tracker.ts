@@ -27,6 +27,11 @@ export class TaskCompletionTracker {
   private gitBranch?: string | null;
   private gitAttribution?: import("../git/types.js").ChangeAttribution;
   private checkpointId?: string;
+  private recoveryRecord?: import("../recovery/types.js").RecoveryRecord;
+
+  public setRecoveryRecord(record: import("../recovery/types.js").RecoveryRecord | undefined): void {
+    this.recoveryRecord = record;
+  }
 
   public setCheckpointId(id: string | undefined): void {
     this.checkpointId = id;
@@ -253,6 +258,7 @@ export class TaskCompletionTracker {
       gitAttribution: this.gitAttribution,
       baselineSnapshot: this.baselineSnapshot,
       checkpointId: this.checkpointId,
+      recovery: this.recoveryRecord,
       verifiedCommands: Array.from(this.verifiedCommands).sort(),
       failedCommands:
         this.failedCommands.size > 0
@@ -390,5 +396,6 @@ export class TaskCompletionTracker {
     this.gitBranch = undefined;
     this.gitAttribution = undefined;
     this.checkpointId = undefined;
+    this.recoveryRecord = undefined;
   }
 }

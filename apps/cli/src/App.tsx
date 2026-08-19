@@ -9,13 +9,16 @@ import {
   GitStatusFormatter,
   DefaultCheckpointManager,
   CheckpointFormatter,
+  DefaultRecoveryManager,
+  RecoveryFormatter,
   type Agent,
   type ProjectContext,
   type SessionStore,
   type PersistedSessionData,
   type SessionStatus,
   type TaskCompletionSummary,
-  type CheckpointManager
+  type CheckpointManager,
+  type RecoveryManager
 } from "@fecode/agent";
 import type { ApprovalRequest, ModelMessage } from "@fecode/models";
 import {
@@ -45,6 +48,7 @@ export interface AppProps {
   initialSessionData?: PersistedSessionData;
   gitRepository?: import("@fecode/agent").GitRepository;
   checkpointManager?: CheckpointManager;
+  recoveryManager?: RecoveryManager;
 }
 
 export const App: React.FC<AppProps> = ({
@@ -59,7 +63,8 @@ export const App: React.FC<AppProps> = ({
   sessionStore,
   initialSessionData,
   gitRepository: gitRepoProp,
-  checkpointManager: checkpointManagerProp
+  checkpointManager: checkpointManagerProp,
+  recoveryManager: recoveryManagerProp
 }) => {
   const gitRepo = gitRepoProp || new DefaultGitRepository();
   const cpManager =
@@ -67,6 +72,11 @@ export const App: React.FC<AppProps> = ({
     (agent && "getCheckpointManager" in agent && typeof (agent as unknown as { getCheckpointManager: () => CheckpointManager }).getCheckpointManager === "function"
       ? (agent as unknown as { getCheckpointManager: () => CheckpointManager }).getCheckpointManager()
       : new DefaultCheckpointManager(undefined, gitRepo));
+  const recManager =
+    recoveryManagerProp ||
+    (agent && "getRecoveryManager" in agent && typeof (agent as unknown as { getRecoveryManager: () => RecoveryManager }).getRecoveryManager === "function"
+      ? (agent as unknown as { getRecoveryManager: () => RecoveryManager }).getRecoveryManager()
+      : new DefaultRecoveryManager(undefined, gitRepo));
   const { exit } = useApp();
   const [query, setQuery] = useState("");
   const [store] = useState<SessionStore>(
@@ -250,6 +260,9 @@ export const App: React.FC<AppProps> = ({
           `  /checkpoint <id>     - Inspect a specific checkpoint\n` +
           `  /checkpoint diff <id>- Show changes compared to a checkpoint\n` +
           `  /checkpoints         - List available checkpoints\n` +
+          `  /recover <id>        - Restore a recovery checkpoint\n` +
+          `  /recover preview <id>- Preview changes that will be restored by a checkpoint\n` +
+          `  /recover status      - Show last recovery operation status\n` +
           `  /history             - Show recent session task history\n` +
           `  /tasks               - List summary of session tasks\n` +
           `  /task [number]       - Show current task or details of a specific task\n` +
@@ -390,6 +403,110 @@ export const App: React.FC<AppProps> = ({
             }
           ]);
         }
+        return;
+      }
+
+      if (cmd === "/recover") {
+        setQuery("");
+        const subArg = parts[1];
+
+        if (subArg === "status") {
+          const lastRecord = recManager.getLastRecord();
+          const allCps = await cpManager.list();
+          const lastCpId = allCps.length > 0 ? allCps[0].id : undefined;
+          const statusText = RecoveryFormatter.formatRecoveryStatus(
+            lastRecord,
+            lastCpId
+          );
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: statusText,
+              status: "done"
+            }
+          ]);
+          return;
+        }
+
+        if (subArg === "preview") {
+          const targetId = parts[2];
+          if (!targetId) {
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response:
+                  "✗ Please specify a checkpoint ID: /recover preview <id>\n",
+                status: "done"
+              }
+            ]);
+            return;
+          }
+
+          const preview = await recManager.preview(targetId, cwd);
+          const previewText = RecoveryFormatter.formatRecoveryPreview(preview);
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: previewText,
+              status: "done"
+            }
+          ]);
+          return;
+        }
+
+        if (!subArg) {
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: "✗ Please specify a checkpoint ID: /recover <id>\n",
+              status: "done"
+            }
+          ]);
+          return;
+        }
+
+        // /recover <id>
+        const targetId = subArg;
+        const preview = await recManager.preview(targetId, cwd);
+
+        if (!preview.safe) {
+          const previewText = RecoveryFormatter.formatRecoveryPreview(preview);
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: previewText,
+              status: "done"
+            }
+          ]);
+          return;
+        }
+
+        // Execute recovery with approval
+        const res = await recManager.recover(targetId, {
+          cwd,
+          approved: true
+        });
+
+        const resultText = RecoveryFormatter.formatRecoveryResult(res);
+        setTurns((prev) => [
+          ...prev,
+          {
+            id: `cmd-${Date.now()}`,
+            prompt: trimmed,
+            response: resultText,
+            status: "done"
+          }
+        ]);
         return;
       }
 

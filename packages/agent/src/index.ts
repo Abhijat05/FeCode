@@ -81,3 +81,4 @@ export * from "./session/index.js";
 export * from "./changes/index.js";
 export * from "./git/index.js";
 export * from "./checkpoints/index.js";
+export * from "./recovery/index.js";

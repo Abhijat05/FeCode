@@ -120,6 +120,10 @@ export class SessionHistoryFormatter {
         if (task.verifiedCommands && task.verifiedCommands.length > 0) {
           text += `   Verified: ${task.verifiedCommands.join(", ")}\n`;
         }
+        if (task.recovery) {
+          text += `   ↩ Recovered ${task.recovery.checkpointId}\n`;
+          text += `   ${task.recovery.affectedFiles.length} file${task.recovery.affectedFiles.length === 1 ? "" : "s"} restored\n`;
+        }
       } else if (task.status === "blocked") {
         text += `   Blocked\n`;
         if (task.changeSet && task.changeSet.files.length > 0) {
@@ -197,6 +201,10 @@ export class SessionHistoryFormatter {
 
     if (task.checkpointId) {
       text += `Checkpoint:\n  ${task.checkpointId}\n\n`;
+    }
+
+    if (task.recovery) {
+      text += `Recovery:\n  ${task.recovery.affectedFiles.length} file${task.recovery.affectedFiles.length === 1 ? "" : "s"} restored\n  ${task.recovery.preservedFiles.length} pre-existing file${task.recovery.preservedFiles.length === 1 ? "" : "s"} preserved\n\n`;
     }
 
     if (task.status === "completed") {

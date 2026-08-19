@@ -42,6 +42,7 @@ export interface TaskCompletionSummary {
   gitAttribution?: ChangeAttribution;
   baselineSnapshot?: RepositorySnapshot;
   checkpointId?: string;
+  recovery?: import("../recovery/types.js").RecoveryRecord;
   verifiedCommands: string[];
   failedCommands?: string[];
   completedRequirements: string[];

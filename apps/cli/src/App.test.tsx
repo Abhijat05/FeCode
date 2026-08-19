@@ -594,6 +594,16 @@ describe("CLI App Component", () => {
     await typeAndSubmit(stdin, "/checkpoint");
     await delay(100);
     expect(lastFrame()).toContain("Checkpoint created");
+
+    // Test /recover status
+    await typeAndSubmit(stdin, "/recover status");
+    await delay(100);
+    expect(lastFrame()).toContain("Recovery");
+
+    // Test /recover preview without id
+    await typeAndSubmit(stdin, "/recover preview");
+    await delay(100);
+    expect(lastFrame()).toContain("✗ Please specify a checkpoint ID");
   });
 
   it("handles unknown slash commands", async () => {

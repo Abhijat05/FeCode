@@ -65,6 +65,8 @@ import { DefaultGitRepository } from "./git/gitRepository.js";
 import { computeChangeAttribution } from "./git/attribution.js";
 import type { CheckpointManager, CheckpointStore } from "./checkpoints/types.js";
 import { DefaultCheckpointManager } from "./checkpoints/checkpointManager.js";
+import type { RecoveryManager } from "./recovery/types.js";
+import { DefaultRecoveryManager } from "./recovery/recoveryManager.js";
 
 export interface AgentRuntimeOptions {
   systemPrompt?: string;
@@ -85,6 +87,7 @@ export interface AgentRuntimeOptions {
   gitRepository?: GitRepository;
   checkpointManager?: CheckpointManager;
   checkpointStore?: CheckpointStore;
+  recoveryManager?: RecoveryManager;
   maxIdenticalToolCalls?: number;
   maxTurns?: number;
 }
@@ -109,6 +112,7 @@ export class AgentRuntime implements Agent {
   private readonly executionStrategy: AgentExecutionStrategy;
   private readonly gitRepository?: GitRepository;
   private readonly checkpointManager: CheckpointManager;
+  private readonly recoveryManager: RecoveryManager;
   private readonly completionTracker: TaskCompletionTracker = new TaskCompletionTracker();
   private readonly safeEditValidator: SafeEditValidator = new SafeEditValidator();
   private state: AgentState;
@@ -140,6 +144,9 @@ export class AgentRuntime implements Agent {
     this.checkpointManager =
       options.checkpointManager ||
       new DefaultCheckpointManager(options.checkpointStore, this.gitRepository);
+    this.recoveryManager =
+      options.recoveryManager ||
+      new DefaultRecoveryManager(options.checkpointStore, this.gitRepository);
 
     this.state = {
       sessionId:
@@ -161,6 +168,10 @@ export class AgentRuntime implements Agent {
 
   public getCheckpointManager(): CheckpointManager {
     return this.checkpointManager;
+  }
+
+  public getRecoveryManager(): RecoveryManager {
+    return this.recoveryManager;
   }
 
   public getState(): AgentState {
