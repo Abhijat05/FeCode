@@ -99,9 +99,11 @@ export class DefaultCheckpointManager implements CheckpointManager {
         branch,
         files,
         totalFiles: files.length,
-        status: "ready",
+        status: "created",
         isGit,
-        reasons: options.reasons || (options.reason ? [options.reason] : [])
+        reason: options.reason,
+        reasons: options.reasons || (options.reason ? [options.reason] : []),
+        affectedFiles: options.affectedFiles
       };
 
       await this.store.save(checkpoint);
@@ -121,14 +123,17 @@ export class DefaultCheckpointManager implements CheckpointManager {
     }
   }
 
+  public async get(id: string): Promise<Checkpoint | null> {
+    return this.store.get(id);
+  }
+
   public async inspect(id: string): Promise<Checkpoint | null> {
     const cp = await this.store.get(id);
     if (!cp) return null;
 
-    // Verify storage validity
     return {
       ...cp,
-      status: cp.status || "ready"
+      status: cp.status || "created"
     };
   }
 
@@ -157,7 +162,6 @@ export class DefaultCheckpointManager implements CheckpointManager {
               ? "deleted"
               : "modified";
 
-        // Approximated diff stat or 1 line if not full diff
         const adds = op === "deleted" ? 0 : 1;
         const dels = op === "added" ? 0 : 1;
 
@@ -191,5 +195,29 @@ export class DefaultCheckpointManager implements CheckpointManager {
 
   public async remove(id: string): Promise<void> {
     return this.store.remove(id);
+  }
+
+  public async discard(id: string): Promise<void> {
+    const cp = await this.store.get(id);
+    if (cp) {
+      await this.store.save({
+        ...cp,
+        status: "discarded"
+      });
+    }
+  }
+
+  public async restore(
+    id: string,
+    options: import("../recovery/types.js").RecoveryOptions = { cwd: process.cwd() }
+  ): Promise<import("../recovery/types.js").RecoveryResult> {
+    const { DefaultRecoveryManager } = await import(
+      "../recovery/recoveryManager.js"
+    );
+    const recoveryManager = new DefaultRecoveryManager(
+      this.store,
+      this.gitRepo
+    );
+    return recoveryManager.recover(id, options);
   }
 }

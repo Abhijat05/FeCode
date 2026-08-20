@@ -216,4 +216,74 @@ describe("DefaultRecoveryManager — Phase 5H", () => {
     expect(result.success).toBe(false);
     expect(result.status).toBe("cancelled");
   });
+
+  it("blocks recovery for discarded checkpoints", async () => {
+    const store = new DefaultCheckpointStore(tmpStoreDir);
+    const cp: Checkpoint = {
+      id: "checkpoint-discarded-1",
+      createdAt: new Date().toISOString(),
+      repositoryRoot: tmpWorkDir.replace(/\\/g, "/"),
+      branch: "feature/auth",
+      files: [],
+      totalFiles: 0,
+      status: "discarded",
+      isGit: true
+    };
+    await store.save(cp);
+
+    const manager = new DefaultRecoveryManager(store);
+    const preview = await manager.preview("checkpoint-discarded-1", tmpWorkDir);
+    expect(preview.safe).toBe(false);
+    expect(preview.reasons).toContain("Checkpoint has been discarded");
+
+    const result = await manager.recover("checkpoint-discarded-1", {
+      cwd: tmpWorkDir,
+      approved: true
+    });
+    expect(result.success).toBe(false);
+    expect(result.status).toBe("blocked");
+  });
+
+  it("updates checkpoint status to restored upon successful recovery", async () => {
+    const store = new DefaultCheckpointStore(tmpStoreDir);
+    const cp: Checkpoint = {
+      id: "checkpoint-test-lifecycle",
+      createdAt: new Date().toISOString(),
+      repositoryRoot: tmpWorkDir.replace(/\\/g, "/"),
+      branch: "feature/auth",
+      files: [],
+      totalFiles: 0,
+      status: "created",
+      isGit: true
+    };
+    await store.save(cp);
+
+    const mockRunner: GitCommandRunner = async (args) => {
+      if (args[0] === "rev-parse" && args[1] === "--is-inside-work-tree") {
+        return { stdout: "true\n", stderr: "", exitCode: 0 };
+      }
+      if (args[0] === "rev-parse" && args[1] === "--show-toplevel") {
+        return { stdout: `${tmpWorkDir.replace(/\\/g, "/")}\n`, stderr: "", exitCode: 0 };
+      }
+      if (args[0] === "branch" && args[1] === "--show-current") {
+        return { stdout: "feature/auth\n", stderr: "", exitCode: 0 };
+      }
+      if (args[0] === "status") {
+        return { stdout: "## feature/auth\n", stderr: "", exitCode: 0 };
+      }
+      return { stdout: "", stderr: "", exitCode: 0 };
+    };
+
+    const gitRepo = new DefaultGitRepository(mockRunner);
+    const manager = new DefaultRecoveryManager(store, gitRepo, mockRunner);
+
+    const result = await manager.recover("checkpoint-test-lifecycle", {
+      cwd: tmpWorkDir,
+      approved: true
+    });
+
+    expect(result.success).toBe(true);
+    const updatedCp = await store.get("checkpoint-test-lifecycle");
+    expect(updatedCp?.status).toBe("restored");
+  });
 });

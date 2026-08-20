@@ -1,3 +1,12 @@
+export type CheckpointStatus =
+  | "created"
+  | "active"
+  | "ready"
+  | "restored"
+  | "discarded"
+  | "invalid"
+  | "expired";
+
 export interface CheckpointFile {
   path: string;
   status: string;
@@ -13,10 +22,21 @@ export interface Checkpoint {
   branch: string | null;
   files: CheckpointFile[];
   totalFiles: number;
-  status: "ready" | "invalid" | "expired";
+  status: CheckpointStatus;
   isGit: boolean;
   storagePath?: string;
+  reason?: string;
   reasons?: string[];
+  affectedFiles?: string[];
+}
+
+export interface CheckpointContext {
+  cwd: string;
+  reason?: string;
+  reasons?: string[];
+  affectedFiles?: string[];
+  taskId?: string;
+  signal?: AbortSignal;
 }
 
 export interface CheckpointCreateOptions {
@@ -24,6 +44,7 @@ export interface CheckpointCreateOptions {
   cwd: string;
   reason?: string;
   reasons?: string[];
+  affectedFiles?: string[];
   signal?: AbortSignal;
 }
 
@@ -77,9 +98,17 @@ export interface CheckpointStore {
 }
 
 export interface CheckpointManager {
-  create(options: CheckpointCreateOptions): Promise<CheckpointResult>;
+  create(
+    options: CheckpointCreateOptions | CheckpointContext
+  ): Promise<CheckpointResult>;
+  get(id: string): Promise<Checkpoint | null>;
   inspect(id: string): Promise<Checkpoint | null>;
   compare(id: string, cwd: string): Promise<CheckpointComparison>;
   list(): Promise<Checkpoint[]>;
   remove(id: string): Promise<void>;
+  discard(id: string): Promise<void>;
+  restore(
+    id: string,
+    options?: import("../recovery/types.js").RecoveryOptions
+  ): Promise<import("../recovery/types.js").RecoveryResult>;
 }

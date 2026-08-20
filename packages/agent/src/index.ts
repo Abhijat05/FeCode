@@ -38,7 +38,17 @@ export type AgentEvent =
   | { type: "plan_step_started"; planId: string; stepId: string; stepIndex: number }
   | { type: "plan_step_completed"; planId: string; stepId: string; stepIndex: number }
   | { type: "plan_step_failed"; planId: string; stepId: string; stepIndex: number; error?: string }
-  | { type: "task_summary"; summary: TaskCompletionSummary };
+  | { type: "task_summary"; summary: TaskCompletionSummary }
+  | { type: "run_started"; runId: string }
+  | {
+      type: "state_changed";
+      from: import("./run/types.js").AgentRunStatus;
+      to: import("./run/types.js").AgentRunStatus;
+      reason: string;
+    }
+  | { type: "run_completed"; runId: string }
+  | { type: "run_failed"; runId: string; code?: string; error?: string }
+  | { type: "run_cancelled"; runId: string };
 
 export * from "./runtime.js";
 export * from "./systemPrompt.js";
@@ -83,3 +93,4 @@ export * from "./git/index.js";
 export * from "./checkpoints/index.js";
 export * from "./recovery/index.js";
 export * from "./policy/index.js";
+export * from "./run/index.js";

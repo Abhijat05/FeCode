@@ -19,7 +19,23 @@ export async function performRecoverySafetyCheck(
   const preservedFiles: string[] = [];
 
   // 1. Checkpoint status validity
-  if (checkpoint.status !== "ready") {
+  if (checkpoint.status === "discarded") {
+    reasons.push("Checkpoint has been discarded");
+    return {
+      safe: false,
+      conflicts,
+      affectedFiles,
+      preservedFiles,
+      reasons
+    };
+  }
+
+  if (
+    checkpoint.status !== "ready" &&
+    checkpoint.status !== "created" &&
+    checkpoint.status !== "active" &&
+    checkpoint.status !== "restored"
+  ) {
     reasons.push("Checkpoint is invalid or corrupted");
     return {
       safe: false,

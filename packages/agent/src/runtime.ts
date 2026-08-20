@@ -69,6 +69,8 @@ import type { RecoveryManager } from "./recovery/types.js";
 import { DefaultRecoveryManager } from "./recovery/recoveryManager.js";
 import type { ExecutionPolicy, TaskRiskContext, TaskRiskAssessment } from "./policy/types.js";
 import { DefaultTaskRiskPolicy } from "./policy/taskRiskPolicy.js";
+import type { AgentRunStateMachine } from "./run/types.js";
+import { DefaultAgentRunStateMachine } from "./run/stateMachine.js";
 
 export interface AgentRuntimeOptions {
   systemPrompt?: string;
@@ -91,6 +93,7 @@ export interface AgentRuntimeOptions {
   checkpointStore?: CheckpointStore;
   recoveryManager?: RecoveryManager;
   executionPolicy?: ExecutionPolicy;
+  emitRunEvents?: boolean;
   maxIdenticalToolCalls?: number;
   maxTurns?: number;
 }
@@ -105,6 +108,7 @@ export class AgentRuntime implements Agent {
   private readonly maxVerificationAttempts: number;
   private readonly maxIdenticalToolCalls: number;
   private readonly maxTurns: number;
+  private readonly emitRunEvents: boolean;
   private readonly projectContext?: ProjectContext;
   private readonly skillRegistry?: SkillRegistry;
   private readonly activationPolicy?: SkillActivationPolicy;
@@ -119,6 +123,7 @@ export class AgentRuntime implements Agent {
   private readonly executionPolicy: ExecutionPolicy;
   private readonly completionTracker: TaskCompletionTracker = new TaskCompletionTracker();
   private readonly safeEditValidator: SafeEditValidator = new SafeEditValidator();
+  private currentRunStateMachine?: AgentRunStateMachine;
   private state: AgentState;
   private activeController: AbortController | null = null;
   private lastToolCallKey: string | null = null;
@@ -136,6 +141,7 @@ export class AgentRuntime implements Agent {
     this.maxVerificationAttempts = options.maxVerificationAttempts ?? 3;
     this.maxIdenticalToolCalls = options.maxIdenticalToolCalls ?? 3;
     this.maxTurns = options.maxTurns ?? 50;
+    this.emitRunEvents = options.emitRunEvents ?? false;
     this.projectContext = options.projectContext;
     this.skillRegistry = options.skillRegistry;
     this.activationPolicy = options.activationPolicy;
@@ -182,6 +188,10 @@ export class AgentRuntime implements Agent {
 
   public getExecutionPolicy(): ExecutionPolicy {
     return this.executionPolicy;
+  }
+
+  public getRunStateMachine(): AgentRunStateMachine | undefined {
+    return this.currentRunStateMachine;
   }
 
   public assessTaskRisk(context: TaskRiskContext): TaskRiskAssessment {
@@ -255,6 +265,26 @@ export class AgentRuntime implements Agent {
     this.lastToolCallKey = null;
     this.consecutiveToolCallCount = 0;
     this.state.verificationAttempts = 0;
+
+    const stateMachine = new DefaultAgentRunStateMachine({
+      cwd: input.cwd,
+      maxVerificationAttempts: this.maxVerificationAttempts
+    });
+    this.currentRunStateMachine = stateMachine;
+
+    if (this.emitRunEvents) {
+      yield { type: "run_started", runId: stateMachine.getContext().runId };
+    }
+
+    stateMachine.transition("planning", "Task started and context initialized");
+    if (this.emitRunEvents) {
+      yield {
+        type: "state_changed",
+        from: "idle",
+        to: "planning",
+        reason: "Task started and context initialized"
+      };
+    }
 
     if (this.gitRepository) {
       try {
@@ -446,6 +476,29 @@ export class AgentRuntime implements Agent {
         if (toolCallsForTurn.length === 0) {
           this.state.status = "completed";
 
+          if (
+            this.currentRunStateMachine &&
+            !this.currentRunStateMachine.isTerminal()
+          ) {
+            const fromState = this.currentRunStateMachine.getState();
+            this.currentRunStateMachine.transition(
+              "completed",
+              "Task execution finished"
+            );
+            if (this.emitRunEvents) {
+              yield {
+                type: "state_changed",
+                from: fromState,
+                to: "completed",
+                reason: "Task execution finished"
+              };
+              yield {
+                type: "run_completed",
+                runId: this.currentRunStateMachine.getContext().runId
+              };
+            }
+          }
+
           if (this.gitRepository) {
             try {
               const isRepo = await this.gitRepository.isRepository(input.cwd);
@@ -485,6 +538,24 @@ export class AgentRuntime implements Agent {
           }
           yield { type: "done" };
           break;
+        }
+
+        if (
+          this.currentRunStateMachine &&
+          this.currentRunStateMachine.getState() === "planning"
+        ) {
+          this.currentRunStateMachine.transition(
+            "executing",
+            "Tool execution started"
+          );
+          if (this.emitRunEvents) {
+            yield {
+              type: "state_changed",
+              from: "planning",
+              to: "executing",
+              reason: "Tool execution started"
+            };
+          }
         }
 
         for (const call of toolCallsForTurn) {
@@ -531,10 +602,65 @@ export class AgentRuntime implements Agent {
               }
             };
           } else {
-            const decision = await this.permissionManager.check(
-              tool,
-              toolContext
-            );
+            let affectedFilePath: string | undefined;
+            if (call.name === "write_file" || call.name === "edit_file") {
+              const args = (call.arguments || {}) as { path?: string };
+              affectedFilePath = args.path;
+            }
+
+            const toolRisk = this.executionPolicy.assess({
+              userMessage: input.message,
+              cwd: input.cwd,
+              affectedFiles: affectedFilePath ? [affectedFilePath] : [],
+              operations: [call.name]
+            });
+
+            let checkpointError: ToolResult | null = null;
+            if (
+              toolRisk.requiresCheckpoint &&
+              this.checkpointManager &&
+              !this.completionTracker.getSummary().checkpointId
+            ) {
+              try {
+                const cpRes = await this.checkpointManager.create({
+                  cwd: input.cwd,
+                  taskId: this.state.sessionId,
+                  reason:
+                    toolRisk.reasons.join("; ") ||
+                    "Elevated/Critical risk mutation",
+                  affectedFiles: affectedFilePath ? [affectedFilePath] : [],
+                  signal: this.activeController.signal
+                });
+                if (cpRes.success && cpRes.checkpoint) {
+                  this.completionTracker.setCheckpointId(cpRes.checkpoint.id);
+                } else {
+                  checkpointError = {
+                    success: false,
+                    error: {
+                      message: `Checkpoint creation failed: ${cpRes.error || "Unknown error"}. Mutation blocked for safety.`,
+                      code: "CHECKPOINT_FAILED"
+                    }
+                  };
+                }
+              } catch (err: unknown) {
+                const msg = err instanceof Error ? err.message : String(err);
+                checkpointError = {
+                  success: false,
+                  error: {
+                    message: `Checkpoint creation failed: ${msg}. Mutation blocked for safety.`,
+                    code: "CHECKPOINT_FAILED"
+                  }
+                };
+              }
+            }
+
+            if (checkpointError) {
+              result = checkpointError;
+            } else {
+              const decision = await this.permissionManager.check(
+                tool,
+                toolContext
+              );
 
             if (decision.type === "denied") {
               result = {
@@ -712,6 +838,7 @@ export class AgentRuntime implements Agent {
               result = await this.executor.execute(call, toolContext);
             }
           }
+        }
 
           yield { type: "tool_result", result, callId: call.id };
 
@@ -814,8 +941,47 @@ export class AgentRuntime implements Agent {
       this.state.status = isCancelled ? "cancelled" : "failed";
       if (isCancelled) {
         this.completionTracker.recordCancelled();
+        if (
+          this.currentRunStateMachine &&
+          !this.currentRunStateMachine.isTerminal()
+        ) {
+          const fromState = this.currentRunStateMachine.getState();
+          this.currentRunStateMachine.transition("cancelled", "Run cancelled");
+          if (this.emitRunEvents) {
+            yield {
+              type: "state_changed",
+              from: fromState,
+              to: "cancelled",
+              reason: "Run cancelled"
+            };
+            yield {
+              type: "run_cancelled",
+              runId: this.currentRunStateMachine.getContext().runId
+            };
+          }
+        }
       } else {
         this.completionTracker.recordBlocked(error.message);
+        if (
+          this.currentRunStateMachine &&
+          !this.currentRunStateMachine.isTerminal()
+        ) {
+          const fromState = this.currentRunStateMachine.getState();
+          this.currentRunStateMachine.transition("failed", error.message);
+          if (this.emitRunEvents) {
+            yield {
+              type: "state_changed",
+              from: fromState,
+              to: "failed",
+              reason: error.message
+            };
+            yield {
+              type: "run_failed",
+              runId: this.currentRunStateMachine.getContext().runId,
+              error: error.message
+            };
+          }
+        }
       }
       yield { type: "error", error };
     } finally {

@@ -260,6 +260,16 @@ export class DefaultRecoveryManager implements RecoveryManager {
       // Clean up emergency snapshot on success
       await cleanupEmergencySnapshot(emergencySnapshotPath);
 
+      // Update checkpoint status to restored
+      try {
+        await this.store.save({
+          ...cp,
+          status: "restored"
+        });
+      } catch {
+        // Ignore store update error
+      }
+
       this.lastRecord = {
         checkpointId,
         startedAt,

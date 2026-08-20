@@ -31,10 +31,16 @@ export interface RecoveryPreview {
   conflicts: RecoveryConflict[];
 }
 
+export interface RecoveryRequest {
+  checkpointId: string;
+  reason: string;
+}
+
 export interface RecoveryOptions {
   cwd: string;
   signal?: AbortSignal;
   approved?: boolean;
+  request?: RecoveryRequest;
 }
 
 export interface RecoveryResult {

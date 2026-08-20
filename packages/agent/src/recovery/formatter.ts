@@ -72,6 +72,19 @@ export class RecoveryFormatter {
     return text;
   }
 
+  public static formatRecoveryRecommendation(
+    checkpointId: string,
+    reason: string
+  ): string {
+    let text = "⚠ Recovery requested\n\n";
+    text += "The verification process failed after changes were made.\n\n";
+    text += `Checkpoint:\n  ${checkpointId}\n\n`;
+    text += `Reason:\n  ${sanitizeText(reason)}\n\n`;
+    text += "This may discard changes made by the agent.\n\n";
+    text += "Proceed with recovery? [y/N]";
+    return text;
+  }
+
   public static formatRecoveryResult(result: RecoveryResult): string {
     if (result.status === "completed") {
       let text = "✓ Recovery completed\n\n";

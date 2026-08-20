@@ -60,7 +60,7 @@ describe("DefaultCheckpointManager — Phase 5G", () => {
     const inspected = await manager.inspect(res.checkpoint!.id);
     expect(inspected).not.toBeNull();
     expect(inspected?.id).toBe(res.checkpoint!.id);
-    expect(inspected?.status).toBe("ready");
+    expect(inspected?.status).toBe("created");
   });
 
   it("handles non-Git repositories gracefully", async () => {
@@ -124,5 +124,29 @@ describe("DefaultCheckpointManager — Phase 5G", () => {
     expect(comparison.files[0].operation).toBe("added");
     expect(comparison.files[1].path).toBe("src/components/Login.tsx");
     expect(comparison.files[1].operation).toBe("modified");
+  });
+
+  it("supports get and discard lifecycle transitions", async () => {
+    const store = new DefaultCheckpointStore(storeDir);
+    const manager = new DefaultCheckpointManager(store);
+
+    const res = await manager.create({
+      cwd: tmpDir,
+      reason: "Pre-refactor snapshot",
+      affectedFiles: ["src/index.ts"]
+    });
+    expect(res.success).toBe(true);
+    const id = res.checkpoint!.id;
+
+    const fetched = await manager.get(id);
+    expect(fetched).not.toBeNull();
+    expect(fetched?.id).toBe(id);
+    expect(fetched?.reason).toBe("Pre-refactor snapshot");
+    expect(fetched?.affectedFiles).toEqual(["src/index.ts"]);
+
+    // Discard checkpoint
+    await manager.discard(id);
+    const discarded = await manager.get(id);
+    expect(discarded?.status).toBe("discarded");
   });
 });
