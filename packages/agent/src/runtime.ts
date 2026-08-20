@@ -67,6 +67,8 @@ import type { CheckpointManager, CheckpointStore } from "./checkpoints/types.js"
 import { DefaultCheckpointManager } from "./checkpoints/checkpointManager.js";
 import type { RecoveryManager } from "./recovery/types.js";
 import { DefaultRecoveryManager } from "./recovery/recoveryManager.js";
+import type { ExecutionPolicy, TaskRiskContext, TaskRiskAssessment } from "./policy/types.js";
+import { DefaultTaskRiskPolicy } from "./policy/taskRiskPolicy.js";
 
 export interface AgentRuntimeOptions {
   systemPrompt?: string;
@@ -88,6 +90,7 @@ export interface AgentRuntimeOptions {
   checkpointManager?: CheckpointManager;
   checkpointStore?: CheckpointStore;
   recoveryManager?: RecoveryManager;
+  executionPolicy?: ExecutionPolicy;
   maxIdenticalToolCalls?: number;
   maxTurns?: number;
 }
@@ -113,6 +116,7 @@ export class AgentRuntime implements Agent {
   private readonly gitRepository?: GitRepository;
   private readonly checkpointManager: CheckpointManager;
   private readonly recoveryManager: RecoveryManager;
+  private readonly executionPolicy: ExecutionPolicy;
   private readonly completionTracker: TaskCompletionTracker = new TaskCompletionTracker();
   private readonly safeEditValidator: SafeEditValidator = new SafeEditValidator();
   private state: AgentState;
@@ -147,6 +151,8 @@ export class AgentRuntime implements Agent {
     this.recoveryManager =
       options.recoveryManager ||
       new DefaultRecoveryManager(options.checkpointStore, this.gitRepository);
+    this.executionPolicy =
+      options.executionPolicy || new DefaultTaskRiskPolicy();
 
     this.state = {
       sessionId:
@@ -172,6 +178,14 @@ export class AgentRuntime implements Agent {
 
   public getRecoveryManager(): RecoveryManager {
     return this.recoveryManager;
+  }
+
+  public getExecutionPolicy(): ExecutionPolicy {
+    return this.executionPolicy;
+  }
+
+  public assessTaskRisk(context: TaskRiskContext): TaskRiskAssessment {
+    return this.executionPolicy.assess(context);
   }
 
   public getState(): AgentState {
@@ -251,6 +265,34 @@ export class AgentRuntime implements Agent {
         }
       } catch {
         // ignore git errors
+      }
+    }
+
+    const initialRisk = this.executionPolicy.assess({
+      userMessage: input.message,
+      cwd: input.cwd,
+      affectedFiles: [],
+      operations: []
+    });
+
+    if (
+      initialRisk.requiresCheckpoint &&
+      this.checkpointManager &&
+      !this.completionTracker.getSummary().checkpointId
+    ) {
+      try {
+        const cpRes = await this.checkpointManager.create({
+          cwd: input.cwd,
+          taskId: this.state.sessionId,
+          reason:
+            initialRisk.reasons.join("; ") || "Elevated/Critical risk task",
+          signal: this.activeController.signal
+        });
+        if (cpRes.success && cpRes.checkpoint) {
+          this.completionTracker.setCheckpointId(cpRes.checkpoint.id);
+        }
+      } catch {
+        // ignore checkpoint creation errors
       }
     }
 

@@ -11,6 +11,8 @@ import {
   CheckpointFormatter,
   DefaultRecoveryManager,
   RecoveryFormatter,
+  DefaultTaskRiskPolicy,
+  TaskRiskFormatter,
   type Agent,
   type ProjectContext,
   type SessionStore,
@@ -18,7 +20,8 @@ import {
   type SessionStatus,
   type TaskCompletionSummary,
   type CheckpointManager,
-  type RecoveryManager
+  type RecoveryManager,
+  type ExecutionPolicy
 } from "@fecode/agent";
 import type { ApprovalRequest, ModelMessage } from "@fecode/models";
 import {
@@ -49,6 +52,7 @@ export interface AppProps {
   gitRepository?: import("@fecode/agent").GitRepository;
   checkpointManager?: CheckpointManager;
   recoveryManager?: RecoveryManager;
+  executionPolicy?: ExecutionPolicy;
 }
 
 export const App: React.FC<AppProps> = ({
@@ -64,7 +68,8 @@ export const App: React.FC<AppProps> = ({
   initialSessionData,
   gitRepository: gitRepoProp,
   checkpointManager: checkpointManagerProp,
-  recoveryManager: recoveryManagerProp
+  recoveryManager: recoveryManagerProp,
+  executionPolicy: executionPolicyProp
 }) => {
   const gitRepo = gitRepoProp || new DefaultGitRepository();
   const cpManager =
@@ -77,6 +82,11 @@ export const App: React.FC<AppProps> = ({
     (agent && "getRecoveryManager" in agent && typeof (agent as unknown as { getRecoveryManager: () => RecoveryManager }).getRecoveryManager === "function"
       ? (agent as unknown as { getRecoveryManager: () => RecoveryManager }).getRecoveryManager()
       : new DefaultRecoveryManager(undefined, gitRepo));
+  const execPolicy =
+    executionPolicyProp ||
+    (agent && "getExecutionPolicy" in agent && typeof (agent as unknown as { getExecutionPolicy: () => ExecutionPolicy }).getExecutionPolicy === "function"
+      ? (agent as unknown as { getExecutionPolicy: () => ExecutionPolicy }).getExecutionPolicy()
+      : new DefaultTaskRiskPolicy());
   const { exit } = useApp();
   const [query, setQuery] = useState("");
   const [store] = useState<SessionStore>(
@@ -897,11 +907,20 @@ export const App: React.FC<AppProps> = ({
     setActiveRequest(trimmed);
     setLastTaskStatus("in_progress");
 
+    const initialRisk = execPolicy.assess({
+      userMessage: trimmed,
+      cwd,
+      affectedFiles: [],
+      operations: []
+    });
+    const riskNotice = TaskRiskFormatter.formatRiskNotice(initialRisk);
+    const initialResponse = riskNotice ? `${riskNotice}\n\n` : "";
+
     const turnId = `turn-${Date.now()}`;
     const newTurn: Turn = {
       id: turnId,
       prompt: trimmed,
-      response: "",
+      response: initialResponse,
       status: "thinking"
     };
 

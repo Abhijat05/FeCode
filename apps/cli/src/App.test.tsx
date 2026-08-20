@@ -638,6 +638,24 @@ describe("CLI App Component", () => {
     expect(callCount).toBe(0);
   });
 
+  it("displays elevated risk indicator when prompt requests dependency changes", async () => {
+    const mockAgent = new MockAgent();
+    mockAgent.runFn = async function* () {
+      yield { type: "text", content: "Dependencies updated." };
+      yield { type: "done" };
+    };
+
+    const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+    await delay(50);
+
+    await typeAndSubmit(stdin, "npm install axios and configure it");
+    await delay(100);
+
+    const frame = lastFrame();
+    expect(frame).toContain("Elevated-risk task");
+    expect(frame).toContain("Checkpoint required");
+  });
+
   it("handles /sessions, /resume, and /delete-session commands", async () => {
     const mockAgent = new MockAgent();
 
