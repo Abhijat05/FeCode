@@ -45,6 +45,8 @@ export interface RunFilesSummary {
 
 export interface RunSummary {
   runId: string;
+  parentRunId?: string;
+  resumeDepth?: number;
   startedAt: number;
   completedAt?: number;
   durationMs?: number;
@@ -84,6 +86,8 @@ export interface RunDiagnosticsManager {
     activeSkills?: string[];
     riskLevel?: TaskRiskLevel;
     riskReasons?: string[];
+    parentRunId?: string;
+    resumeDepth?: number;
     requiresCheckpoint?: boolean;
     requiresExplicitApproval?: boolean;
     maxVerificationAttempts?: number;

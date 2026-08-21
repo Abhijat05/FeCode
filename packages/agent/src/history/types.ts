@@ -23,6 +23,7 @@ export interface DurableRunRecord {
   schemaVersion: 1;
   runId: string;
   parentRunId?: string;
+  resumeDepth?: number;
   projectId: string;
   cwd: string;
   userRequestSummary: string;
@@ -64,9 +65,11 @@ export interface RunHistoryStore {
     record: DurableRunRecord | RunSummary,
     projectId?: string,
     fingerprint?: WorkspaceFingerprint,
-    parentRunId?: string
+    parentRunId?: string,
+    resumeDepth?: number
   ): Promise<void>;
   getRun(runId: string): Promise<DurableRunRecord | null>;
+  getRunLineage(runId: string): Promise<DurableRunRecord[]>;
   listRuns(options?: {
     projectId?: string;
     limit?: number;
@@ -81,6 +84,7 @@ export interface ResumePreparation {
   originalRun: DurableRunRecord;
   suggestedParentRunId: string;
   newRunId: string;
+  resumeDepth: number;
   workspaceChanged: boolean;
   workspaceDiffReasons: string[];
   reassessedRisk: TaskRiskAssessment;
@@ -89,9 +93,18 @@ export interface ResumePreparation {
   explanation: string;
 }
 
+export interface ResumeRunOptions {
+  cwd?: string;
+  approved?: boolean;
+}
+
 export interface ResumeManager {
   prepareResume(
     runId: string,
     currentCwd: string
   ): Promise<ResumePreparation>;
+  buildResumeContext(
+    originalRun: DurableRunRecord,
+    prep: ResumePreparation
+  ): string;
 }

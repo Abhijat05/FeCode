@@ -5,15 +5,18 @@ import * as os from "os";
 import { DefaultRunHistoryStore } from "./runHistoryStore.js";
 import { DefaultResumeManager } from "./resumeManager.js";
 import { DefaultTaskRiskPolicy } from "../policy/taskRiskPolicy.js";
+import { getProjectIdentifier } from "./projectIdentifier.js";
 import type { DurableRunRecord } from "./types.js";
 
-describe("DefaultResumeManager — Phase 5N", () => {
+describe("DefaultResumeManager — Phase 5N / 5O", () => {
   let tmpDir: string;
+  let projectId: string;
   let historyStore: DefaultRunHistoryStore;
   let resumeManager: DefaultResumeManager;
 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "fecode-resume-mgr-test-"));
+    projectId = await getProjectIdentifier(tmpDir);
     await fs.writeFile(path.join(tmpDir, "sample.ts"), "export const x = 1;\n", "utf-8");
     historyStore = new DefaultRunHistoryStore({ storageDir: tmpDir });
     resumeManager = new DefaultResumeManager({
@@ -34,7 +37,7 @@ describe("DefaultResumeManager — Phase 5N", () => {
     const interruptedRun: DurableRunRecord = {
       schemaVersion: 1,
       runId: "run-orig-interrupted",
-      projectId: "proj-test",
+      projectId,
       cwd: tmpDir,
       userRequestSummary: "Refactor sample module",
       startedAt: Date.now() - 3600000,
@@ -69,7 +72,7 @@ describe("DefaultResumeManager — Phase 5N", () => {
     const failedRun: DurableRunRecord = {
       schemaVersion: 1,
       runId: "run-orig-failed",
-      projectId: "proj-test",
+      projectId,
       cwd: tmpDir,
       userRequestSummary: "Fix unit test failure",
       startedAt: Date.now() - 10000,
@@ -111,7 +114,7 @@ describe("DefaultResumeManager — Phase 5N", () => {
     const completedRun: DurableRunRecord = {
       schemaVersion: 1,
       runId: "run-completed",
-      projectId: "proj-test",
+      projectId,
       cwd: tmpDir,
       userRequestSummary: "Build complete feature",
       startedAt: Date.now() - 10000,
@@ -145,7 +148,7 @@ describe("DefaultResumeManager — Phase 5N", () => {
     const run: DurableRunRecord = {
       schemaVersion: 1,
       runId: "run-workspace-test",
-      projectId: "proj-test",
+      projectId,
       cwd: tmpDir,
       userRequestSummary: "Edit sample.ts",
       startedAt: Date.now() - 5000,

@@ -3,11 +3,13 @@ import type { ExecutionPolicy } from "../policy/types.js";
 import type { SkillRegistry } from "../skills/types.js";
 import type { SkillActivationPolicy } from "../skills/activation.js";
 import type { ProjectContext } from "../project/types.js";
+import { getProjectIdentifier } from "./projectIdentifier.js";
 import {
   captureWorkspaceFingerprint,
   compareWorkspaceFingerprints
 } from "./workspaceFingerprint.js";
 import type {
+  DurableRunRecord,
   ResumeManager,
   ResumePreparation,
   RunHistoryStore
@@ -49,6 +51,7 @@ export class DefaultResumeManager implements ResumeManager {
     }
 
     const newRunId = `run-resume-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const resumeDepth = (originalRun.resumeDepth ?? 0) + 1;
 
     // 1. Resumability check
     if (originalRun.finalStatus === "completed") {
@@ -57,6 +60,7 @@ export class DefaultResumeManager implements ResumeManager {
         originalRun,
         suggestedParentRunId: originalRun.runId,
         newRunId,
+        resumeDepth,
         workspaceChanged: false,
         workspaceDiffReasons: [],
         reassessedRisk: this.executionPolicy.assess({
@@ -71,7 +75,36 @@ export class DefaultResumeManager implements ResumeManager {
       };
     }
 
-    // 2. Workspace change detection
+    // 2. Project identity validation
+    const currentProjectId = await getProjectIdentifier(
+      currentCwd,
+      this.gitRepository
+    );
+
+    if (originalRun.projectId && originalRun.projectId !== currentProjectId) {
+      return {
+        canResume: false,
+        originalRun,
+        suggestedParentRunId: originalRun.runId,
+        newRunId,
+        resumeDepth,
+        workspaceChanged: true,
+        workspaceDiffReasons: [
+          `Project mismatch: Run belongs to project "${originalRun.projectId}", but current directory is "${currentProjectId}"`
+        ],
+        reassessedRisk: this.executionPolicy.assess({
+          userMessage: originalRun.userRequestSummary,
+          cwd: currentCwd,
+          affectedFiles: [],
+          operations: []
+        }),
+        reassessedSkills: [],
+        requiresUserConfirmation: true,
+        explanation: `Cannot resume run ${runId}: Project mismatch (belongs to "${originalRun.projectId}", current is "${currentProjectId}").`
+      };
+    }
+
+    // 3. Workspace change detection
     const trackedFiles = [
       ...originalRun.files.modified,
       ...originalRun.files.created,
@@ -89,7 +122,7 @@ export class DefaultResumeManager implements ResumeManager {
       currentFingerprint
     );
 
-    // 3. Re-evaluate task risk
+    // 4. Re-evaluate task risk
     const reassessedRisk = this.executionPolicy.assess({
       userMessage: originalRun.userRequestSummary,
       cwd: currentCwd,
@@ -97,7 +130,7 @@ export class DefaultResumeManager implements ResumeManager {
       operations: originalRun.tools.map((t) => t.toolName)
     });
 
-    // 4. Re-evaluate skills
+    // 5. Re-evaluate skills
     let reassessedSkills: string[] = [];
     if (this.skillRegistry && this.activationPolicy) {
       const activation = this.activationPolicy.activate(
@@ -134,6 +167,7 @@ export class DefaultResumeManager implements ResumeManager {
       originalRun,
       suggestedParentRunId: originalRun.runId,
       newRunId,
+      resumeDepth,
       workspaceChanged: !diff.matches,
       workspaceDiffReasons: diff.reasons,
       reassessedRisk,
@@ -141,5 +175,48 @@ export class DefaultResumeManager implements ResumeManager {
       requiresUserConfirmation: requiresConfirmation,
       explanation: explanationParts.join("\n")
     };
+  }
+
+  public buildResumeContext(
+    originalRun: DurableRunRecord,
+    prep: ResumePreparation
+  ): string {
+    const lines: string[] = [
+      `[RESUMED TASK EXECUTION]`,
+      `Original User Request: ${originalRun.userRequestSummary}`,
+      `Previous Execution Status: ${originalRun.finalStatus}`,
+      `Resume Lineage: Run ${originalRun.runId} -> Resumed Run ${prep.newRunId} (Depth: ${prep.resumeDepth})`
+    ];
+
+    if (originalRun.failureReason) {
+      lines.push(`Previous Failure Reason: ${originalRun.failureReason}`);
+    } else if (originalRun.cancellationReason) {
+      lines.push(`Previous Cancellation Reason: ${originalRun.cancellationReason}`);
+    }
+
+    const modified = originalRun.files?.modified || [];
+    const created = originalRun.files?.created || [];
+    const deleted = originalRun.files?.deleted || [];
+    if (modified.length > 0 || created.length > 0 || deleted.length > 0) {
+      lines.push(
+        `Previous Modified Files: ${[...modified, ...created, ...deleted].join(", ")}`
+      );
+    }
+
+    if (prep.workspaceChanged && prep.workspaceDiffReasons.length > 0) {
+      lines.push(
+        `Workspace Drift Detected Since Previous Run:\n${prep.workspaceDiffReasons.map((r) => `  - ${r}`).join("\n")}`
+      );
+    }
+
+    lines.push(
+      `\nINSTRUCTIONS FOR RESUMED EXECUTION:`,
+      `1. The above information is historical context only. Previous tool calls, command outputs, and approval tokens are NOT automatically restored.`,
+      `2. You MUST inspect the current workspace using tools (e.g. read_file, search_files, list_directory) to verify current state before mutating files.`,
+      `3. Complete the original user request: "${originalRun.userRequestSummary}".`,
+      `4. Verify your work with fresh verification checks.`
+    );
+
+    return lines.join("\n");
   }
 }

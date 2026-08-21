@@ -34,7 +34,8 @@ export class DefaultRunHistoryStore implements RunHistoryStore {
     recordOrSummary: DurableRunRecord | RunSummary,
     projectId?: string,
     fingerprint?: WorkspaceFingerprint,
-    parentRunId?: string
+    parentRunId?: string,
+    resumeDepth?: number
   ): Promise<void> {
     const runId = recordOrSummary.runId;
     if (!isValidRunId(runId)) {
@@ -53,6 +54,7 @@ export class DefaultRunHistoryStore implements RunHistoryStore {
         ...recordOrSummary,
         projectId: projectId || recordOrSummary.projectId || "default",
         parentRunId: parentRunId || recordOrSummary.parentRunId,
+        resumeDepth: resumeDepth ?? recordOrSummary.resumeDepth,
         workspaceFingerprint: fingerprint || recordOrSummary.workspaceFingerprint
       };
     } else {
@@ -60,7 +62,8 @@ export class DefaultRunHistoryStore implements RunHistoryStore {
       durableRecord = {
         schemaVersion: 1,
         runId: summary.runId,
-        parentRunId,
+        parentRunId: parentRunId || summary.parentRunId,
+        resumeDepth: resumeDepth ?? summary.resumeDepth,
         projectId: projectId || "default",
         cwd: summary.cwd,
         userRequestSummary: summary.userRequestSummary,
@@ -147,6 +150,34 @@ export class DefaultRunHistoryStore implements RunHistoryStore {
     } catch {
       return null;
     }
+  }
+
+  public async getRunLineage(runId: string): Promise<DurableRunRecord[]> {
+    if (!isValidRunId(runId)) {
+      return [];
+    }
+
+    const lineage: DurableRunRecord[] = [];
+    const visited = new Set<string>();
+    let currentId: string | undefined = runId;
+
+    while (currentId) {
+      if (visited.has(currentId)) {
+        // Cycle detected: prevent infinite loop
+        break;
+      }
+      visited.add(currentId);
+
+      const record = await this.getRun(currentId);
+      if (!record) {
+        break;
+      }
+
+      lineage.push(record);
+      currentId = record.parentRunId;
+    }
+
+    return lineage;
   }
 
   public async listRuns(options: {

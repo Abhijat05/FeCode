@@ -25,6 +25,7 @@ export interface AgentInput {
   provider?: ModelProvider;
   id?: ID;
   parentRunId?: string;
+  resumeDepth?: number;
 }
 
 export type AgentEvent =

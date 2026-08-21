@@ -36,6 +36,13 @@ class MockAgent implements Agent {
     cwd: string
   ) => Promise<import("@fecode/agent").ResumePreparation>;
 
+  async *resumeRun(
+    runId: string
+  ): AsyncIterable<AgentEvent> {
+    yield { type: "text", content: `Resumed output for ${runId}` };
+    yield { type: "done" };
+  }
+
   async *run(input: AgentInput): AsyncIterable<AgentEvent> {
     if (this.runFn) {
       yield* this.runFn(input);
@@ -734,6 +741,7 @@ describe("CLI App Component", () => {
       },
       suggestedParentRunId: id,
       newRunId: "run-resume-new-123",
+      resumeDepth: 1,
       workspaceChanged: false,
       workspaceDiffReasons: [],
       reassessedRisk: {
@@ -756,7 +764,69 @@ describe("CLI App Component", () => {
 
     expect(lastFrame()).toContain("Resume Task Request:");
     expect(lastFrame()).toContain("run-orig-123");
-    expect(lastFrame()).toContain("run-resume-new-123");
+    expect(lastFrame()).toContain("Resume this task as a new run? [y/N]");
+
+    // Confirm with y
+    await typeAndSubmit(stdin, "y");
+    await delay(100);
+    expect(lastFrame()).toContain("Resuming run run-orig-123");
+    expect(lastFrame()).toContain("Resumed output for run-orig-123");
+  });
+
+  it("handles /resume cancellation when user inputs n", async () => {
+    const mockAgent = new MockAgent();
+    mockAgent.prepareResume = async (id: string) => ({
+      canResume: true,
+      originalRun: {
+        schemaVersion: 1,
+        runId: id,
+        projectId: "proj-test",
+        cwd: "/test",
+        userRequestSummary: "Test cancellation",
+        startedAt: Date.now() - 10000,
+        finalStatus: "failed",
+        executionState: "failed",
+        activeSkills: [],
+        initialRiskLevel: "normal",
+        riskReasons: [],
+        requiresCheckpoint: false,
+        requiresExplicitApproval: false,
+        verificationAttempts: 1,
+        maxVerificationAttempts: 3,
+        recoveryAttempts: 0,
+        maxRecoveryAttempts: 1,
+        tools: [],
+        commands: [],
+        files: { modified: [], created: [], deleted: [] },
+        lifecycleTransitions: []
+      },
+      suggestedParentRunId: id,
+      newRunId: "run-resume-cancelled-123",
+      resumeDepth: 1,
+      workspaceChanged: false,
+      workspaceDiffReasons: [],
+      reassessedRisk: {
+        level: "normal",
+        reasons: [],
+        affectedFiles: 0,
+        requiresCheckpoint: false,
+        requiresExplicitApproval: false
+      },
+      reassessedSkills: [],
+      requiresUserConfirmation: false,
+      explanation: `Resuming task from run ${id}`
+    });
+
+    const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+    await delay(50);
+
+    await typeAndSubmit(stdin, "/resume run-to-cancel");
+    await delay(100);
+    expect(lastFrame()).toContain("Resume this task as a new run? [y/N]");
+
+    await typeAndSubmit(stdin, "n");
+    await delay(100);
+    expect(lastFrame()).toContain("✗ Resume cancelled by user.");
   });
 
   it("handles unknown slash commands", async () => {

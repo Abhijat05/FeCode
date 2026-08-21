@@ -84,6 +84,7 @@ import type {
   DurableRunRecord,
   ResumeManager,
   ResumePreparation,
+  ResumeRunOptions,
   RunHistoryStore,
   WorkspaceFingerprint
 } from "./history/types.js";
@@ -153,6 +154,7 @@ export class AgentRuntime implements Agent {
   private readonly safeEditValidator: SafeEditValidator = new SafeEditValidator();
   private currentRunStateMachine?: AgentRunStateMachine;
   private currentParentRunId?: string;
+  private currentResumeDepth?: number;
   private currentProjectId?: string;
   private currentWorkspaceFingerprint?: WorkspaceFingerprint;
   private state: AgentState;
@@ -254,10 +256,47 @@ export class AgentRuntime implements Agent {
     return this.resumeManager.prepareResume(runId, cwd);
   }
 
+  public async *resumeRun(
+    runId: string,
+    options: ResumeRunOptions = {}
+  ): AsyncIterable<AgentEvent> {
+    const originalRun = await this.historyStore.getRun(runId);
+    if (!originalRun) {
+      throw new Error(`Run not found in history: ${runId}`);
+    }
+
+    const targetCwd = options.cwd || originalRun.cwd;
+    const prep = await this.resumeManager.prepareResume(runId, targetCwd);
+
+    if (!prep.canResume) {
+      throw new Error(prep.explanation);
+    }
+
+    if (!options.approved) {
+      throw new Error("Explicit user approval is required to resume a task.");
+    }
+
+    const resumeMessage = this.resumeManager.buildResumeContext(
+      originalRun,
+      prep
+    );
+
+    yield* this.run({
+      message: resumeMessage,
+      cwd: targetCwd,
+      parentRunId: originalRun.runId,
+      resumeDepth: prep.resumeDepth
+    });
+  }
+
   public async getHistoricalRun(
     runId: string
   ): Promise<DurableRunRecord | null> {
     return this.historyStore.getRun(runId);
+  }
+
+  public async getRunLineage(runId: string): Promise<DurableRunRecord[]> {
+    return this.historyStore.getRunLineage(runId);
   }
 
   public async listHistoricalRuns(options?: {
@@ -477,6 +516,7 @@ export class AgentRuntime implements Agent {
     }
 
     this.currentParentRunId = input.parentRunId;
+    this.currentResumeDepth = input.resumeDepth;
     this.state.status = "running";
     this.activeController = new AbortController();
     this.completionTracker.reset();
@@ -534,6 +574,8 @@ export class AgentRuntime implements Agent {
 
     this.diagnosticsManager.startRun({
       runId,
+      parentRunId: this.currentParentRunId,
+      resumeDepth: this.currentResumeDepth,
       cwd: input.cwd,
       userRequest: input.message,
       riskLevel: initialRisk.level,
@@ -555,7 +597,8 @@ export class AgentRuntime implements Agent {
           },
           this.currentProjectId,
           this.currentWorkspaceFingerprint,
-          this.currentParentRunId
+          this.currentParentRunId,
+          this.currentResumeDepth
         );
       } catch {
         // Non-fatal persistence error
@@ -1313,7 +1356,8 @@ export class AgentRuntime implements Agent {
             finalSummary,
             this.currentProjectId,
             this.currentWorkspaceFingerprint,
-            this.currentParentRunId
+            this.currentParentRunId,
+            this.currentResumeDepth
           );
         } catch {
           // Non-fatal persistence error
@@ -1354,7 +1398,8 @@ export class AgentRuntime implements Agent {
             terminalSummary,
             this.currentProjectId,
             this.currentWorkspaceFingerprint,
-            this.currentParentRunId
+            this.currentParentRunId,
+            this.currentResumeDepth
           )
           .catch(() => {});
       }

@@ -30,6 +30,8 @@ export class DefaultRunDiagnosticsManager implements RunDiagnosticsManager {
 
   public startRun(params: {
     runId: string;
+    parentRunId?: string;
+    resumeDepth?: number;
     cwd: string;
     userRequest: string;
     activeSkills?: string[];
@@ -56,6 +58,8 @@ export class DefaultRunDiagnosticsManager implements RunDiagnosticsManager {
 
     const summary: RunSummary = {
       runId: params.runId,
+      parentRunId: params.parentRunId,
+      resumeDepth: params.resumeDepth,
       startedAt: Date.now(),
       finalStatus: "idle",
       cwd: params.cwd,

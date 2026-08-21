@@ -141,6 +141,10 @@ export const App: React.FC<AppProps> = ({
     null
   );
   const [approvalInput, setApprovalInput] = useState("");
+  const [pendingResume, setPendingResume] = useState<{
+    runId: string;
+    prep: import("@fecode/agent").ResumePreparation;
+  } | null>(null);
 
   const persistState = useCallback(
     async (
@@ -259,6 +263,98 @@ export const App: React.FC<AppProps> = ({
   const handleSubmit = async (value: string) => {
     const trimmed = value.trim();
     if (!trimmed || isGenerating) return;
+
+    if (pendingResume) {
+      setQuery("");
+      const pr = pendingResume;
+      setPendingResume(null);
+
+      if (trimmed.toLowerCase() === "y" || trimmed.toLowerCase() === "yes") {
+        setTurns((prev) => [
+          ...prev,
+          {
+            id: `cmd-${Date.now()}`,
+            prompt: trimmed,
+            response: `✓ Resuming run ${pr.runId} as ${pr.prep.newRunId}...\n`,
+            status: "done"
+          }
+        ]);
+
+        if (agent && "resumeRun" in agent) {
+          setIsGenerating(true);
+          const nextTaskCount = taskCount + 1;
+          setTaskCount(nextTaskCount);
+          setActiveRequest(pr.prep.originalRun.userRequestSummary);
+          setLastTaskStatus("in_progress");
+
+          const turnId = `turn-${Date.now()}`;
+          const newTurn: Turn = {
+            id: turnId,
+            prompt: `Resume task: ${pr.prep.originalRun.userRequestSummary}`,
+            response: "",
+            status: "thinking"
+          };
+          setTurns((prev) => [...prev, newTurn]);
+
+          try {
+            const stream = (
+              agent as {
+                resumeRun: (
+                  id: string,
+                  opts: { cwd: string; approved: boolean }
+                ) => AsyncIterable<import("@fecode/agent").AgentEvent>;
+              }
+            ).resumeRun(pr.runId, { cwd, approved: true });
+
+            for await (const event of stream) {
+              if (event.type === "text") {
+                setTurns((prev) =>
+                  prev.map((t) =>
+                    t.id === turnId
+                      ? {
+                          ...t,
+                          response: t.response + event.content,
+                          status: "streaming"
+                        }
+                      : t
+                  )
+                );
+              } else if (event.type === "approval_required") {
+                setPendingApproval(event.request);
+              }
+            }
+
+            setTurns((prev) =>
+              prev.map((t) =>
+                t.id === turnId ? { ...t, status: "done" } : t
+              )
+            );
+            setLastTaskStatus("completed");
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            setTurns((prev) =>
+              prev.map((t) =>
+                t.id === turnId ? { ...t, status: "error", error: msg } : t
+              )
+            );
+            setLastTaskStatus("blocked");
+          } finally {
+            setIsGenerating(false);
+          }
+        }
+      } else {
+        setTurns((prev) => [
+          ...prev,
+          {
+            id: `cmd-${Date.now()}`,
+            prompt: trimmed,
+            response: "✗ Resume cancelled by user.\n",
+            status: "done"
+          }
+        ]);
+      }
+      return;
+    }
 
     if (trimmed.startsWith("/")) {
       const parts = trimmed.split(/\s+/);
@@ -868,13 +964,16 @@ export const App: React.FC<AppProps> = ({
               return;
             }
 
+            setPendingResume({ runId: actualRunId, prep });
             const promptText = RunHistoryFormatter.formatResumePrompt(prep);
             setTurns((prev) => [
               ...prev,
               {
                 id: `cmd-${Date.now()}`,
                 prompt: trimmed,
-                response: promptText + "\n",
+                response:
+                  promptText +
+                  "\n\nResume this task as a new run? [y/N]\n",
                 status: "done"
               }
             ]);

@@ -81,16 +81,22 @@ export class RunHistoryFormatter {
     lines.push(`  Original Status: ${run.finalStatus}`);
     lines.push(`  Original Time:   ${formatRelativeTime(run.startedAt)}`);
     lines.push(`  Project:         ${run.projectId}`);
+    lines.push(`  Resume Depth:    ${prep.resumeDepth}`);
     lines.push(`  Request:         ${run.userRequestSummary}`);
 
     if (run.failureReason) {
       lines.push(`  Failure Reason:  ${run.failureReason}`);
+    } else if (run.cancellationReason) {
+      lines.push(`  Cancel Reason:   ${run.cancellationReason}`);
     }
 
     lines.push("");
     lines.push(`  New Run ID:      ${prep.newRunId}`);
     lines.push(`  Parent Run ID:   ${prep.suggestedParentRunId}`);
     lines.push(`  Reassessed Risk: ${prep.reassessedRisk.level}`);
+    if (prep.reassessedSkills.length > 0) {
+      lines.push(`  Active Skills:   ${prep.reassessedSkills.join(", ")}`);
+    }
 
     if (prep.workspaceChanged) {
       lines.push("");
@@ -101,12 +107,11 @@ export class RunHistoryFormatter {
     }
 
     lines.push("");
-    lines.push(
-      "Resuming will initialize a new task execution identity linked to the original run."
-    );
-    lines.push(
-      "Permissions and verifications will be freshly assessed without reusing old approvals."
-    );
+    lines.push("Resume Safety Summary:");
+    lines.push("  • A fresh execution identity will be started without modifying the original run record.");
+    lines.push("  • Previous permissions and checkpoint approvals do NOT carry over; fresh approval will be requested.");
+    lines.push("  • Previous commands and tool calls will NOT be replayed.");
+    lines.push("  • The agent will inspect current workspace files using read tools before taking action.");
 
     return lines.join("\n");
   }
