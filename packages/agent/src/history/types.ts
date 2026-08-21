@@ -51,6 +51,13 @@ export interface DurableRunRecord {
   failureReason?: string;
   failureCode?: string;
   cancellationReason?: string;
+  planId?: string;
+  planStatus?: import("../planning/types.js").PlanStatus;
+  totalPlanSteps?: number;
+  completedPlanSteps?: number;
+  failedPlanStep?: string;
+  replanCount?: number;
+  planSummary?: string;
 }
 
 export interface RunHistoryStoreOptions {

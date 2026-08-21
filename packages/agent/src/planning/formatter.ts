@@ -1,0 +1,119 @@
+import type { TaskPlan } from "./types.js";
+import { summarizePlan } from "./taskPlan.js";
+
+export class PlanFormatter {
+  public static formatPlanDetail(plan: TaskPlan): string {
+    const lines: string[] = [
+      `Task Execution Plan: ${plan.planId}`,
+      `Status:    [${plan.status.toUpperCase()}]`,
+      `Objective: ${plan.objective}`,
+      ""
+    ];
+
+    if (plan.assumptions && plan.assumptions.length > 0) {
+      lines.push("Assumptions:");
+      plan.assumptions.forEach((a) => lines.push(`  • ${a}`));
+      lines.push("");
+    }
+
+    lines.push("Execution Steps (Sequential):");
+    plan.steps.forEach((step, idx) => {
+      const num = idx + 1;
+      const statusLabel =
+        step.status === "completed"
+          ? "completed ✓"
+          : step.status === "in_progress"
+            ? "executing ⧗"
+            : step.status === "failed"
+              ? "failed ✗"
+              : step.status === "skipped"
+                ? "skipped ⊘"
+                : "planned";
+
+      const depsStr =
+        step.dependencies.length > 0
+          ? step.dependencies.join(", ")
+          : "none";
+
+      const approvalStr = step.intent?.requiresApproval
+        ? "required"
+        : "not required";
+
+      lines.push(`  [${num}] ${step.title}`);
+      lines.push(`      Status:       ${statusLabel}`);
+      lines.push(`      Type:         ${step.type}`);
+      lines.push(`      Dependencies: ${depsStr}`);
+      lines.push(`      Risk Level:   ${step.riskLevel}`);
+      lines.push(`      Approval:     ${approvalStr}`);
+      lines.push(`      Verification: ${step.verificationRequired ? "required" : "not required"}`);
+      if (step.expectedFiles && step.expectedFiles.length > 0) {
+        lines.push(`      Files:        ${step.expectedFiles.join(", ")}`);
+      }
+      if (step.error) {
+        lines.push(`      Error:        ${step.error}`);
+      }
+      lines.push("");
+    });
+
+    if (plan.risks && plan.risks.length > 0) {
+      lines.push("Estimated Risks:");
+      plan.risks.forEach((r) => {
+        lines.push(`  • [${r.level.toUpperCase()}] ${r.category}: ${r.description}`);
+        if (r.mitigation) {
+          lines.push(`    Mitigation: ${r.mitigation}`);
+        }
+      });
+      lines.push("");
+    }
+
+    if (plan.checkpoints && plan.checkpoints.length > 0) {
+      lines.push("Suggested Checkpoints:");
+      plan.checkpoints.forEach((cp) => {
+        lines.push(`  • ${cp.name} (${cp.timing}): ${cp.reason}`);
+      });
+      lines.push("");
+    }
+
+    if (plan.verificationStrategy && plan.verificationStrategy.length > 0) {
+      lines.push(`Verification Strategy: ${plan.verificationStrategy.join(", ")}`);
+    }
+
+    if (plan.invalidationReason) {
+      lines.push("");
+      lines.push(`Plan Invalidation / Replan Reason: ${plan.invalidationReason}`);
+    }
+
+    return lines.join("\n");
+  }
+
+  public static formatPlanApprovalPrompt(plan: TaskPlan): string {
+    const summary = summarizePlan(plan);
+    const lines: string[] = [
+      "Plan Requires Approval:",
+      "",
+      `  Plan ID:        ${plan.planId}`,
+      `  Objective:      ${plan.objective}`,
+      `  Total Steps:    ${summary.totalSteps}`,
+      `  Highest Risk:   ${summary.highestRisk.toUpperCase()}`,
+      `  Verification:   ${plan.verificationStrategy?.join(", ") || "standard"}`
+    ];
+
+    const affectedFiles: string[] = [];
+    plan.steps.forEach((s) => {
+      if (s.expectedFiles) {
+        affectedFiles.push(...s.expectedFiles);
+      }
+      if (s.intent?.target) {
+        affectedFiles.push(s.intent.target);
+      }
+    });
+    const uniqueFiles = Array.from(new Set(affectedFiles));
+    if (uniqueFiles.length > 0) {
+      lines.push(`  Affected Files: ${uniqueFiles.join(", ")}`);
+    }
+
+    lines.push("");
+    lines.push("Approve this execution plan? [y/N]");
+    return lines.join("\n");
+  }
+}

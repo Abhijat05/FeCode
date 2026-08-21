@@ -71,6 +71,15 @@ export interface RunSummary {
   failureReason?: string;
   failureCode?: string;
   cancellationReason?: string;
+  planId?: string;
+  planStatus?: import("../planning/types.js").PlanStatus;
+  totalPlanSteps?: number;
+  completedPlanSteps?: number;
+  failedPlanStep?: string;
+  currentPlanStep?: number;
+  replanCount?: number;
+  planInvalidationReason?: string;
+  planSummary?: string;
 }
 
 export interface RunDiagnosticsManagerOptions {
@@ -96,6 +105,13 @@ export interface RunDiagnosticsManager {
   }): void;
 
   recordStateChange(runId: string, transition: AgentRunTransition): void;
+  recordPlan(runId: string, plan: import("../planning/types.js").TaskPlan): void;
+  updatePlanStep(
+    runId: string,
+    stepId: string,
+    status: import("../planning/types.js").PlanStepStatus,
+    error?: string
+  ): void;
   recordToolStart(runId: string, toolName: string, callId: string, targetPath?: string): void;
   recordToolComplete(
     runId: string,

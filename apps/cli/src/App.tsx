@@ -15,6 +15,7 @@ import {
   TaskRiskFormatter,
   formatRunDiagnostics,
   RunHistoryFormatter,
+  PlanFormatter,
   type Agent,
   type ProjectContext,
   type SessionStore,
@@ -380,6 +381,7 @@ export const App: React.FC<AppProps> = ({
           `  /sessions            - List saved sessions\n` +
           `  /runs                - List persisted run records for current project\n` +
           `  /run <id>            - Inspect details of a specific persisted run\n` +
+          `  /plan                - Inspect the current task execution plan\n` +
           `  /resume <sessionId|runId> - Resume a saved session or incomplete run\n` +
           `  /delete-session <id> - Delete a saved session\n` +
           `  /debug [runId]       - Display execution diagnostics for the latest or specified run\n` +
@@ -1177,6 +1179,103 @@ export const App: React.FC<AppProps> = ({
         return;
       }
 
+      if (cmd === "/plan") {
+        setQuery("");
+        const targetRunId = parts[1];
+        if (targetRunId) {
+          // Look up plan from history or run summary
+          if (agent && "getRunSummary" in agent) {
+            const summary = (
+              agent as {
+                getRunSummary: (
+                  id?: string
+                ) => import("@fecode/agent").RunSummary | undefined;
+              }
+            ).getRunSummary(targetRunId);
+            if (summary && summary.planId) {
+              const text =
+                `Task Plan for Run: ${summary.runId}\n` +
+                `Plan ID:     ${summary.planId}\n` +
+                `Status:      [${(summary.planStatus || "ready").toUpperCase()}]\n` +
+                (summary.planSummary ? `Objective:   ${summary.planSummary}\n` : "") +
+                `Steps:       ${summary.completedPlanSteps ?? 0}/${summary.totalPlanSteps ?? 0} completed\n` +
+                (summary.failedPlanStep ? `Failed Step: ${summary.failedPlanStep}\n` : "");
+              setTurns((prev) => [
+                ...prev,
+                {
+                  id: `cmd-${Date.now()}`,
+                  prompt: trimmed,
+                  response: text,
+                  status: "done"
+                }
+              ]);
+            } else {
+              setTurns((prev) => [
+                ...prev,
+                {
+                  id: `cmd-${Date.now()}`,
+                  prompt: trimmed,
+                  response: `✗ No execution plan found for run: ${targetRunId}\n`,
+                  status: "done"
+                }
+              ]);
+            }
+          } else {
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: `✗ Run history is not available.\n`,
+                status: "done"
+              }
+            ]);
+          }
+        } else {
+          // Active task plan
+          if (agent && "getTaskPlan" in agent) {
+            const plan = (
+              agent as {
+                getTaskPlan: () => import("@fecode/agent").TaskPlan | undefined;
+              }
+            ).getTaskPlan();
+            if (plan) {
+              const text = PlanFormatter.formatPlanDetail(plan);
+              setTurns((prev) => [
+                ...prev,
+                {
+                  id: `cmd-${Date.now()}`,
+                  prompt: trimmed,
+                  response: text + "\n",
+                  status: "done"
+                }
+              ]);
+            } else {
+              setTurns((prev) => [
+                ...prev,
+                {
+                  id: `cmd-${Date.now()}`,
+                  prompt: trimmed,
+                  response: "✗ No active execution plan available.\n",
+                  status: "done"
+                }
+              ]);
+            }
+          } else {
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: "✗ Planning system is not available.\n",
+                status: "done"
+              }
+            ]);
+          }
+        }
+        return;
+      }
+
       if (cmd === "/clear") {
         setQuery("");
         if (agent?.clear) {
@@ -1363,10 +1462,11 @@ export const App: React.FC<AppProps> = ({
             )
           );
         } else if (event.type === "plan_created") {
+          const planGoal = event.plan.objective;
           const planText =
-            `\n● Plan: ${event.plan.goal}\n\n` +
+            `\n● Plan: ${planGoal}\n\n` +
             event.plan.steps
-              .map((s, i) => `  ${i + 1}. ${s.description}`)
+              .map((s, i) => `  ${i + 1}. ${s.title}`)
               .join("\n") +
             "\n\n";
           setTurns((prev) =>

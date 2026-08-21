@@ -28,7 +28,7 @@ import type { TokenOptimizer } from "./optimization/types.js";
 import { DefaultTokenOptimizer } from "./optimization/defaultOptimizer.js";
 import type { AgentPolicyRegistry } from "./policies/types.js";
 import { DefaultAgentPolicyRegistry } from "./policies/registry.js";
-import type { TaskPlan } from "./tasks/types.js";
+import type { TaskPlan as LegacyTaskPlan } from "./tasks/types.js";
 import { failTaskStep } from "./tasks/taskPlan.js";
 import { SafeEditValidator } from "./editing/validator.js";
 import {
@@ -50,7 +50,7 @@ export interface AgentState {
   messages: ModelMessage[];
   tokenUsage?: TokenUsage;
   verificationAttempts?: number;
-  activePlan?: TaskPlan;
+  activePlan?: LegacyTaskPlan;
 }
 
 import type { RepositoryExplorer, ExplorationResult } from "./exploration/types.js";
@@ -92,6 +92,13 @@ import { DefaultRunHistoryStore } from "./history/runHistoryStore.js";
 import { DefaultResumeManager } from "./history/resumeManager.js";
 import { getProjectIdentifier } from "./history/projectIdentifier.js";
 import { captureWorkspaceFingerprint } from "./history/workspaceFingerprint.js";
+import type { TaskPlan, TaskPlanner } from "./planning/types.js";
+import { DefaultTaskPlanner } from "./planning/planner.js";
+import {
+  transitionPlanStatus,
+  completePlanStep,
+  failPlanStep
+} from "./planning/taskPlan.js";
 
 export interface AgentRuntimeOptions {
   systemPrompt?: string;
@@ -118,6 +125,7 @@ export interface AgentRuntimeOptions {
   historyStore?: RunHistoryStore;
   historyStorageDir?: string;
   resumeManager?: ResumeManager;
+  planner?: TaskPlanner;
   maxRetainedRuns?: number;
   emitRunEvents?: boolean;
   maxIdenticalToolCalls?: number;
@@ -150,6 +158,7 @@ export class AgentRuntime implements Agent {
   private readonly diagnosticsManager: RunDiagnosticsManager;
   private readonly historyStore: RunHistoryStore;
   private readonly resumeManager: ResumeManager;
+  private readonly planner: TaskPlanner;
   private readonly completionTracker: TaskCompletionTracker = new TaskCompletionTracker();
   private readonly safeEditValidator: SafeEditValidator = new SafeEditValidator();
   private currentRunStateMachine?: AgentRunStateMachine;
@@ -157,6 +166,7 @@ export class AgentRuntime implements Agent {
   private currentResumeDepth?: number;
   private currentProjectId?: string;
   private currentWorkspaceFingerprint?: WorkspaceFingerprint;
+  private currentPlan?: TaskPlan;
   private state: AgentState;
   private activeController: AbortController | null = null;
   private lastToolCallKey: string | null = null;
@@ -200,6 +210,7 @@ export class AgentRuntime implements Agent {
     this.historyStore =
       options.historyStore ||
       new DefaultRunHistoryStore({ storageDir: options.historyStorageDir });
+    this.planner = options.planner || new DefaultTaskPlanner();
     this.resumeManager =
       options.resumeManager ||
       new DefaultResumeManager({
@@ -247,6 +258,14 @@ export class AgentRuntime implements Agent {
 
   public getResumeManager(): ResumeManager {
     return this.resumeManager;
+  }
+
+  public getPlanner(): TaskPlanner {
+    return this.planner;
+  }
+
+  public getTaskPlan(): TaskPlan | undefined {
+    return this.currentPlan;
   }
 
   public async prepareResume(
@@ -355,11 +374,11 @@ export class AgentRuntime implements Agent {
     };
   }
 
-  public getPlan(): TaskPlan | undefined {
+  public getPlan(): LegacyTaskPlan | undefined {
     return this.state.activePlan;
   }
 
-  public setPlan(plan: TaskPlan): void {
+  public setPlan(plan: LegacyTaskPlan): void {
     this.state.activePlan = plan;
   }
 
@@ -615,6 +634,28 @@ export class AgentRuntime implements Agent {
       "planning",
       "Task started and context initialized"
     );
+
+    try {
+      const activeSkillNames = this.skillRegistry
+        ? this.skillRegistry.list().map((s) => s.name)
+        : [];
+      this.currentPlan = await this.planner.createPlan({
+        runId,
+        userMessage: input.message,
+        cwd: input.cwd,
+        activeSkills: activeSkillNames,
+        authoritativeRisk: initialRisk.level,
+        affectedFiles: []
+      });
+      if (this.currentPlan) {
+        this.diagnosticsManager.recordPlan(runId, this.currentPlan);
+        if (this.emitRunEvents) {
+          yield { type: "plan_created", plan: this.currentPlan };
+        }
+      }
+    } catch {
+      // Non-fatal planning error
+    }
 
     if (
       initialRisk.requiresCheckpoint &&
@@ -1176,6 +1217,59 @@ export class AgentRuntime implements Agent {
             yield toolCompEv;
           }
 
+          if (this.currentPlan) {
+            const pendingOrActiveStep = this.currentPlan.steps.find(
+              (s) => s.status === "in_progress" || s.status === "pending"
+            );
+            if (pendingOrActiveStep) {
+              try {
+                if (result.success) {
+                  this.currentPlan = completePlanStep(
+                    this.currentPlan,
+                    pendingOrActiveStep.stepId
+                  );
+                  this.diagnosticsManager.updatePlanStep(
+                    runId,
+                    pendingOrActiveStep.stepId,
+                    "completed"
+                  );
+                  if (this.emitRunEvents) {
+                    yield {
+                      type: "plan_step_completed",
+                      planId: this.currentPlan.planId,
+                      stepId: pendingOrActiveStep.stepId,
+                      stepIndex: pendingOrActiveStep.order - 1
+                    };
+                  }
+                } else if (result.error?.code !== "NO_CHANGE") {
+                  this.currentPlan = failPlanStep(
+                    this.currentPlan,
+                    pendingOrActiveStep.stepId,
+                    result.error?.message
+                  );
+                  this.diagnosticsManager.updatePlanStep(
+                    runId,
+                    pendingOrActiveStep.stepId,
+                    "failed",
+                    result.error?.message
+                  );
+                  if (this.emitRunEvents) {
+                    yield {
+                      type: "plan_step_failed",
+                      planId: this.currentPlan.planId,
+                      stepId: pendingOrActiveStep.stepId,
+                      stepIndex: pendingOrActiveStep.order - 1,
+                      error: result.error?.message
+                    };
+                  }
+                }
+                this.diagnosticsManager.recordPlan(runId, this.currentPlan);
+              } catch {
+                // Ignore
+              }
+            }
+          }
+
           this.state.messages.push({
             role: "tool",
             toolCallId: call.id,
@@ -1349,6 +1443,48 @@ export class AgentRuntime implements Agent {
       yield { type: "error", error };
     } finally {
       this.activeController = null;
+      if (this.currentPlan) {
+        const smState = this.currentRunStateMachine?.getState();
+        if (
+          smState === "completed" &&
+          this.currentPlan.status !== "completed"
+        ) {
+          try {
+            this.currentPlan = transitionPlanStatus(
+              this.currentPlan,
+              "completed"
+            );
+          } catch {
+            // ignore
+          }
+        } else if (
+          (smState === "cancelled" || this.state.status === "cancelled") &&
+          this.currentPlan.status !== "cancelled"
+        ) {
+          try {
+            this.currentPlan = transitionPlanStatus(
+              this.currentPlan,
+              "cancelled"
+            );
+          } catch {
+            // ignore
+          }
+        } else if (
+          smState === "failed" &&
+          this.currentPlan.status !== "failed"
+        ) {
+          try {
+            this.currentPlan = transitionPlanStatus(
+              this.currentPlan,
+              "failed"
+            );
+          } catch {
+            // ignore
+          }
+        }
+        this.diagnosticsManager.recordPlan(runId, this.currentPlan);
+      }
+
       const finalSummary = this.diagnosticsManager.getRunSummary(runId);
       if (finalSummary) {
         try {
@@ -1376,8 +1512,22 @@ export class AgentRuntime implements Agent {
         "Cancelled"
       );
     }
+    if (
+      this.currentPlan &&
+      this.currentPlan.status !== "cancelled" &&
+      this.currentPlan.status !== "completed"
+    ) {
+      try {
+        this.currentPlan = transitionPlanStatus(this.currentPlan, "cancelled");
+      } catch {
+        // ignore
+      }
+    }
     if (this.currentRunStateMachine && !this.currentRunStateMachine.isTerminal()) {
       const runId = this.currentRunStateMachine.getContext().runId;
+      if (this.currentPlan) {
+        this.diagnosticsManager.recordPlan(runId, this.currentPlan);
+      }
       this.currentRunStateMachine.transition("cancelled", "Run cancelled");
       this.state.status = "cancelled";
       this.diagnosticsManager.recordStateChange(runId, {

@@ -6,7 +6,7 @@ import type {
 } from "@fecode/models";
 import type { ID } from "@fecode/shared";
 
-import type { TaskPlan } from "./tasks/types.js";
+import type { TaskPlan } from "./planning/types.js";
 import type { TaskCompletionSummary } from "./completion/types.js";
 import type { PersistedSessionData } from "./session/types.js";
 
@@ -91,11 +91,27 @@ export * from "./skills/requestRecommender.js";
 export * from "./skills/activation.js";
 export * from "./optimization/index.js";
 export * from "./policies/index.js";
-export * from "./tasks/index.js";
+export type {
+  TaskStatus as LegacyTaskStatus,
+  TaskStep as LegacyTaskStep,
+  TaskPlan as LegacyTaskPlan
+} from "./tasks/types.js";
+export {
+  startTaskStep,
+  completeTaskStep as completeLegacyTaskStep,
+  failTaskStep
+} from "./tasks/taskPlan.js";
 export * from "./exploration/index.js";
 export * from "./context/index.js";
 export * from "./editing/index.js";
-export * from "./strategy/index.js";
+export type {
+  ExecutionIntent as StrategyExecutionIntent,
+  ExecutionPhase,
+  AgentExecutionDecision,
+  DecisionContext,
+  AgentExecutionStrategy
+} from "./strategy/types.js";
+export { DefaultAgentExecutionStrategy } from "./strategy/executionStrategy.js";
 export * from "./completion/index.js";
 export * from "./session/index.js";
 export * from "./changes/index.js";
@@ -106,3 +122,4 @@ export * from "./policy/index.js";
 export * from "./run/index.js";
 export * from "./diagnostics/index.js";
 export * from "./history/index.js";
+export * from "./planning/index.js";

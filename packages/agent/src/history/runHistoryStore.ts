@@ -97,7 +97,14 @@ export class DefaultRunHistoryStore implements RunHistoryStore {
         workspaceFingerprint: fingerprint,
         failureReason: summary.failureReason,
         failureCode: summary.failureCode,
-        cancellationReason: summary.cancellationReason
+        cancellationReason: summary.cancellationReason,
+        planId: summary.planId,
+        planStatus: summary.planStatus,
+        totalPlanSteps: summary.totalPlanSteps,
+        completedPlanSteps: summary.completedPlanSteps,
+        failedPlanStep: summary.failedPlanStep,
+        replanCount: summary.replanCount,
+        planSummary: summary.planSummary
       };
     }
 

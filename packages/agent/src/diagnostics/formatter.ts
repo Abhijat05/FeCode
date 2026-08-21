@@ -20,6 +20,27 @@ export function formatRunDiagnostics(summary: RunSummary): string {
     lines.push(`Cancellation: ${summary.cancellationReason}`);
   }
 
+  if (summary.planId) {
+    lines.push("");
+    lines.push(
+      `Plan: ${summary.planId} [${(summary.planStatus || "ready").toUpperCase()}]`
+    );
+    if (summary.planSummary) {
+      lines.push(`  Objective: ${summary.planSummary}`);
+    }
+    if (summary.totalPlanSteps !== undefined) {
+      lines.push(
+        `  Steps:     ${summary.completedPlanSteps ?? 0}/${summary.totalPlanSteps} completed`
+      );
+    }
+    if (summary.failedPlanStep) {
+      lines.push(`  Failed:    ${summary.failedPlanStep}`);
+    }
+    if (summary.replanCount) {
+      lines.push(`  Replans:   ${summary.replanCount}`);
+    }
+  }
+
   if (summary.lifecycleTransitions.length > 0) {
     lines.push("");
     lines.push("Lifecycle:");

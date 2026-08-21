@@ -35,6 +35,7 @@ class MockAgent implements Agent {
     id: string,
     cwd: string
   ) => Promise<import("@fecode/agent").ResumePreparation>;
+  public getTaskPlan?: () => import("@fecode/agent").TaskPlan | undefined;
 
   async *resumeRun(
     runId: string
@@ -258,13 +259,37 @@ describe("CLI App Component", () => {
       yield {
         type: "plan_created",
         plan: {
-          id: "plan-1",
-          goal: "Add authentication",
-          currentStep: 0,
+          planId: "plan-1",
+          runId: "run-1",
+          createdAt: Date.now(),
+          userRequestSummary: "Add authentication",
+          objective: "Add authentication",
+          status: "ready",
           steps: [
-            { id: "step-1", description: "Inspect auth utils", status: "pending" },
-            { id: "step-2", description: "Implement auth provider", status: "pending" }
-          ]
+            {
+              stepId: "step-1",
+              order: 1,
+              title: "Inspect auth utils",
+              objective: "Inspect auth utils",
+              type: "inspect",
+              dependencies: [],
+              riskLevel: "low",
+              verificationRequired: false,
+              status: "pending"
+            },
+            {
+              stepId: "step-2",
+              order: 2,
+              title: "Implement auth provider",
+              objective: "Implement auth provider",
+              type: "modify",
+              dependencies: ["step-1"],
+              riskLevel: "normal",
+              verificationRequired: true,
+              status: "pending"
+            }
+          ],
+          risks: []
         }
       };
       yield { type: "plan_step_started", planId: "plan-1", stepId: "step-1", stepIndex: 0 };
@@ -827,6 +852,96 @@ describe("CLI App Component", () => {
     await typeAndSubmit(stdin, "n");
     await delay(100);
     expect(lastFrame()).toContain("✗ Resume cancelled by user.");
+  });
+
+  it("handles /plan command displaying active plan details", async () => {
+    const mockAgent = new MockAgent();
+    mockAgent.getTaskPlan = () => ({
+      planId: "plan-test-123",
+      runId: "run-test-1",
+      createdAt: Date.now(),
+      userRequestSummary: "Test plan request",
+      objective: "Verify plan CLI rendering",
+      steps: [
+        {
+          stepId: "step-1",
+          order: 1,
+          title: "Inspect files",
+          objective: "Read app.ts",
+          type: "inspect",
+          dependencies: [],
+          riskLevel: "low",
+          verificationRequired: false,
+          status: "completed"
+        },
+        {
+          stepId: "step-2",
+          order: 2,
+          title: "Modify app.ts",
+          objective: "Apply code changes",
+          type: "modify",
+          dependencies: ["step-1"],
+          riskLevel: "normal",
+          verificationRequired: true,
+          status: "pending"
+        }
+      ],
+      risks: [],
+      status: "ready"
+    });
+
+    const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+    await delay(50);
+
+    await typeAndSubmit(stdin, "/plan");
+    await delay(100);
+
+    const frame = lastFrame();
+    expect(frame).toContain("Task Execution Plan: plan-test-123");
+    expect(frame).toContain("Verify plan CLI rendering");
+    expect(frame).toContain("[1] Inspect files");
+    expect(frame).toContain("completed ✓");
+    expect(frame).toContain("[2] Modify app.ts");
+  });
+
+  it("handles /plan <runId> displaying historical run plan summary", async () => {
+    const mockAgent = new MockAgent();
+    mockAgent.getRunSummary = () => ({
+      runId: "run-hist-999",
+      startedAt: Date.now() - 10000,
+      finalStatus: "completed",
+      cwd: "/test",
+      userRequestSummary: "Fix bug",
+      activeSkills: [],
+      initialRiskLevel: "normal",
+      riskReasons: [],
+      requiresCheckpoint: false,
+      requiresExplicitApproval: false,
+      verificationAttempts: 1,
+      maxVerificationAttempts: 3,
+      recoveryAttempts: 0,
+      maxRecoveryAttempts: 1,
+      tools: [],
+      commands: [],
+      files: { modified: [], created: [], deleted: [] },
+      lifecycleTransitions: [],
+      planId: "plan-hist-999",
+      planStatus: "completed",
+      totalPlanSteps: 3,
+      completedPlanSteps: 3,
+      planSummary: "Historical task plan objective"
+    });
+
+    const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+    await delay(50);
+
+    await typeAndSubmit(stdin, "/plan run-hist-999");
+    await delay(100);
+
+    const frame = lastFrame();
+    expect(frame).toContain("Task Plan for Run: run-hist-999");
+    expect(frame).toContain("plan-hist-999");
+    expect(frame).toContain("3/3 completed");
   });
 
   it("handles unknown slash commands", async () => {

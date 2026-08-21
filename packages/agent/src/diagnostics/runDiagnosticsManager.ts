@@ -100,6 +100,47 @@ export class DefaultRunDiagnosticsManager implements RunDiagnosticsManager {
     summary.finalStatus = transition.to;
   }
 
+  public recordPlan(
+    runId: string,
+    plan: import("../planning/types.js").TaskPlan
+  ): void {
+    const summary = this.runSummaries.get(runId);
+    if (!summary) return;
+
+    summary.planId = plan.planId;
+    summary.planStatus = plan.status;
+    summary.totalPlanSteps = plan.steps.length;
+    summary.completedPlanSteps = plan.steps.filter(
+      (s) => s.status === "completed"
+    ).length;
+    summary.failedPlanStep = plan.steps.find(
+      (s) => s.status === "failed"
+    )?.stepId;
+    summary.currentPlanStep = (plan.currentStepIndex ?? 0) + 1;
+    summary.replanCount = plan.replanCount;
+    summary.planInvalidationReason = plan.invalidationReason;
+    summary.planSummary = plan.objective;
+  }
+
+  public updatePlanStep(
+    runId: string,
+    stepId: string,
+    status: import("../planning/types.js").PlanStepStatus,
+    error?: string
+  ): void {
+    const summary = this.runSummaries.get(runId);
+    if (!summary) return;
+
+    if (status === "completed") {
+      summary.completedPlanSteps = (summary.completedPlanSteps ?? 0) + 1;
+    } else if (status === "failed") {
+      summary.failedPlanStep = stepId;
+      if (error && !summary.failureReason) {
+        summary.failureReason = error;
+      }
+    }
+  }
+
   public recordToolStart(
     runId: string,
     toolName: string,
