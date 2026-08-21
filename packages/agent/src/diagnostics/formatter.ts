@@ -1,0 +1,101 @@
+import type { RunSummary } from "./types.js";
+
+export function formatRunDiagnostics(summary: RunSummary): string {
+  const lines: string[] = [];
+  const durationSec =
+    summary.durationMs !== undefined
+      ? `${(summary.durationMs / 1000).toFixed(1)}s`
+      : "in progress";
+
+  lines.push(`Run: ${summary.runId}`);
+  lines.push(`Status: ${summary.finalStatus}`);
+  lines.push(`Duration: ${durationSec}`);
+
+  if (summary.failureReason || summary.failureCode) {
+    lines.push(
+      `Failure: [${summary.failureCode || "FAILED"}] ${summary.failureReason || "Unknown failure"}`
+    );
+  }
+  if (summary.cancellationReason) {
+    lines.push(`Cancellation: ${summary.cancellationReason}`);
+  }
+
+  if (summary.lifecycleTransitions.length > 0) {
+    lines.push("");
+    lines.push("Lifecycle:");
+    for (const t of summary.lifecycleTransitions) {
+      lines.push(`  ${t.from} -> ${t.to} (${t.reason})`);
+    }
+  }
+
+  if (summary.tools.length > 0) {
+    lines.push("");
+    lines.push("Tools:");
+    for (const t of summary.tools) {
+      const mark = t.success === true ? "✓" : t.success === false ? "✗" : "●";
+      const dur = t.durationMs !== undefined ? ` (${t.durationMs}ms)` : "";
+      const err = t.errorCode ? ` [${t.errorCode}]` : "";
+      lines.push(`  ${t.toolName.padEnd(16)} ${mark}${dur}${err}`);
+    }
+  }
+
+  if (summary.commands.length > 0) {
+    lines.push("");
+    lines.push("Verification Commands:");
+    for (const c of summary.commands) {
+      const mark = c.succeeded ? "✓" : "✗";
+      const dur = c.durationMs !== undefined ? ` (${c.durationMs}ms)` : "";
+      const exitStr = c.exitCode !== undefined ? ` (exit ${c.exitCode})` : "";
+      lines.push(
+        `  attempt ${c.attempt}: ${c.command}${exitStr} ${mark}${dur}`
+      );
+    }
+  }
+
+  if (summary.recovery && summary.recovery.length > 0) {
+    lines.push("");
+    lines.push("Recovery Operations:");
+    for (const r of summary.recovery) {
+      const mark = r.success ? "✓" : "✗";
+      const dur = r.durationMs !== undefined ? ` (${r.durationMs}ms)` : "";
+      lines.push(
+        `  attempt ${r.attempt}: Checkpoint ${r.checkpointId} ${mark}${dur}`
+      );
+    }
+  }
+
+  if (summary.activeSkills.length > 0) {
+    lines.push("");
+    lines.push("Skills:");
+    for (const s of summary.activeSkills) {
+      lines.push(`  ${s}`);
+    }
+  }
+
+  lines.push("");
+  lines.push("Risk:");
+  lines.push(`  level: ${summary.initialRiskLevel}`);
+  if (summary.riskReasons.length > 0) {
+    for (const r of summary.riskReasons) {
+      lines.push(`  - ${r}`);
+    }
+  }
+  if (summary.checkpointId) {
+    lines.push(`  checkpoint: ${summary.checkpointId}`);
+  }
+
+  const allFiles = [
+    ...summary.files.modified.map((f) => `  modified: ${f}`),
+    ...summary.files.created.map((f) => `  created:  ${f}`),
+    ...summary.files.deleted.map((f) => `  deleted:  ${f}`)
+  ];
+  if (allFiles.length > 0) {
+    lines.push("");
+    lines.push("Files:");
+    for (const f of allFiles) {
+      lines.push(f);
+    }
+  }
+
+  return lines.join("\n");
+}

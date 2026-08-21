@@ -1,6 +1,9 @@
 import React from "react";
 import { describe, it, expect } from "vitest";
 import { render } from "ink-testing-library";
+import * as fs from "fs/promises";
+import * as path from "path";
+import * as os from "os";
 import {
   DefaultGitRepository,
   type Agent,
@@ -25,6 +28,7 @@ async function typeAndSubmit(stdin: { write: (data: string) => void }, text: str
 class MockAgent implements Agent {
   public runFn?: (input: AgentInput) => AsyncIterable<AgentEvent>;
   public isCancelled = false;
+  public getRunSummary?: (runId?: string) => import("@fecode/agent").RunSummary | undefined;
 
   async *run(input: AgentInput): AsyncIterable<AgentEvent> {
     if (this.runFn) {
@@ -575,12 +579,20 @@ describe("CLI App Component", () => {
       stderr: "",
       exitCode: 1
     }));
+    const isolatedStore = new (await import("@fecode/agent")).DefaultCheckpointStore(
+      await fs.mkdtemp(path.join(os.tmpdir(), "fecode-cli-cp-"))
+    );
+    const isolatedCpManager = new (await import("@fecode/agent")).DefaultCheckpointManager(
+      isolatedStore,
+      mockGitRepo
+    );
 
     const { lastFrame, stdin } = render(
       <App
         agent={mockAgent}
         cwd="/test"
         gitRepository={mockGitRepo}
+        checkpointManager={isolatedCpManager}
       />
     );
     await delay(50);
@@ -604,6 +616,41 @@ describe("CLI App Component", () => {
     await typeAndSubmit(stdin, "/recover preview");
     await delay(100);
     expect(lastFrame()).toContain("✗ Please specify a checkpoint ID");
+  });
+
+  it("handles /debug diagnostics slash command", async () => {
+    const mockAgent = new MockAgent();
+    mockAgent.getRunSummary = () => ({
+      runId: "test-run-123",
+      startedAt: Date.now() - 1000,
+      completedAt: Date.now(),
+      durationMs: 1000,
+      finalStatus: "completed",
+      cwd: "/test",
+      userRequestSummary: "Test request",
+      activeSkills: [],
+      initialRiskLevel: "low",
+      riskReasons: [],
+      requiresCheckpoint: false,
+      requiresExplicitApproval: false,
+      verificationAttempts: 0,
+      maxVerificationAttempts: 3,
+      recoveryAttempts: 0,
+      maxRecoveryAttempts: 1,
+      tools: [],
+      commands: [],
+      files: { modified: [], created: [], deleted: [] },
+      lifecycleTransitions: []
+    });
+    const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+    await delay(50);
+
+    await typeAndSubmit(stdin, "/debug");
+    await delay(100);
+
+    const frame = lastFrame();
+    expect(frame).toContain("Run: test-run-123");
+    expect(frame).toContain("Status: completed");
   });
 
   it("handles unknown slash commands", async () => {

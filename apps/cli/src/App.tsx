@@ -13,6 +13,7 @@ import {
   RecoveryFormatter,
   DefaultTaskRiskPolicy,
   TaskRiskFormatter,
+  formatRunDiagnostics,
   type Agent,
   type ProjectContext,
   type SessionStore,
@@ -279,6 +280,7 @@ export const App: React.FC<AppProps> = ({
           `  /sessions            - List saved sessions\n` +
           `  /resume <sessionId>  - Resume a saved session\n` +
           `  /delete-session <id> - Delete a saved session\n` +
+          `  /debug [runId]       - Display execution diagnostics for the latest or specified run\n` +
           `  /clear               - Clear conversation context while preserving history\n` +
           `  /exit                - Cleanly terminate the session\n`;
         setTurns((prev) => [
@@ -852,6 +854,51 @@ export const App: React.FC<AppProps> = ({
               id: `cmd-${Date.now()}`,
               prompt: trimmed,
               response: `✗ Failed to delete session: ${msg}\n`,
+              status: "done"
+            }
+          ]);
+        }
+        return;
+      }
+
+      if (cmd === "/debug" || cmd === "/diagnostics") {
+        setQuery("");
+        const targetRunId = parts[1];
+        if (agent && "getRunSummary" in agent) {
+          const summary = (
+            agent as { getRunSummary: (id?: string) => import("@fecode/agent").RunSummary | undefined }
+          ).getRunSummary(targetRunId);
+          if (summary) {
+            const diagText = formatRunDiagnostics(summary);
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: diagText + "\n",
+                status: "done"
+              }
+            ]);
+          } else {
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: targetRunId
+                  ? `✗ Run not found: ${targetRunId}\n`
+                  : "✗ No runs recorded yet in this session.\n",
+                status: "done"
+              }
+            ]);
+          }
+        } else {
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: "✗ Diagnostics are not available.\n",
               status: "done"
             }
           ]);

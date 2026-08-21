@@ -238,4 +238,166 @@ describe("AgentRuntime Run State & Lifecycle Integration — Phase 5K", () => {
     expect(stateMachine?.getState()).toBe("cancelled");
     expect(stateMachine?.isTerminal()).toBe(true);
   });
+
+  it("handles verification retry and eventual success with verification events", async () => {
+    const provider = new MockProvider([
+      async function* () {
+        yield {
+          type: "tool_call",
+          call: {
+            id: "call-verify-1",
+            name: "execute_command",
+            arguments: { command: "npm test" }
+          }
+        };
+      },
+      async function* () {
+        yield {
+          type: "tool_call",
+          call: {
+            id: "call-verify-2",
+            name: "execute_command",
+            arguments: { command: "npm test" }
+          }
+        };
+      },
+      async function* () {
+        yield { type: "text_delta", content: "All tests pass now." };
+      }
+    ]);
+
+    const registry = new DefaultToolRegistry();
+    let attempt = 0;
+    const execTool: Tool = {
+      name: "execute_command",
+      description: "Execute command",
+      permissionCategory: "execute",
+      inputSchema: { type: "object" },
+      execute: async () => {
+        attempt++;
+        if (attempt === 1) {
+          // First attempt fails
+          return {
+            success: false,
+            output: { exitCode: 1, stdout: "", stderr: "AssertionError" }
+          };
+        }
+        // Second attempt succeeds
+        return {
+          success: true,
+          output: { exitCode: 0, stdout: "PASS", stderr: "" }
+        };
+      }
+    };
+    registry.register(execTool);
+
+    const runtime = new AgentRuntime(provider, {
+      registry,
+      emitRunEvents: true,
+      maxVerificationAttempts: 3
+    });
+
+    const events: AgentEvent[] = [];
+    for await (const ev of runtime.run({ message: "Fix tests", cwd: tmpDir })) {
+      events.push(ev);
+    }
+
+    const verifyStarted = events.filter((e) => e.type === "verification_started");
+    const verifyCompleted = events.filter((e) => e.type === "verification_completed");
+    expect(verifyStarted.length).toBe(2);
+    expect(verifyCompleted.length).toBe(2);
+
+    const stateMachine = runtime.getRunStateMachine();
+    expect(stateMachine?.getState()).toBe("completed");
+    expect(stateMachine?.isTerminal()).toBe(true);
+  });
+
+  it("handles verification exhaustion and transitions to failed state", async () => {
+    const provider = new MockProvider([
+      async function* () {
+        yield {
+          type: "tool_call",
+          call: {
+            id: "call-verify-fail-1",
+            name: "execute_command",
+            arguments: { command: "npm test" }
+          }
+        };
+      },
+      async function* () {
+        yield {
+          type: "tool_call",
+          call: {
+            id: "call-verify-fail-2",
+            name: "execute_command",
+            arguments: { command: "npm test" }
+          }
+        };
+      }
+    ]);
+
+    const registry = new DefaultToolRegistry();
+    const execTool: Tool = {
+      name: "execute_command",
+      description: "Execute command",
+      permissionCategory: "execute",
+      inputSchema: { type: "object" },
+      execute: async () => ({
+        success: false,
+        output: { exitCode: 1, stdout: "", stderr: "Test failure" }
+      })
+    };
+    registry.register(execTool);
+
+    const runtime = new AgentRuntime(provider, {
+      registry,
+      emitRunEvents: true,
+      maxVerificationAttempts: 2
+    });
+
+    const events: AgentEvent[] = [];
+    for await (const ev of runtime.run({ message: "Run tests", cwd: tmpDir })) {
+      events.push(ev);
+    }
+
+    const stateMachine = runtime.getRunStateMachine();
+    expect(stateMachine?.getState()).toBe("failed");
+    expect(stateMachine?.isTerminal()).toBe(true);
+
+    const runFailed = events.find((e) => e.type === "run_failed");
+    expect(runFailed).toBeDefined();
+  });
+
+  it("guarantees exactly one terminal state wins when cancellation races with completion", async () => {
+    const provider = new MockProvider([
+      async function* () {
+        yield { type: "text_delta", content: "Finishing up..." };
+      }
+    ]);
+
+    const runtime = new AgentRuntime(provider, { emitRunEvents: true });
+    const events: AgentEvent[] = [];
+    for await (const ev of runtime.run({ message: "Quick task", cwd: tmpDir })) {
+      events.push(ev);
+    }
+    expect(events.length).toBeGreaterThan(0);
+
+    const stateMachine = runtime.getRunStateMachine();
+    expect(stateMachine?.getState()).toBe("completed");
+
+    // Race: cancel after completion
+    await runtime.cancel();
+    expect(stateMachine?.getState()).toBe("completed");
+    expect(stateMachine?.isTerminal()).toBe(true);
+  });
+
+  it("enforces state transitions via transitionRunStateDirect safely", () => {
+    const provider = new MockProvider([]);
+    const runtime = new AgentRuntime(provider);
+
+    // Before any run, no state machine is active
+    const resNoSM = runtime.transitionRunStateDirect("planning", "Init");
+    expect(resNoSM.success).toBe(false);
+    expect(resNoSM.error).toContain("No active run state machine");
+  });
 });

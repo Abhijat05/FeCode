@@ -69,8 +69,17 @@ import type { RecoveryManager } from "./recovery/types.js";
 import { DefaultRecoveryManager } from "./recovery/recoveryManager.js";
 import type { ExecutionPolicy, TaskRiskContext, TaskRiskAssessment } from "./policy/types.js";
 import { DefaultTaskRiskPolicy } from "./policy/taskRiskPolicy.js";
-import type { AgentRunStateMachine } from "./run/types.js";
+import type {
+  AgentRunStateMachine,
+  AgentRunStatus,
+  AgentRunTransitionResult
+} from "./run/types.js";
 import { DefaultAgentRunStateMachine } from "./run/stateMachine.js";
+import type {
+  RunDiagnosticsManager,
+  RunSummary
+} from "./diagnostics/types.js";
+import { DefaultRunDiagnosticsManager } from "./diagnostics/runDiagnosticsManager.js";
 
 export interface AgentRuntimeOptions {
   systemPrompt?: string;
@@ -93,6 +102,8 @@ export interface AgentRuntimeOptions {
   checkpointStore?: CheckpointStore;
   recoveryManager?: RecoveryManager;
   executionPolicy?: ExecutionPolicy;
+  diagnosticsManager?: RunDiagnosticsManager;
+  maxRetainedRuns?: number;
   emitRunEvents?: boolean;
   maxIdenticalToolCalls?: number;
   maxTurns?: number;
@@ -121,6 +132,7 @@ export class AgentRuntime implements Agent {
   private readonly checkpointManager: CheckpointManager;
   private readonly recoveryManager: RecoveryManager;
   private readonly executionPolicy: ExecutionPolicy;
+  private readonly diagnosticsManager: RunDiagnosticsManager;
   private readonly completionTracker: TaskCompletionTracker = new TaskCompletionTracker();
   private readonly safeEditValidator: SafeEditValidator = new SafeEditValidator();
   private currentRunStateMachine?: AgentRunStateMachine;
@@ -159,6 +171,11 @@ export class AgentRuntime implements Agent {
       new DefaultRecoveryManager(options.checkpointStore, this.gitRepository);
     this.executionPolicy =
       options.executionPolicy || new DefaultTaskRiskPolicy();
+    this.diagnosticsManager =
+      options.diagnosticsManager ||
+      new DefaultRunDiagnosticsManager({
+        maxRetainedRuns: options.maxRetainedRuns
+      });
 
     this.state = {
       sessionId:
@@ -192,6 +209,33 @@ export class AgentRuntime implements Agent {
 
   public getRunStateMachine(): AgentRunStateMachine | undefined {
     return this.currentRunStateMachine;
+  }
+
+  public getRunSummary(runId?: string): RunSummary | undefined {
+    if (runId) {
+      return this.diagnosticsManager.getRunSummary(runId);
+    }
+    return this.diagnosticsManager.getLatestRunSummary();
+  }
+
+  public getRunEvents(runId?: string): AgentEvent[] | undefined {
+    if (runId) {
+      return this.diagnosticsManager.getRunEvents(runId);
+    }
+    const latest = this.diagnosticsManager.getLatestRunSummary();
+    return latest ? this.diagnosticsManager.getRunEvents(latest.runId) : undefined;
+  }
+
+  public listRuns(): RunSummary[] {
+    return this.diagnosticsManager.listRuns();
+  }
+
+  public getLatestRunSummary(): RunSummary | undefined {
+    return this.diagnosticsManager.getLatestRunSummary();
+  }
+
+  public getDiagnosticsManager(): RunDiagnosticsManager {
+    return this.diagnosticsManager;
   }
 
   public assessTaskRisk(context: TaskRiskContext): TaskRiskAssessment {
@@ -253,6 +297,120 @@ export class AgentRuntime implements Agent {
     this.completionTracker.reset();
   }
 
+  public transitionRunStateDirect(
+    nextStatus: AgentRunStatus,
+    reason: string
+  ): AgentRunTransitionResult {
+    if (!this.currentRunStateMachine) {
+      return {
+        success: false,
+        from: "idle",
+        to: nextStatus,
+        reason,
+        error: "No active run state machine"
+      };
+    }
+    const res = this.currentRunStateMachine.transition(nextStatus, reason);
+    if (res.success) {
+      if (nextStatus === "completed") {
+        this.state.status = "completed";
+      } else if (nextStatus === "cancelled") {
+        this.state.status = "cancelled";
+      } else if (nextStatus === "failed") {
+        this.state.status = "failed";
+      } else {
+        this.state.status = "running";
+      }
+    }
+    return res;
+  }
+
+  private *transitionRunState(
+    nextStatus: AgentRunStatus,
+    reason: string
+  ): Generator<AgentEvent, AgentRunTransitionResult, undefined> {
+    if (!this.currentRunStateMachine) {
+      return {
+        success: false,
+        from: "idle",
+        to: nextStatus,
+        reason,
+        error: "No active run state machine"
+      };
+    }
+
+    const runId = this.currentRunStateMachine.getContext().runId;
+    const currentStatus = this.currentRunStateMachine.getState();
+    const result = this.currentRunStateMachine.transition(nextStatus, reason);
+
+    if (result.success) {
+      if (nextStatus === "completed") {
+        this.state.status = "completed";
+      } else if (nextStatus === "cancelled") {
+        this.state.status = "cancelled";
+      } else if (nextStatus === "failed") {
+        this.state.status = "failed";
+      } else {
+        this.state.status = "running";
+      }
+
+      const stateEv: AgentEvent = {
+        type: "state_changed",
+        runId,
+        from: currentStatus,
+        to: nextStatus,
+        reason,
+        timestamp: Date.now()
+      };
+      this.diagnosticsManager.recordStateChange(runId, {
+        timestamp: Date.now(),
+        from: currentStatus,
+        to: nextStatus,
+        reason
+      });
+      this.diagnosticsManager.recordEvent(runId, stateEv);
+
+      if (this.emitRunEvents) {
+        yield stateEv;
+      }
+
+      if (nextStatus === "completed") {
+        this.diagnosticsManager.completeRun(runId, "completed");
+        const termEv: AgentEvent = {
+          type: "run_completed",
+          runId
+        };
+        this.diagnosticsManager.recordEvent(runId, termEv);
+        if (this.emitRunEvents) {
+          yield termEv;
+        }
+      } else if (nextStatus === "failed") {
+        this.diagnosticsManager.completeRun(runId, "failed", reason);
+        const termEv: AgentEvent = {
+          type: "run_failed",
+          runId,
+          error: reason
+        };
+        this.diagnosticsManager.recordEvent(runId, termEv);
+        if (this.emitRunEvents) {
+          yield termEv;
+        }
+      } else if (nextStatus === "cancelled") {
+        this.diagnosticsManager.completeRun(runId, "cancelled", reason);
+        const termEv: AgentEvent = {
+          type: "run_cancelled",
+          runId
+        };
+        this.diagnosticsManager.recordEvent(runId, termEv);
+        if (this.emitRunEvents) {
+          yield termEv;
+        }
+      }
+    }
+
+    return result;
+  }
+
   async *run(input: AgentInput): AsyncIterable<AgentEvent> {
     if (input.sessionId && this.state.messages.length === 0) {
       this.state.sessionId = input.sessionId;
@@ -271,20 +429,37 @@ export class AgentRuntime implements Agent {
       maxVerificationAttempts: this.maxVerificationAttempts
     });
     this.currentRunStateMachine = stateMachine;
+    const runId = stateMachine.getContext().runId;
 
+    const initialRisk = this.executionPolicy.assess({
+      userMessage: input.message,
+      cwd: input.cwd,
+      affectedFiles: [],
+      operations: []
+    });
+
+    this.diagnosticsManager.startRun({
+      runId,
+      cwd: input.cwd,
+      userRequest: input.message,
+      riskLevel: initialRisk.level,
+      riskReasons: initialRisk.reasons,
+      requiresCheckpoint: initialRisk.requiresCheckpoint,
+      requiresExplicitApproval: initialRisk.requiresExplicitApproval,
+      maxVerificationAttempts: this.maxVerificationAttempts,
+      maxRecoveryAttempts: 1
+    });
+
+    const runStartedEv: AgentEvent = { type: "run_started", runId };
+    this.diagnosticsManager.recordEvent(runId, runStartedEv);
     if (this.emitRunEvents) {
-      yield { type: "run_started", runId: stateMachine.getContext().runId };
+      yield runStartedEv;
     }
 
-    stateMachine.transition("planning", "Task started and context initialized");
-    if (this.emitRunEvents) {
-      yield {
-        type: "state_changed",
-        from: "idle",
-        to: "planning",
-        reason: "Task started and context initialized"
-      };
-    }
+    yield* this.transitionRunState(
+      "planning",
+      "Task started and context initialized"
+    );
 
     if (this.gitRepository) {
       try {
@@ -297,13 +472,6 @@ export class AgentRuntime implements Agent {
         // ignore git errors
       }
     }
-
-    const initialRisk = this.executionPolicy.assess({
-      userMessage: input.message,
-      cwd: input.cwd,
-      affectedFiles: [],
-      operations: []
-    });
 
     if (
       initialRisk.requiresCheckpoint &&
@@ -474,29 +642,14 @@ export class AgentRuntime implements Agent {
         });
 
         if (toolCallsForTurn.length === 0) {
-          this.state.status = "completed";
-
           if (
             this.currentRunStateMachine &&
             !this.currentRunStateMachine.isTerminal()
           ) {
-            const fromState = this.currentRunStateMachine.getState();
-            this.currentRunStateMachine.transition(
+            yield* this.transitionRunState(
               "completed",
               "Task execution finished"
             );
-            if (this.emitRunEvents) {
-              yield {
-                type: "state_changed",
-                from: fromState,
-                to: "completed",
-                reason: "Task execution finished"
-              };
-              yield {
-                type: "run_completed",
-                runId: this.currentRunStateMachine.getContext().runId
-              };
-            }
           }
 
           if (this.gitRepository) {
@@ -544,23 +697,42 @@ export class AgentRuntime implements Agent {
           this.currentRunStateMachine &&
           this.currentRunStateMachine.getState() === "planning"
         ) {
-          this.currentRunStateMachine.transition(
+          yield* this.transitionRunState(
             "executing",
             "Tool execution started"
           );
-          if (this.emitRunEvents) {
-            yield {
-              type: "state_changed",
-              from: "planning",
-              to: "executing",
-              reason: "Tool execution started"
-            };
-          }
         }
 
         for (const call of toolCallsForTurn) {
-          if (this.activeController.signal.aborted) {
+          if (
+            this.currentRunStateMachine?.isTerminal() ||
+            this.activeController.signal.aborted
+          ) {
             throw new Error("Request aborted");
+          }
+
+          let targetFilePath: string | undefined;
+          if (call.name === "write_file" || call.name === "edit_file") {
+            const args = (call.arguments || {}) as { path?: string };
+            targetFilePath = args.path;
+          }
+
+          this.diagnosticsManager.recordToolStart(
+            runId,
+            call.name,
+            call.id,
+            targetFilePath
+          );
+
+          const toolStartEv: AgentEvent = {
+            type: "tool_started",
+            runId,
+            toolName: call.name,
+            callId: call.id
+          };
+          this.diagnosticsManager.recordEvent(runId, toolStartEv);
+          if (this.emitRunEvents) {
+            yield toolStartEv;
           }
 
           const toolContext = {
@@ -842,6 +1014,25 @@ export class AgentRuntime implements Agent {
 
           yield { type: "tool_result", result, callId: call.id };
 
+          this.diagnosticsManager.recordToolComplete(
+            runId,
+            call.id,
+            result.success,
+            result.error?.code
+          );
+
+          const toolCompEv: AgentEvent = {
+            type: "tool_completed",
+            runId,
+            toolName: call.name,
+            callId: call.id,
+            success: result.success
+          };
+          this.diagnosticsManager.recordEvent(runId, toolCompEv);
+          if (this.emitRunEvents) {
+            yield toolCompEv;
+          }
+
           this.state.messages.push({
             role: "tool",
             toolCallId: call.id,
@@ -857,6 +1048,7 @@ export class AgentRuntime implements Agent {
             this.lastToolCallKey = null;
             this.consecutiveToolCallCount = 0;
             const targetPath = (call.arguments as { path?: string })?.path;
+
             const output = result.output as {
               path?: string;
               diff?: string;
@@ -877,8 +1069,14 @@ export class AgentRuntime implements Agent {
                 additions: stats.additions,
                 deletions: stats.deletions
               });
+              this.diagnosticsManager.recordFileChange(runId, targetPath, op);
             } else if (targetPath) {
               this.completionTracker.recordFileModified(targetPath);
+              this.diagnosticsManager.recordFileChange(
+                runId,
+                targetPath,
+                "modified"
+              );
             }
             if (this.repositoryExplorer) {
               this.repositoryExplorer.invalidate(targetPath);
@@ -907,6 +1105,51 @@ export class AgentRuntime implements Agent {
             const timedOut = Boolean(cmdOutput?.timedOut);
             const succeeded = result.success && exitCode === 0 && !timedOut;
 
+            if (this.currentRunStateMachine?.getState() === "executing") {
+              yield* this.transitionRunState(
+                "verifying",
+                `Running verification: ${cmd}`
+              );
+            }
+
+            const attemptNum = (this.state.verificationAttempts || 0) + 1;
+            this.diagnosticsManager.recordVerificationStart(
+              runId,
+              cmd,
+              attemptNum
+            );
+            const vStartEv: AgentEvent = {
+              type: "verification_started",
+              runId,
+              command: cmd,
+              attempt: attemptNum
+            };
+            this.diagnosticsManager.recordEvent(runId, vStartEv);
+            if (this.emitRunEvents) {
+              yield vStartEv;
+            }
+
+            const attemptDoneNum = attemptNum;
+            this.diagnosticsManager.recordVerificationComplete(
+              runId,
+              cmd,
+              attemptDoneNum,
+              succeeded,
+              exitCode,
+              timedOut
+            );
+            const vCompEv: AgentEvent = {
+              type: "verification_completed",
+              runId,
+              command: cmd,
+              success: succeeded,
+              attempt: attemptDoneNum
+            };
+            this.diagnosticsManager.recordEvent(runId, vCompEv);
+            if (this.emitRunEvents) {
+              yield vCompEv;
+            }
+
             this.completionTracker.recordCommandExecution({
               command: cmd,
               exitCode,
@@ -917,6 +1160,7 @@ export class AgentRuntime implements Agent {
             if (isFailure) {
               const attempts: number = (this.state.verificationAttempts || 0) + 1;
               this.state.verificationAttempts = attempts;
+              this.currentRunStateMachine?.incrementVerificationAttempts();
 
               if (attempts >= this.maxVerificationAttempts) {
                 this.completionTracker.recordBlocked(
@@ -926,7 +1170,21 @@ export class AgentRuntime implements Agent {
                   role: "user",
                   content: `[SYSTEM NOTICE] Maximum verification attempts (${this.maxVerificationAttempts}) reached. Do not attempt further verification commands. Report the current status, failure details, and remaining unresolved issues to the user.`
                 });
+                yield* this.transitionRunState(
+                  "failed",
+                  `Verification failed after ${this.maxVerificationAttempts} attempts`
+                );
+              } else {
+                yield* this.transitionRunState(
+                  "executing",
+                  "Verification failed; fix attempt permitted"
+                );
               }
+            } else if (this.currentRunStateMachine?.getState() === "verifying") {
+              yield* this.transitionRunState(
+                "executing",
+                "Verification succeeded"
+              );
             }
           }
         }
@@ -938,50 +1196,12 @@ export class AgentRuntime implements Agent {
         error.message.toLowerCase().includes("abort") ||
         error.message.toLowerCase().includes("cancel");
 
-      this.state.status = isCancelled ? "cancelled" : "failed";
       if (isCancelled) {
         this.completionTracker.recordCancelled();
-        if (
-          this.currentRunStateMachine &&
-          !this.currentRunStateMachine.isTerminal()
-        ) {
-          const fromState = this.currentRunStateMachine.getState();
-          this.currentRunStateMachine.transition("cancelled", "Run cancelled");
-          if (this.emitRunEvents) {
-            yield {
-              type: "state_changed",
-              from: fromState,
-              to: "cancelled",
-              reason: "Run cancelled"
-            };
-            yield {
-              type: "run_cancelled",
-              runId: this.currentRunStateMachine.getContext().runId
-            };
-          }
-        }
+        yield* this.transitionRunState("cancelled", "Run cancelled");
       } else {
         this.completionTracker.recordBlocked(error.message);
-        if (
-          this.currentRunStateMachine &&
-          !this.currentRunStateMachine.isTerminal()
-        ) {
-          const fromState = this.currentRunStateMachine.getState();
-          this.currentRunStateMachine.transition("failed", error.message);
-          if (this.emitRunEvents) {
-            yield {
-              type: "state_changed",
-              from: fromState,
-              to: "failed",
-              reason: error.message
-            };
-            yield {
-              type: "run_failed",
-              runId: this.currentRunStateMachine.getContext().runId,
-              error: error.message
-            };
-          }
-        }
+        yield* this.transitionRunState("failed", error.message);
       }
       yield { type: "error", error };
     } finally {
@@ -998,6 +1218,22 @@ export class AgentRuntime implements Agent {
         currentIdx,
         "Cancelled"
       );
+    }
+    if (this.currentRunStateMachine && !this.currentRunStateMachine.isTerminal()) {
+      const runId = this.currentRunStateMachine.getContext().runId;
+      this.currentRunStateMachine.transition("cancelled", "Run cancelled");
+      this.state.status = "cancelled";
+      this.diagnosticsManager.recordStateChange(runId, {
+        timestamp: Date.now(),
+        from: "executing",
+        to: "cancelled",
+        reason: "Run cancelled"
+      });
+      this.diagnosticsManager.completeRun(runId, "cancelled", "Run cancelled");
+      this.diagnosticsManager.recordEvent(runId, {
+        type: "run_cancelled",
+        runId
+      });
     }
     if (this.activeController) {
       this.state.status = "cancelled";

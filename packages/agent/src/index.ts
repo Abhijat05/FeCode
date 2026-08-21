@@ -42,10 +42,18 @@ export type AgentEvent =
   | { type: "run_started"; runId: string }
   | {
       type: "state_changed";
+      runId?: string;
       from: import("./run/types.js").AgentRunStatus;
       to: import("./run/types.js").AgentRunStatus;
       reason: string;
+      timestamp?: number;
     }
+  | { type: "tool_started"; runId?: string; toolName: string; callId: string }
+  | { type: "tool_completed"; runId?: string; toolName: string; callId: string; success: boolean }
+  | { type: "verification_started"; runId?: string; command: string; attempt: number }
+  | { type: "verification_completed"; runId?: string; command: string; success: boolean; attempt: number }
+  | { type: "recovery_started"; runId?: string; checkpointId: string }
+  | { type: "recovery_completed"; runId?: string; checkpointId: string; success: boolean }
   | { type: "run_completed"; runId: string }
   | { type: "run_failed"; runId: string; code?: string; error?: string }
   | { type: "run_cancelled"; runId: string };
@@ -94,3 +102,4 @@ export * from "./checkpoints/index.js";
 export * from "./recovery/index.js";
 export * from "./policy/index.js";
 export * from "./run/index.js";
+export * from "./diagnostics/index.js";

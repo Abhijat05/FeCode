@@ -180,4 +180,42 @@ describe("AgentRunStateMachine — Phase 5K", () => {
     expect(sm.incrementRecoveryAttempts()).toBe(1);
     expect(sm.getContext().recoveryAttempts).toBe(1);
   });
+
+  it("preserves state context integrity across multiple transitions", () => {
+    const cwd = "/workspace/project";
+    const sm = new DefaultAgentRunStateMachine({
+      cwd,
+      maxVerificationAttempts: 3,
+      maxRecoveryAttempts: 2
+    });
+
+    const initialCtx = sm.getContext();
+    const runId = initialCtx.runId;
+    const startedAt = initialCtx.startedAt;
+
+    sm.setActiveCheckpointId("cp-safeguard-1");
+    sm.setActiveSkills(["typescript", "refactoring"]);
+
+    sm.transition("planning", "Planning phase");
+    sm.transition("executing", "Tool phase");
+    sm.transition("verifying", "Verification phase");
+
+    const midCtx = sm.getContext();
+    expect(midCtx.runId).toBe(runId);
+    expect(midCtx.startedAt).toBe(startedAt);
+    expect(midCtx.cwd).toBe(cwd);
+    expect(midCtx.activeCheckpointId).toBe("cp-safeguard-1");
+    expect(midCtx.activeSkillNames).toEqual(["typescript", "refactoring"]);
+    expect(midCtx.verificationAttempts).toBeGreaterThanOrEqual(0);
+    expect(midCtx.recoveryAttempts).toBeGreaterThanOrEqual(0);
+
+    sm.transition("completed", "Completed successfully");
+    const termCtx = sm.getContext();
+    expect(termCtx.status).toBe("completed");
+
+    // Terminal state cannot be mutated further
+    const invalidAttempt = sm.transition("executing", "Re-execute");
+    expect(invalidAttempt.success).toBe(false);
+    expect(sm.getState()).toBe("completed");
+  });
 });
