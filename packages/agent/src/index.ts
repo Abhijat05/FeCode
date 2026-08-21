@@ -24,6 +24,7 @@ export interface AgentInput {
   sessionId?: string;
   provider?: ModelProvider;
   id?: ID;
+  parentRunId?: string;
 }
 
 export type AgentEvent =
@@ -103,3 +104,4 @@ export * from "./recovery/index.js";
 export * from "./policy/index.js";
 export * from "./run/index.js";
 export * from "./diagnostics/index.js";
+export * from "./history/index.js";

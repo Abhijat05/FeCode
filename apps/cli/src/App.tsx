@@ -14,6 +14,7 @@ import {
   DefaultTaskRiskPolicy,
   TaskRiskFormatter,
   formatRunDiagnostics,
+  RunHistoryFormatter,
   type Agent,
   type ProjectContext,
   type SessionStore,
@@ -22,7 +23,9 @@ import {
   type TaskCompletionSummary,
   type CheckpointManager,
   type RecoveryManager,
-  type ExecutionPolicy
+  type ExecutionPolicy,
+  type RunHistoryStore,
+  type DurableRunRecord
 } from "@fecode/agent";
 import type { ApprovalRequest, ModelMessage } from "@fecode/models";
 import {
@@ -54,6 +57,7 @@ export interface AppProps {
   checkpointManager?: CheckpointManager;
   recoveryManager?: RecoveryManager;
   executionPolicy?: ExecutionPolicy;
+  historyStore?: RunHistoryStore;
 }
 
 export const App: React.FC<AppProps> = ({
@@ -278,7 +282,9 @@ export const App: React.FC<AppProps> = ({
           `  /tasks               - List summary of session tasks\n` +
           `  /task [number]       - Show current task or details of a specific task\n` +
           `  /sessions            - List saved sessions\n` +
-          `  /resume <sessionId>  - Resume a saved session\n` +
+          `  /runs                - List persisted run records for current project\n` +
+          `  /run <id>            - Inspect details of a specific persisted run\n` +
+          `  /resume <sessionId|runId> - Resume a saved session or incomplete run\n` +
           `  /delete-session <id> - Delete a saved session\n` +
           `  /debug [runId]       - Display execution diagnostics for the latest or specified run\n` +
           `  /clear               - Clear conversation context while preserving history\n` +
@@ -706,6 +712,118 @@ export const App: React.FC<AppProps> = ({
         return;
       }
 
+      if (cmd === "/runs") {
+        setQuery("");
+        if (agent && "listHistoricalRuns" in agent) {
+          try {
+            const runs = await (
+              agent as { listHistoricalRuns: () => Promise<DurableRunRecord[]> }
+            ).listHistoricalRuns();
+            const text = RunHistoryFormatter.formatRunsList(runs);
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: text + "\n",
+                status: "done"
+              }
+            ]);
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: `✗ Failed to list runs: ${msg}\n`,
+                status: "done"
+              }
+            ]);
+          }
+        } else {
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: "✗ Run history is not available.\n",
+              status: "done"
+            }
+          ]);
+        }
+        return;
+      }
+
+      if (cmd === "/run") {
+        setQuery("");
+        const targetRunId = parts[1];
+        if (!targetRunId) {
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: "✗ Please specify a run ID: /run <runId>\n",
+              status: "done"
+            }
+          ]);
+          return;
+        }
+
+        if (agent && "getHistoricalRun" in agent) {
+          try {
+            const run = await (
+              agent as { getHistoricalRun: (id: string) => Promise<DurableRunRecord | null> }
+            ).getHistoricalRun(targetRunId);
+            if (run) {
+              const text = RunHistoryFormatter.formatRunDetail(run);
+              setTurns((prev) => [
+                ...prev,
+                {
+                  id: `cmd-${Date.now()}`,
+                  prompt: trimmed,
+                  response: text + "\n",
+                  status: "done"
+                }
+              ]);
+            } else {
+              setTurns((prev) => [
+                ...prev,
+                {
+                  id: `cmd-${Date.now()}`,
+                  prompt: trimmed,
+                  response: `✗ Run not found in history: ${targetRunId}\n`,
+                  status: "done"
+                }
+              ]);
+            }
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: `✗ Failed to get run: ${msg}\n`,
+                status: "done"
+              }
+            ]);
+          }
+        } else {
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: "✗ Run history is not available.\n",
+              status: "done"
+            }
+          ]);
+        }
+        return;
+      }
+
       if (cmd === "/resume") {
         setQuery("");
         const targetId = parts[1];
@@ -715,11 +833,65 @@ export const App: React.FC<AppProps> = ({
             {
               id: `cmd-${Date.now()}`,
               prompt: trimmed,
-              response: "✗ Please specify a sessionId: /resume <sessionId>\n",
+              response: "✗ Please specify a sessionId or runId: /resume <id>\n",
               status: "done"
             }
           ]);
           return;
+        }
+
+        // Check if target is a run ID or explicitly "/resume run <id>"
+        const isRunResume = targetId === "run" || targetId.startsWith("run-");
+        const actualRunId = targetId === "run" ? parts[2] : targetId;
+
+        if (isRunResume && actualRunId && agent && "prepareResume" in agent) {
+          try {
+            const prep = await (
+              agent as {
+                prepareResume: (
+                  id: string,
+                  cwd: string
+                ) => Promise<import("@fecode/agent").ResumePreparation>;
+              }
+            ).prepareResume(actualRunId, cwd);
+
+            if (!prep.canResume) {
+              setTurns((prev) => [
+                ...prev,
+                {
+                  id: `cmd-${Date.now()}`,
+                  prompt: trimmed,
+                  response: `✗ ${prep.explanation}\n`,
+                  status: "done"
+                }
+              ]);
+              return;
+            }
+
+            const promptText = RunHistoryFormatter.formatResumePrompt(prep);
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: promptText + "\n",
+                status: "done"
+              }
+            ]);
+            return;
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: `✗ ${msg}\n`,
+                status: "done"
+              }
+            ]);
+            return;
+          }
         }
 
         try {

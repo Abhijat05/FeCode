@@ -48,7 +48,7 @@ export interface RunSummary {
   startedAt: number;
   completedAt?: number;
   durationMs?: number;
-  finalStatus: AgentRunStatus;
+  finalStatus: AgentRunStatus | "interrupted";
   cwd: string;
   userRequestSummary: string;
   activeSkills: string[];

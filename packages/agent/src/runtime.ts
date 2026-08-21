@@ -80,6 +80,17 @@ import type {
   RunSummary
 } from "./diagnostics/types.js";
 import { DefaultRunDiagnosticsManager } from "./diagnostics/runDiagnosticsManager.js";
+import type {
+  DurableRunRecord,
+  ResumeManager,
+  ResumePreparation,
+  RunHistoryStore,
+  WorkspaceFingerprint
+} from "./history/types.js";
+import { DefaultRunHistoryStore } from "./history/runHistoryStore.js";
+import { DefaultResumeManager } from "./history/resumeManager.js";
+import { getProjectIdentifier } from "./history/projectIdentifier.js";
+import { captureWorkspaceFingerprint } from "./history/workspaceFingerprint.js";
 
 export interface AgentRuntimeOptions {
   systemPrompt?: string;
@@ -103,6 +114,9 @@ export interface AgentRuntimeOptions {
   recoveryManager?: RecoveryManager;
   executionPolicy?: ExecutionPolicy;
   diagnosticsManager?: RunDiagnosticsManager;
+  historyStore?: RunHistoryStore;
+  historyStorageDir?: string;
+  resumeManager?: ResumeManager;
   maxRetainedRuns?: number;
   emitRunEvents?: boolean;
   maxIdenticalToolCalls?: number;
@@ -133,9 +147,14 @@ export class AgentRuntime implements Agent {
   private readonly recoveryManager: RecoveryManager;
   private readonly executionPolicy: ExecutionPolicy;
   private readonly diagnosticsManager: RunDiagnosticsManager;
+  private readonly historyStore: RunHistoryStore;
+  private readonly resumeManager: ResumeManager;
   private readonly completionTracker: TaskCompletionTracker = new TaskCompletionTracker();
   private readonly safeEditValidator: SafeEditValidator = new SafeEditValidator();
   private currentRunStateMachine?: AgentRunStateMachine;
+  private currentParentRunId?: string;
+  private currentProjectId?: string;
+  private currentWorkspaceFingerprint?: WorkspaceFingerprint;
   private state: AgentState;
   private activeController: AbortController | null = null;
   private lastToolCallKey: string | null = null;
@@ -176,6 +195,19 @@ export class AgentRuntime implements Agent {
       new DefaultRunDiagnosticsManager({
         maxRetainedRuns: options.maxRetainedRuns
       });
+    this.historyStore =
+      options.historyStore ||
+      new DefaultRunHistoryStore({ storageDir: options.historyStorageDir });
+    this.resumeManager =
+      options.resumeManager ||
+      new DefaultResumeManager({
+        historyStore: this.historyStore,
+        gitRepository: this.gitRepository,
+        executionPolicy: this.executionPolicy,
+        skillRegistry: this.skillRegistry,
+        activationPolicy: this.activationPolicy,
+        projectContext: this.projectContext
+      });
 
     this.state = {
       sessionId:
@@ -205,6 +237,34 @@ export class AgentRuntime implements Agent {
 
   public getExecutionPolicy(): ExecutionPolicy {
     return this.executionPolicy;
+  }
+
+  public getHistoryStore(): RunHistoryStore {
+    return this.historyStore;
+  }
+
+  public getResumeManager(): ResumeManager {
+    return this.resumeManager;
+  }
+
+  public async prepareResume(
+    runId: string,
+    cwd: string
+  ): Promise<ResumePreparation> {
+    return this.resumeManager.prepareResume(runId, cwd);
+  }
+
+  public async getHistoricalRun(
+    runId: string
+  ): Promise<DurableRunRecord | null> {
+    return this.historyStore.getRun(runId);
+  }
+
+  public async listHistoricalRuns(options?: {
+    projectId?: string;
+    limit?: number;
+  }): Promise<DurableRunRecord[]> {
+    return this.historyStore.listRuns(options);
   }
 
   public getRunStateMachine(): AgentRunStateMachine | undefined {
@@ -416,6 +476,7 @@ export class AgentRuntime implements Agent {
       this.state.sessionId = input.sessionId;
     }
 
+    this.currentParentRunId = input.parentRunId;
     this.state.status = "running";
     this.activeController = new AbortController();
     this.completionTracker.reset();
@@ -430,6 +491,39 @@ export class AgentRuntime implements Agent {
     });
     this.currentRunStateMachine = stateMachine;
     const runId = stateMachine.getContext().runId;
+
+    if (this.gitRepository) {
+      try {
+        const isRepo = await this.gitRepository.isRepository(input.cwd);
+        if (isRepo) {
+          const baseline = await this.gitRepository.getSnapshot(input.cwd);
+          this.completionTracker.setBaselineSnapshot(baseline);
+          this.currentWorkspaceFingerprint = {
+            capturedAt: Date.now(),
+            gitBranch: baseline.branch || undefined,
+            isGitDirty: baseline.files.length > 0
+          };
+        }
+      } catch {
+        // ignore git errors
+      }
+    }
+
+    try {
+      this.currentProjectId = await getProjectIdentifier(
+        input.cwd,
+        this.gitRepository
+      );
+      if (!this.currentWorkspaceFingerprint) {
+        this.currentWorkspaceFingerprint = await captureWorkspaceFingerprint(
+          input.cwd,
+          undefined,
+          this.gitRepository
+        );
+      }
+    } catch {
+      // Ignore
+    }
 
     const initialRisk = this.executionPolicy.assess({
       userMessage: input.message,
@@ -450,6 +544,24 @@ export class AgentRuntime implements Agent {
       maxRecoveryAttempts: 1
     });
 
+    // Persist initial (interrupted) run record
+    const initialSummary = this.diagnosticsManager.getRunSummary(runId);
+    if (initialSummary) {
+      try {
+        await this.historyStore.saveRun(
+          {
+            ...initialSummary,
+            finalStatus: "interrupted"
+          },
+          this.currentProjectId,
+          this.currentWorkspaceFingerprint,
+          this.currentParentRunId
+        );
+      } catch {
+        // Non-fatal persistence error
+      }
+    }
+
     const runStartedEv: AgentEvent = { type: "run_started", runId };
     this.diagnosticsManager.recordEvent(runId, runStartedEv);
     if (this.emitRunEvents) {
@@ -460,18 +572,6 @@ export class AgentRuntime implements Agent {
       "planning",
       "Task started and context initialized"
     );
-
-    if (this.gitRepository) {
-      try {
-        const isRepo = await this.gitRepository.isRepository(input.cwd);
-        if (isRepo) {
-          const baseline = await this.gitRepository.getSnapshot(input.cwd);
-          this.completionTracker.setBaselineSnapshot(baseline);
-        }
-      } catch {
-        // ignore git errors
-      }
-    }
 
     if (
       initialRisk.requiresCheckpoint &&
@@ -1206,6 +1306,19 @@ export class AgentRuntime implements Agent {
       yield { type: "error", error };
     } finally {
       this.activeController = null;
+      const finalSummary = this.diagnosticsManager.getRunSummary(runId);
+      if (finalSummary) {
+        try {
+          await this.historyStore.saveRun(
+            finalSummary,
+            this.currentProjectId,
+            this.currentWorkspaceFingerprint,
+            this.currentParentRunId
+          );
+        } catch {
+          // Non-fatal persistence error
+        }
+      }
     }
   }
 
@@ -1234,6 +1347,17 @@ export class AgentRuntime implements Agent {
         type: "run_cancelled",
         runId
       });
+      const terminalSummary = this.diagnosticsManager.getRunSummary(runId);
+      if (terminalSummary) {
+        this.historyStore
+          .saveRun(
+            terminalSummary,
+            this.currentProjectId,
+            this.currentWorkspaceFingerprint,
+            this.currentParentRunId
+          )
+          .catch(() => {});
+      }
     }
     if (this.activeController) {
       this.state.status = "cancelled";

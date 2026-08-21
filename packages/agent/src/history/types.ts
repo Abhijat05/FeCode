@@ -1,0 +1,97 @@
+import type { AgentRunStatus, AgentRunTransition } from "../run/types.js";
+import type { TaskRiskLevel, TaskRiskAssessment } from "../policy/types.js";
+import type {
+  ToolDiagnosticRecord,
+  CommandDiagnosticRecord,
+  RecoveryDiagnosticRecord,
+  RunFilesSummary,
+  RunSummary
+} from "../diagnostics/types.js";
+
+export interface WorkspaceFingerprint {
+  gitCommitHash?: string;
+  gitBranch?: string;
+  isGitDirty?: boolean;
+  fileFingerprints?: Record<
+    string,
+    { mtimeMs?: number; size?: number; hash?: string }
+  >;
+  capturedAt: number;
+}
+
+export interface DurableRunRecord {
+  schemaVersion: 1;
+  runId: string;
+  parentRunId?: string;
+  projectId: string;
+  cwd: string;
+  userRequestSummary: string;
+  startedAt: number;
+  completedAt?: number;
+  durationMs?: number;
+  finalStatus: AgentRunStatus | "interrupted";
+  executionState: "completed" | "failed" | "cancelled" | "interrupted";
+  activeSkills: string[];
+  initialRiskLevel: TaskRiskLevel;
+  riskReasons: string[];
+  requiresCheckpoint: boolean;
+  requiresExplicitApproval: boolean;
+  checkpointId?: string;
+  verificationAttempts: number;
+  maxVerificationAttempts: number;
+  recoveryAttempts: number;
+  maxRecoveryAttempts: number;
+  tools: ToolDiagnosticRecord[];
+  commands: CommandDiagnosticRecord[];
+  recovery?: RecoveryDiagnosticRecord[];
+  files: RunFilesSummary;
+  lifecycleTransitions: AgentRunTransition[];
+  workspaceFingerprint?: WorkspaceFingerprint;
+  failureReason?: string;
+  failureCode?: string;
+  cancellationReason?: string;
+}
+
+export interface RunHistoryStoreOptions {
+  storageDir?: string;
+  maxRuns?: number;
+  maxSizeBytes?: number;
+}
+
+export interface RunHistoryStore {
+  getStorageDir(): string;
+  saveRun(
+    record: DurableRunRecord | RunSummary,
+    projectId?: string,
+    fingerprint?: WorkspaceFingerprint,
+    parentRunId?: string
+  ): Promise<void>;
+  getRun(runId: string): Promise<DurableRunRecord | null>;
+  listRuns(options?: {
+    projectId?: string;
+    limit?: number;
+  }): Promise<DurableRunRecord[]>;
+  deleteRun(runId: string): Promise<boolean>;
+  clearRuns(projectId?: string): Promise<void>;
+  prune(maxRuns?: number, maxSizeBytes?: number): Promise<number>;
+}
+
+export interface ResumePreparation {
+  canResume: boolean;
+  originalRun: DurableRunRecord;
+  suggestedParentRunId: string;
+  newRunId: string;
+  workspaceChanged: boolean;
+  workspaceDiffReasons: string[];
+  reassessedRisk: TaskRiskAssessment;
+  reassessedSkills: string[];
+  requiresUserConfirmation: boolean;
+  explanation: string;
+}
+
+export interface ResumeManager {
+  prepareResume(
+    runId: string,
+    currentCwd: string
+  ): Promise<ResumePreparation>;
+}

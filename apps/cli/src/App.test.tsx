@@ -29,6 +29,12 @@ class MockAgent implements Agent {
   public runFn?: (input: AgentInput) => AsyncIterable<AgentEvent>;
   public isCancelled = false;
   public getRunSummary?: (runId?: string) => import("@fecode/agent").RunSummary | undefined;
+  public listHistoricalRuns?: () => Promise<import("@fecode/agent").DurableRunRecord[]>;
+  public getHistoricalRun?: (id: string) => Promise<import("@fecode/agent").DurableRunRecord | null>;
+  public prepareResume?: (
+    id: string,
+    cwd: string
+  ) => Promise<import("@fecode/agent").ResumePreparation>;
 
   async *run(input: AgentInput): AsyncIterable<AgentEvent> {
     if (this.runFn) {
@@ -651,6 +657,106 @@ describe("CLI App Component", () => {
     const frame = lastFrame();
     expect(frame).toContain("Run: test-run-123");
     expect(frame).toContain("Status: completed");
+  });
+
+  it("handles /runs and /run commands", async () => {
+    const mockAgent = new MockAgent();
+    const sampleRun: import("@fecode/agent").DurableRunRecord = {
+      schemaVersion: 1,
+      runId: "run-cli-test-1",
+      projectId: "proj-test",
+      cwd: "/test",
+      userRequestSummary: "Test CLI run history",
+      startedAt: Date.now() - 5000,
+      completedAt: Date.now(),
+      durationMs: 5000,
+      finalStatus: "completed",
+      executionState: "completed",
+      activeSkills: [],
+      initialRiskLevel: "normal",
+      riskReasons: [],
+      requiresCheckpoint: false,
+      requiresExplicitApproval: false,
+      verificationAttempts: 0,
+      maxVerificationAttempts: 3,
+      recoveryAttempts: 0,
+      maxRecoveryAttempts: 1,
+      tools: [],
+      commands: [],
+      files: { modified: [], created: [], deleted: [] },
+      lifecycleTransitions: []
+    };
+
+    mockAgent.listHistoricalRuns = async () => [sampleRun];
+    mockAgent.getHistoricalRun = async (id: string) =>
+      id === "run-cli-test-1" ? sampleRun : null;
+
+    const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+    await delay(50);
+
+    // /runs
+    await typeAndSubmit(stdin, "/runs");
+    await delay(100);
+    expect(lastFrame()).toContain("run-cli-test-1");
+
+    // /run <id>
+    await typeAndSubmit(stdin, "/run run-cli-test-1");
+    await delay(100);
+    expect(lastFrame()).toContain("Project:   proj-test");
+  });
+
+  it("handles /resume <runId> command", async () => {
+    const mockAgent = new MockAgent();
+    mockAgent.prepareResume = async (id: string) => ({
+      canResume: true,
+      originalRun: {
+        schemaVersion: 1,
+        runId: id,
+        projectId: "proj-test",
+        cwd: "/test",
+        userRequestSummary: "Fix authentication bug",
+        startedAt: Date.now() - 10000,
+        finalStatus: "failed",
+        executionState: "failed",
+        activeSkills: [],
+        initialRiskLevel: "normal",
+        riskReasons: [],
+        requiresCheckpoint: false,
+        requiresExplicitApproval: false,
+        verificationAttempts: 1,
+        maxVerificationAttempts: 3,
+        recoveryAttempts: 0,
+        maxRecoveryAttempts: 1,
+        tools: [],
+        commands: [],
+        files: { modified: [], created: [], deleted: [] },
+        lifecycleTransitions: []
+      },
+      suggestedParentRunId: id,
+      newRunId: "run-resume-new-123",
+      workspaceChanged: false,
+      workspaceDiffReasons: [],
+      reassessedRisk: {
+        level: "normal",
+        reasons: [],
+        affectedFiles: 0,
+        requiresCheckpoint: false,
+        requiresExplicitApproval: false
+      },
+      reassessedSkills: [],
+      requiresUserConfirmation: false,
+      explanation: `Resuming task from run ${id}`
+    });
+
+    const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+    await delay(50);
+
+    await typeAndSubmit(stdin, "/resume run-orig-123");
+    await delay(100);
+
+    expect(lastFrame()).toContain("Resume Task Request:");
+    expect(lastFrame()).toContain("run-orig-123");
+    expect(lastFrame()).toContain("run-resume-new-123");
   });
 
   it("handles unknown slash commands", async () => {
