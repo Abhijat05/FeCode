@@ -103,8 +103,10 @@ export class DefaultRunHistoryStore implements RunHistoryStore {
         totalPlanSteps: summary.totalPlanSteps,
         completedPlanSteps: summary.completedPlanSteps,
         failedPlanStep: summary.failedPlanStep,
+        skippedPlanSteps: summary.skippedPlanSteps,
         replanCount: summary.replanCount,
-        planSummary: summary.planSummary
+        planSummary: summary.planSummary,
+        planExecutionDurationMs: summary.planExecutionDurationMs
       };
     }
 

@@ -37,9 +37,82 @@ export type AgentEvent =
   | { type: "error"; error: Error }
   | { type: "skills_activated"; skills: string[] }
   | { type: "plan_created"; plan: TaskPlan }
-  | { type: "plan_step_started"; planId: string; stepId: string; stepIndex: number }
-  | { type: "plan_step_completed"; planId: string; stepId: string; stepIndex: number }
-  | { type: "plan_step_failed"; planId: string; stepId: string; stepIndex: number; error?: string }
+  | {
+      type: "plan_execution_started";
+      runId?: string;
+      planId: string;
+      totalSteps: number;
+      timestamp?: number;
+    }
+  | {
+      type: "plan_step_started";
+      runId?: string;
+      planId: string;
+      stepId: string;
+      stepIndex: number;
+      title?: string;
+      timestamp?: number;
+    }
+  | {
+      type: "plan_step_waiting_approval";
+      runId?: string;
+      planId: string;
+      stepId: string;
+      request: ApprovalRequest;
+      timestamp?: number;
+    }
+  | {
+      type: "plan_step_completed";
+      runId?: string;
+      planId: string;
+      stepId: string;
+      stepIndex: number;
+      durationMs?: number;
+      timestamp?: number;
+    }
+  | {
+      type: "plan_step_failed";
+      runId?: string;
+      planId: string;
+      stepId: string;
+      stepIndex: number;
+      error?: string;
+      durationMs?: number;
+      timestamp?: number;
+    }
+  | {
+      type: "plan_step_skipped";
+      runId?: string;
+      planId: string;
+      stepId: string;
+      stepIndex: number;
+      reason: string;
+      timestamp?: number;
+    }
+  | {
+      type: "plan_execution_completed";
+      runId?: string;
+      planId: string;
+      completedSteps: number;
+      totalSteps: number;
+      durationMs?: number;
+      timestamp?: number;
+    }
+  | {
+      type: "plan_execution_failed";
+      runId?: string;
+      planId: string;
+      failedStep?: string;
+      reason?: string;
+      timestamp?: number;
+    }
+  | {
+      type: "plan_execution_cancelled";
+      runId?: string;
+      planId: string;
+      reason?: string;
+      timestamp?: number;
+    }
   | { type: "task_summary"; summary: TaskCompletionSummary }
   | { type: "run_started"; runId: string }
   | {

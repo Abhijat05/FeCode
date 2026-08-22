@@ -104,7 +104,15 @@ export class DefaultRunDiagnosticsManager implements RunDiagnosticsManager {
     runId: string,
     plan: import("../planning/types.js").TaskPlan
   ): void {
-    const summary = this.runSummaries.get(runId);
+    let summary = this.runSummaries.get(runId);
+    if (!summary) {
+      this.startRun({
+        runId,
+        cwd: "",
+        userRequest: plan.userRequestSummary || plan.objective
+      });
+      summary = this.runSummaries.get(runId);
+    }
     if (!summary) return;
 
     summary.planId = plan.planId;
@@ -112,6 +120,9 @@ export class DefaultRunDiagnosticsManager implements RunDiagnosticsManager {
     summary.totalPlanSteps = plan.steps.length;
     summary.completedPlanSteps = plan.steps.filter(
       (s) => s.status === "completed"
+    ).length;
+    summary.skippedPlanSteps = plan.steps.filter(
+      (s) => s.status === "skipped"
     ).length;
     summary.failedPlanStep = plan.steps.find(
       (s) => s.status === "failed"
@@ -133,6 +144,8 @@ export class DefaultRunDiagnosticsManager implements RunDiagnosticsManager {
 
     if (status === "completed") {
       summary.completedPlanSteps = (summary.completedPlanSteps ?? 0) + 1;
+    } else if (status === "skipped") {
+      summary.skippedPlanSteps = (summary.skippedPlanSteps ?? 0) + 1;
     } else if (status === "failed") {
       summary.failedPlanStep = stepId;
       if (error && !summary.failureReason) {

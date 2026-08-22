@@ -1108,4 +1108,70 @@ describe("CLI App Component", () => {
     await delay(100);
     expect(lastFrame()).toContain("✓ Deleted session: session-demo-1");
   });
+
+  it("renders plan execution orchestration events cleanly in CLI stream", async () => {
+    const mockAgent = new MockAgent();
+    mockAgent.runFn = async function* () {
+      yield {
+        type: "plan_execution_started",
+        planId: "plan-test-1",
+        totalSteps: 2
+      };
+      yield {
+        type: "plan_step_started",
+        planId: "plan-test-1",
+        stepId: "step-1",
+        stepIndex: 0,
+        title: "Inspect codebase"
+      };
+      yield {
+        type: "plan_step_completed",
+        planId: "plan-test-1",
+        stepId: "step-1",
+        stepIndex: 0,
+        durationMs: 150
+      };
+      yield {
+        type: "plan_step_skipped",
+        planId: "plan-test-1",
+        stepId: "step-2",
+        stepIndex: 1,
+        reason: "Prerequisite not required"
+      };
+      yield {
+        type: "plan_execution_completed",
+        planId: "plan-test-1",
+        completedSteps: 1,
+        totalSteps: 2,
+        durationMs: 300
+      };
+      yield { type: "done" };
+    };
+
+    const mockGitRepo = new DefaultGitRepository(async () => ({
+      stdout: "",
+      stderr: "",
+      exitCode: 1
+    }));
+
+    const { lastFrame, stdin } = render(
+      <App
+        agent={mockAgent}
+        cwd={process.cwd()}
+        gitRepository={mockGitRepo}
+      />
+    );
+    await delay(50);
+
+    await typeAndSubmit(stdin, "Execute approved plan");
+    await delay(150);
+
+    const frame = lastFrame();
+    expect(frame).toContain("Plan approved. Executing 2 steps...");
+    expect(frame).toContain("[1] Inspect codebase");
+    expect(frame).toContain("EXECUTING");
+    expect(frame).toContain("✓ COMPLETED");
+    expect(frame).toContain("⊘ SKIPPED (Prerequisite not required)");
+    expect(frame).toContain("✓ Plan completed (1/2 steps).");
+  });
 });

@@ -29,12 +29,19 @@ export function formatRunDiagnostics(summary: RunSummary): string {
       lines.push(`  Objective: ${summary.planSummary}`);
     }
     if (summary.totalPlanSteps !== undefined) {
-      lines.push(
-        `  Steps:     ${summary.completedPlanSteps ?? 0}/${summary.totalPlanSteps} completed`
-      );
+      let stepsStr = `  Steps:     ${summary.completedPlanSteps ?? 0}/${summary.totalPlanSteps} completed`;
+      if (summary.skippedPlanSteps) {
+        stepsStr += ` (${summary.skippedPlanSteps} skipped)`;
+      }
+      lines.push(stepsStr);
     }
     if (summary.failedPlanStep) {
       lines.push(`  Failed:    ${summary.failedPlanStep}`);
+    }
+    if (summary.planExecutionDurationMs !== undefined) {
+      lines.push(
+        `  Execution: ${(summary.planExecutionDurationMs / 1000).toFixed(1)}s`
+      );
     }
     if (summary.replanCount) {
       lines.push(`  Replans:   ${summary.replanCount}`);

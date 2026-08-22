@@ -92,8 +92,9 @@ import { DefaultRunHistoryStore } from "./history/runHistoryStore.js";
 import { DefaultResumeManager } from "./history/resumeManager.js";
 import { getProjectIdentifier } from "./history/projectIdentifier.js";
 import { captureWorkspaceFingerprint } from "./history/workspaceFingerprint.js";
-import type { TaskPlan, TaskPlanner } from "./planning/types.js";
+import type { TaskPlan, TaskPlanner, PlanExecutor } from "./planning/types.js";
 import { DefaultTaskPlanner } from "./planning/planner.js";
+import { DefaultPlanExecutor } from "./planning/executor.js";
 import {
   transitionPlanStatus,
   completePlanStep,
@@ -126,6 +127,7 @@ export interface AgentRuntimeOptions {
   historyStorageDir?: string;
   resumeManager?: ResumeManager;
   planner?: TaskPlanner;
+  planExecutor?: PlanExecutor;
   maxRetainedRuns?: number;
   emitRunEvents?: boolean;
   maxIdenticalToolCalls?: number;
@@ -159,6 +161,7 @@ export class AgentRuntime implements Agent {
   private readonly historyStore: RunHistoryStore;
   private readonly resumeManager: ResumeManager;
   private readonly planner: TaskPlanner;
+  private readonly planExecutor: PlanExecutor;
   private readonly completionTracker: TaskCompletionTracker = new TaskCompletionTracker();
   private readonly safeEditValidator: SafeEditValidator = new SafeEditValidator();
   private currentRunStateMachine?: AgentRunStateMachine;
@@ -211,6 +214,20 @@ export class AgentRuntime implements Agent {
       options.historyStore ||
       new DefaultRunHistoryStore({ storageDir: options.historyStorageDir });
     this.planner = options.planner || new DefaultTaskPlanner();
+    this.planExecutor =
+      options.planExecutor ||
+      new DefaultPlanExecutor({
+        registry: this.registry,
+        executor: this.executor,
+        permissionManager: this.permissionManager,
+        approvalResolver: this.approvalResolver,
+        executionPolicy: this.executionPolicy,
+        checkpointManager: this.checkpointManager,
+        diagnosticsManager: this.diagnosticsManager,
+        safeEditValidator: this.safeEditValidator,
+        gitRepository: this.gitRepository,
+        maxVerificationAttempts: this.maxVerificationAttempts
+      });
     this.resumeManager =
       options.resumeManager ||
       new DefaultResumeManager({
@@ -264,8 +281,32 @@ export class AgentRuntime implements Agent {
     return this.planner;
   }
 
+  public getPlanExecutor(): PlanExecutor {
+    return this.planExecutor;
+  }
+
   public getTaskPlan(): TaskPlan | undefined {
     return this.currentPlan;
+  }
+
+  public async *executeApprovedPlan(
+    plan?: TaskPlan,
+    options: { cwd?: string } = {}
+  ): AsyncIterable<AgentEvent> {
+    const targetPlan = plan || this.currentPlan;
+    if (!targetPlan) {
+      throw new Error("No execution plan available to execute.");
+    }
+    const runId = targetPlan.runId || `run-${Date.now()}`;
+    const targetCwd = options.cwd || process.cwd();
+
+    yield* this.planExecutor.executePlan(targetPlan, {
+      runId,
+      cwd: targetCwd,
+      signal: this.activeController?.signal,
+      initialFingerprint: this.currentWorkspaceFingerprint,
+      emitRunEvents: this.emitRunEvents
+    });
   }
 
   public async prepareResume(

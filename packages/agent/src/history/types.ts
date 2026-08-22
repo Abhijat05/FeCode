@@ -56,8 +56,10 @@ export interface DurableRunRecord {
   totalPlanSteps?: number;
   completedPlanSteps?: number;
   failedPlanStep?: string;
+  skippedPlanSteps?: number;
   replanCount?: number;
   planSummary?: string;
+  planExecutionDurationMs?: number;
 }
 
 export interface RunHistoryStoreOptions {

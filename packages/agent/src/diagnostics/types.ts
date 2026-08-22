@@ -76,10 +76,12 @@ export interface RunSummary {
   totalPlanSteps?: number;
   completedPlanSteps?: number;
   failedPlanStep?: string;
+  skippedPlanSteps?: number;
   currentPlanStep?: number;
   replanCount?: number;
   planInvalidationReason?: string;
   planSummary?: string;
+  planExecutionDurationMs?: number;
 }
 
 export interface RunDiagnosticsManagerOptions {

@@ -124,3 +124,90 @@ export interface TaskPlanner {
   createPlan(params: CreatePlanParams): Promise<TaskPlan> | TaskPlan;
   replan(oldPlan: TaskPlan, params: ReplanParams): Promise<TaskPlan> | TaskPlan;
 }
+
+export type PlanExecutionStatus =
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "superseded";
+
+export interface PlanVerificationResult {
+  stepId: string;
+  command: string;
+  succeeded: boolean;
+  exitCode?: number | null;
+  output?: string;
+  durationMs?: number;
+  timedOut?: boolean;
+}
+
+export interface PlanStepExecutionResult {
+  stepId: string;
+  status: PlanStepStatus;
+  startedAt: number;
+  completedAt?: number;
+  durationMs?: number;
+  executionIntent?: ExecutionIntent;
+  toolCalls?: Array<{
+    toolName: string;
+    success: boolean;
+    durationMs?: number;
+    error?: string;
+  }>;
+  verification?: PlanVerificationResult;
+  failureReason?: string;
+}
+
+export interface PlanExecutionResult {
+  planId: string;
+  status: PlanExecutionStatus;
+  completedSteps: string[];
+  failedStep?: string;
+  skippedSteps: string[];
+  verificationResults: PlanVerificationResult[];
+  failureReason?: string;
+  durationMs?: number;
+  stepResults: PlanStepExecutionResult[];
+}
+
+export interface PlanStalenessResult {
+  stale: boolean;
+  reason?: string;
+  affectedStep?: string;
+  timestamp: number;
+}
+
+export interface PlanExecutorContext {
+  runId: string;
+  cwd: string;
+  signal?: AbortSignal;
+  initialFingerprint?: import("../history/types.js").WorkspaceFingerprint;
+  initialGitBranch?: string;
+  affectedFiles?: string[];
+  emitRunEvents?: boolean;
+  onStateTransition?: (
+    to: import("../run/types.js").AgentRunStatus,
+    reason: string
+  ) => AsyncIterable<import("../index.js").AgentEvent>;
+}
+
+export interface PlanExecutorOptions {
+  registry: import("@fecode/models").ToolRegistry;
+  executor: import("@fecode/models").ToolExecutor;
+  permissionManager: import("@fecode/models").PermissionManager;
+  approvalResolver?: import("@fecode/models").ApprovalResolver;
+  executionPolicy: import("../policy/types.js").ExecutionPolicy;
+  checkpointManager?: import("../checkpoints/types.js").CheckpointManager;
+  commandExecutor?: import("../commands/types.js").CommandExecutor;
+  diagnosticsManager?: import("../diagnostics/types.js").RunDiagnosticsManager;
+  safeEditValidator?: import("../editing/validator.js").SafeEditValidator;
+  gitRepository?: import("../git/types.js").GitRepository;
+  maxVerificationAttempts?: number;
+}
+
+export interface PlanExecutor {
+  executePlan(
+    plan: TaskPlan,
+    context: PlanExecutorContext
+  ): AsyncIterable<import("../index.js").AgentEvent>;
+}

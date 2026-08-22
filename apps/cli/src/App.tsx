@@ -1480,14 +1480,42 @@ export const App: React.FC<AppProps> = ({
                 : t
             )
           );
-        } else if (event.type === "plan_step_started") {
+        } else if (event.type === "plan_execution_started") {
           setTurns((prev) =>
             prev.map((t) =>
               t.id === turnId
                 ? {
                     ...t,
                     status: "streaming",
-                    response: t.response + `● Step ${event.stepIndex + 1}\n`
+                    response:
+                      t.response +
+                      `Plan approved. Executing ${event.totalSteps} steps...\n\n`
+                  }
+                : t
+            )
+          );
+        } else if (event.type === "plan_step_started") {
+          const stepTitle = event.title || `Step ${event.stepIndex + 1}`;
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    status: "streaming",
+                    response:
+                      t.response + `[${event.stepIndex + 1}] ${stepTitle}\n      EXECUTING\n`
+                  }
+                : t
+            )
+          );
+        } else if (event.type === "plan_step_waiting_approval") {
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    status: "streaming",
+                    response: t.response + `      WAITING FOR APPROVAL\n`
                   }
                 : t
             )
@@ -1499,7 +1527,7 @@ export const App: React.FC<AppProps> = ({
                 ? {
                     ...t,
                     status: "streaming",
-                    response: t.response + `✓ Step ${event.stepIndex + 1} completed\n\n`
+                    response: t.response + `      ✓ COMPLETED\n\n`
                   }
                 : t
             )
@@ -1513,7 +1541,63 @@ export const App: React.FC<AppProps> = ({
                     status: "streaming",
                     response:
                       t.response +
-                      `✗ Step ${event.stepIndex + 1} failed${event.error ? `: ${event.error}` : ""}\n\n`
+                      `      ✗ FAILED${event.error ? `: ${event.error}` : ""}\n\n`
+                  }
+                : t
+            )
+          );
+        } else if (event.type === "plan_step_skipped") {
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    status: "streaming",
+                    response:
+                      t.response +
+                      `[${event.stepIndex + 1}] Step ${event.stepIndex + 1}\n      ⊘ SKIPPED (${event.reason})\n\n`
+                  }
+                : t
+            )
+          );
+        } else if (event.type === "plan_execution_completed") {
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    status: "streaming",
+                    response:
+                      t.response +
+                      `✓ Plan completed (${event.completedSteps}/${event.totalSteps} steps).\n\n`
+                  }
+                : t
+            )
+          );
+        } else if (event.type === "plan_execution_failed") {
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    status: "streaming",
+                    response:
+                      t.response +
+                      `✗ Plan execution failed${event.reason ? `: ${event.reason}` : ""}\n\n`
+                  }
+                : t
+            )
+          );
+        } else if (event.type === "plan_execution_cancelled") {
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    status: "streaming",
+                    response:
+                      t.response +
+                      `✗ Plan execution cancelled${event.reason ? `: ${event.reason}` : ""}\n\n`
                   }
                 : t
             )
