@@ -129,6 +129,12 @@ export class DefaultRunDiagnosticsManager implements RunDiagnosticsManager {
     )?.stepId;
     summary.currentPlanStep = (plan.currentStepIndex ?? 0) + 1;
     summary.replanCount = plan.replanCount;
+    summary.parentPlanId = plan.parentPlanId;
+    summary.replanDepth = plan.replanDepth;
+    summary.replanReason = plan.replanReason;
+    if (plan.parentPlanId && !summary.replanTimestamp) {
+      summary.replanTimestamp = Date.now();
+    }
     summary.planInvalidationReason = plan.invalidationReason;
     summary.planSummary = plan.objective;
   }

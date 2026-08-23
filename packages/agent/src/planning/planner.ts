@@ -172,6 +172,10 @@ export class DefaultTaskPlanner implements TaskPlanner {
     const freshPlan = this.createPlan(params);
     return {
       ...freshPlan,
+      parentPlanId: oldPlan.planId,
+      rootPlanId: oldPlan.rootPlanId || oldPlan.planId,
+      replanDepth: (oldPlan.replanDepth ?? 0) + 1,
+      replanReason: params.reason,
       replanCount: (oldPlan.replanCount ?? 0) + 1,
       invalidationReason: params.reason
     };

@@ -35,6 +35,13 @@ class MockAgent implements Agent {
     id: string,
     cwd: string
   ) => Promise<import("@fecode/agent").ResumePreparation>;
+  public prepareReplan?: (
+    id?: string,
+    opts?: { cwd: string }
+  ) => Promise<import("@fecode/agent").ReplanAssessment>;
+  public executeReplan?: (
+    req: import("@fecode/agent").ReplanRequest
+  ) => Promise<import("@fecode/agent").ReplanResult>;
   public getTaskPlan?: () => import("@fecode/agent").TaskPlan | undefined;
 
   async *resumeRun(
@@ -1173,5 +1180,154 @@ describe("CLI App Component", () => {
     expect(frame).toContain("✓ COMPLETED");
     expect(frame).toContain("⊘ SKIPPED (Prerequisite not required)");
     expect(frame).toContain("✓ Plan completed (1/2 steps).");
+  });
+
+  it("handles /replan workflow with prompt and explicit user confirmation", async () => {
+    const mockAgent = new MockAgent();
+    mockAgent.prepareReplan = async () => ({
+      eligible: true,
+      reason: "stale_workspace",
+      explanation: "Button.tsx changed externally",
+      previousPlanId: "plan-stale-99",
+      workspaceChanged: true,
+      riskChanged: false,
+      planStale: true,
+      requiresUserConfirmation: true,
+      replanDepth: 1,
+      maxReplanDepth: 3,
+      isLimitReached: false,
+      previousPlan: {
+        planId: "plan-stale-99",
+        runId: "run-99",
+        createdAt: Date.now(),
+        userRequestSummary: "Update button style",
+        objective: "Update button styling",
+        steps: [
+          {
+            stepId: "step-1",
+            order: 1,
+            title: "Inspect style",
+            objective: "Read style",
+            type: "inspect",
+            dependencies: [],
+            riskLevel: "low",
+            verificationRequired: false,
+            status: "completed"
+          }
+        ],
+        risks: [],
+        status: "superseded"
+      }
+    });
+
+    mockAgent.executeReplan = async () => ({
+      previousPlanId: "plan-stale-99",
+      newPlanId: "plan-adapted-100",
+      status: "created",
+      reason: "stale_workspace",
+      createdAt: Date.now(),
+      newPlan: {
+        planId: "plan-adapted-100",
+        runId: "run-replan-100",
+        createdAt: Date.now(),
+        userRequestSummary: "Update button style",
+        objective: "Update button styling",
+        steps: [
+          {
+            stepId: "step-1",
+            order: 1,
+            title: "Re-inspect style after external edit",
+            objective: "Read style",
+            type: "inspect",
+            dependencies: [],
+            riskLevel: "low",
+            verificationRequired: false,
+            status: "pending"
+          }
+        ],
+        risks: [],
+        status: "ready",
+        parentPlanId: "plan-stale-99",
+        replanDepth: 1
+      }
+    });
+
+    const mockGitRepo = new DefaultGitRepository(async () => ({
+      stdout: "",
+      stderr: "",
+      exitCode: 1
+    }));
+
+    const { lastFrame, stdin } = render(
+      <App
+        agent={mockAgent}
+        cwd={process.cwd()}
+        gitRepository={mockGitRepo}
+      />
+    );
+    await delay(50);
+
+    // 1. Run /replan
+    await typeAndSubmit(stdin, "/replan");
+    await delay(100);
+
+    let frame = lastFrame();
+    expect(frame).toContain("Replanning Assessment:");
+    expect(frame).toContain("plan-stale-99");
+    expect(frame).toContain("Button.tsx changed externally");
+    expect(frame).toContain("Create a new execution plan using the current workspace? [y/N]");
+
+    // 2. Confirm replan with 'y'
+    await typeAndSubmit(stdin, "y");
+    await delay(150);
+
+    frame = lastFrame();
+    expect(frame).toContain("✓ Created replacement plan: plan-adapted-100");
+    expect(frame).toContain("Re-inspect style after external edit");
+  });
+
+  it("handles /replan cancellation when user responds 'n'", async () => {
+    const mockAgent = new MockAgent();
+    mockAgent.prepareReplan = async () => ({
+      eligible: true,
+      reason: "user_requested",
+      explanation: "User requested replanning",
+      previousPlanId: "plan-active-1",
+      workspaceChanged: false,
+      riskChanged: false,
+      planStale: false,
+      requiresUserConfirmation: true,
+      replanDepth: 1,
+      maxReplanDepth: 3,
+      isLimitReached: false
+    });
+
+    const mockGitRepo = new DefaultGitRepository(async () => ({
+      stdout: "",
+      stderr: "",
+      exitCode: 1
+    }));
+
+    const { lastFrame, stdin } = render(
+      <App
+        agent={mockAgent}
+        cwd={process.cwd()}
+        gitRepository={mockGitRepo}
+      />
+    );
+    await delay(50);
+
+    await typeAndSubmit(stdin, "/replan");
+    await delay(100);
+
+    let frame = lastFrame();
+    expect(frame).toContain("Create a new execution plan using the current workspace? [y/N]");
+
+    // Respond 'n'
+    await typeAndSubmit(stdin, "n");
+    await delay(100);
+
+    frame = lastFrame();
+    expect(frame).toContain("Replanning cancelled.");
   });
 });

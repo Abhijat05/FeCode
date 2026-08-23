@@ -113,6 +113,49 @@ export type AgentEvent =
       reason?: string;
       timestamp?: number;
     }
+  | {
+      type: "replan_requested";
+      runId: string;
+      previousPlanId: string;
+      reason: string;
+      timestamp?: number;
+    }
+  | {
+      type: "replan_assessment_completed";
+      runId: string;
+      previousPlanId: string;
+      eligible: boolean;
+      reason: string;
+      timestamp?: number;
+    }
+  | {
+      type: "replan_approved";
+      runId: string;
+      previousPlanId: string;
+      timestamp?: number;
+    }
+  | {
+      type: "replan_rejected";
+      runId: string;
+      previousPlanId: string;
+      reason?: string;
+      timestamp?: number;
+    }
+  | {
+      type: "replan_created";
+      runId: string;
+      previousPlanId: string;
+      newPlanId: string;
+      replanDepth: number;
+      timestamp?: number;
+    }
+  | {
+      type: "replan_failed";
+      runId: string;
+      previousPlanId: string;
+      reason: string;
+      timestamp?: number;
+    }
   | { type: "task_summary"; summary: TaskCompletionSummary }
   | { type: "run_started"; runId: string }
   | {

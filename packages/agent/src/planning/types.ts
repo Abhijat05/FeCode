@@ -91,6 +91,10 @@ export interface TaskPlan {
   currentStepIndex?: number;
   replanCount?: number;
   invalidationReason?: string;
+  parentPlanId?: string;
+  rootPlanId?: string;
+  replanDepth?: number;
+  replanReason?: string;
 }
 
 export interface PlanSummary {
@@ -105,6 +109,9 @@ export interface PlanSummary {
   highestRisk: TaskRiskLevel;
   requiresApproval: boolean;
   invalidationReason?: string;
+  parentPlanId?: string;
+  replanDepth?: number;
+  replanReason?: string;
 }
 
 export interface CreatePlanParams {
@@ -210,4 +217,86 @@ export interface PlanExecutor {
     plan: TaskPlan,
     context: PlanExecutorContext
   ): AsyncIterable<import("../index.js").AgentEvent>;
+}
+
+export type ReplanReason =
+  | "stale_workspace"
+  | "branch_changed"
+  | "file_changed"
+  | "configuration_changed"
+  | "dependency_changed"
+  | "step_failed"
+  | "verification_failed"
+  | "user_requested"
+  | "plan_invalidated";
+
+export interface ReplanRequest {
+  runId: string;
+  previousPlanId: string;
+  reason: ReplanReason | string;
+  explanation?: string;
+  failedStepId?: string;
+  cwd: string;
+  userRequest: string;
+  currentWorkspaceFingerprint?: import("../history/types.js").WorkspaceFingerprint;
+  requestedBy: "user";
+}
+
+export interface ReplanAssessment {
+  eligible: boolean;
+  reason: ReplanReason | string;
+  explanation?: string;
+  previousPlanId: string;
+  affectedStepId?: string;
+  workspaceChanged: boolean;
+  workspaceDiffReasons?: string[];
+  riskChanged: boolean;
+  planStale: boolean;
+  requiresUserConfirmation: boolean;
+  replanDepth: number;
+  maxReplanDepth: number;
+  isLimitReached: boolean;
+  currentFingerprint?: import("../history/types.js").WorkspaceFingerprint;
+  reassessedRisk?: import("../policy/types.js").TaskRiskAssessment;
+  reassessedSkills?: string[];
+  previousPlan?: TaskPlan;
+}
+
+export interface ReplanResult {
+  previousPlanId: string;
+  newPlanId?: string;
+  status: "created" | "rejected" | "limit_reached" | "failed";
+  reason: string;
+  createdAt: number;
+  newPlan?: TaskPlan;
+  replanDepth?: number;
+}
+
+export interface ReplanManagerOptions {
+  planner: TaskPlanner;
+  executionPolicy: import("../policy/types.js").ExecutionPolicy;
+  gitRepository?: import("../git/types.js").GitRepository;
+  skillRegistry?: import("../skills/types.js").SkillRegistry;
+  activationPolicy?: import("../skills/activation.js").SkillActivationPolicy;
+  projectContext?: import("../project/types.js").ProjectContext;
+  historyStore?: import("../history/types.js").RunHistoryStore;
+  diagnosticsManager?: import("../diagnostics/types.js").RunDiagnosticsManager;
+  maxReplanDepth?: number;
+}
+
+export interface ReplanManager {
+  registerPlan(plan: TaskPlan): void;
+  assessReplanning(request: ReplanRequest): Promise<ReplanAssessment>;
+  prepareReplan(
+    planIdOrRunId: string,
+    options: {
+      cwd: string;
+      userRequest?: string;
+      reason?: ReplanReason | string;
+      explanation?: string;
+      failedStepId?: string;
+    }
+  ): Promise<ReplanAssessment>;
+  executeReplan(request: ReplanRequest): Promise<ReplanResult>;
+  getPlanHistory(planId: string): Promise<TaskPlan[]>;
 }

@@ -92,9 +92,18 @@ import { DefaultRunHistoryStore } from "./history/runHistoryStore.js";
 import { DefaultResumeManager } from "./history/resumeManager.js";
 import { getProjectIdentifier } from "./history/projectIdentifier.js";
 import { captureWorkspaceFingerprint } from "./history/workspaceFingerprint.js";
-import type { TaskPlan, TaskPlanner, PlanExecutor } from "./planning/types.js";
+import type {
+  TaskPlan,
+  TaskPlanner,
+  PlanExecutor,
+  ReplanManager,
+  ReplanAssessment,
+  ReplanRequest,
+  ReplanResult
+} from "./planning/types.js";
 import { DefaultTaskPlanner } from "./planning/planner.js";
 import { DefaultPlanExecutor } from "./planning/executor.js";
+import { DefaultReplanManager } from "./planning/replanManager.js";
 import {
   transitionPlanStatus,
   completePlanStep,
@@ -128,6 +137,8 @@ export interface AgentRuntimeOptions {
   resumeManager?: ResumeManager;
   planner?: TaskPlanner;
   planExecutor?: PlanExecutor;
+  replanManager?: ReplanManager;
+  maxReplanDepth?: number;
   maxRetainedRuns?: number;
   emitRunEvents?: boolean;
   maxIdenticalToolCalls?: number;
@@ -162,6 +173,8 @@ export class AgentRuntime implements Agent {
   private readonly resumeManager: ResumeManager;
   private readonly planner: TaskPlanner;
   private readonly planExecutor: PlanExecutor;
+  private readonly replanManager: ReplanManager;
+  private readonly maxReplanDepth: number;
   private readonly completionTracker: TaskCompletionTracker = new TaskCompletionTracker();
   private readonly safeEditValidator: SafeEditValidator = new SafeEditValidator();
   private currentRunStateMachine?: AgentRunStateMachine;
@@ -228,6 +241,20 @@ export class AgentRuntime implements Agent {
         gitRepository: this.gitRepository,
         maxVerificationAttempts: this.maxVerificationAttempts
       });
+    this.maxReplanDepth = options.maxReplanDepth ?? 5;
+    this.replanManager =
+      options.replanManager ||
+      new DefaultReplanManager({
+        planner: this.planner,
+        executionPolicy: this.executionPolicy,
+        gitRepository: this.gitRepository,
+        skillRegistry: this.skillRegistry,
+        activationPolicy: this.activationPolicy,
+        projectContext: this.projectContext,
+        historyStore: this.historyStore,
+        diagnosticsManager: this.diagnosticsManager,
+        maxReplanDepth: this.maxReplanDepth
+      });
     this.resumeManager =
       options.resumeManager ||
       new DefaultResumeManager({
@@ -285,8 +312,46 @@ export class AgentRuntime implements Agent {
     return this.planExecutor;
   }
 
+  public getReplanManager(): ReplanManager {
+    return this.replanManager;
+  }
+
   public getTaskPlan(): TaskPlan | undefined {
     return this.currentPlan;
+  }
+
+  public async prepareReplan(
+    planIdOrRunId?: string,
+    options: {
+      cwd?: string;
+      userRequest?: string;
+      reason?: import("./planning/types.js").ReplanReason | string;
+      explanation?: string;
+      failedStepId?: string;
+    } = {}
+  ): Promise<ReplanAssessment> {
+    const targetId = planIdOrRunId || this.currentPlan?.planId;
+    if (!targetId) {
+      throw new Error("No active or historical plan specified for replanning.");
+    }
+    const cwd = options.cwd || process.cwd();
+    return this.replanManager.prepareReplan(targetId, {
+      cwd,
+      userRequest: options.userRequest || this.currentPlan?.userRequestSummary,
+      reason: options.reason || "user_requested",
+      explanation: options.explanation,
+      failedStepId: options.failedStepId
+    });
+  }
+
+  public async executeReplan(
+    request: ReplanRequest
+  ): Promise<ReplanResult> {
+    const result = await this.replanManager.executeReplan(request);
+    if (result.status === "created" && result.newPlan) {
+      this.currentPlan = result.newPlan;
+    }
+    return result;
   }
 
   public async *executeApprovedPlan(

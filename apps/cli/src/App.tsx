@@ -146,6 +146,10 @@ export const App: React.FC<AppProps> = ({
     runId: string;
     prep: import("@fecode/agent").ResumePreparation;
   } | null>(null);
+  const [pendingReplan, setPendingReplan] = useState<{
+    planId: string;
+    assessment: import("@fecode/agent").ReplanAssessment;
+  } | null>(null);
 
   const persistState = useCallback(
     async (
@@ -265,6 +269,82 @@ export const App: React.FC<AppProps> = ({
     const trimmed = value.trim();
     if (!trimmed || isGenerating) return;
 
+    if (pendingReplan) {
+      setQuery("");
+      const pr = pendingReplan;
+      setPendingReplan(null);
+
+      if (trimmed.toLowerCase() === "y" || trimmed.toLowerCase() === "yes") {
+        try {
+          if (agent && "executeReplan" in agent) {
+            const replanResult = await (
+              agent as {
+                executeReplan: (
+                  req: import("@fecode/agent").ReplanRequest
+                ) => Promise<import("@fecode/agent").ReplanResult>;
+              }
+            ).executeReplan({
+              runId: `run-replan-${Date.now()}`,
+              previousPlanId: pr.planId,
+              reason: pr.assessment.reason,
+              explanation: pr.assessment.explanation,
+              failedStepId: pr.assessment.affectedStepId,
+              cwd,
+              userRequest: pr.assessment.previousPlan?.userRequestSummary || "",
+              requestedBy: "user"
+            });
+
+            if (replanResult.status === "created" && replanResult.newPlan) {
+              const formattedPlan = PlanFormatter.formatPlanDetail(
+                replanResult.newPlan
+              );
+              setTurns((prev) => [
+                ...prev,
+                {
+                  id: `cmd-${Date.now()}`,
+                  prompt: trimmed,
+                  response: `✓ Created replacement plan: ${replanResult.newPlanId}\n\n${formattedPlan}\n\nType /plan to inspect or approve when ready.\n`,
+                  status: "done"
+                }
+              ]);
+            } else {
+              setTurns((prev) => [
+                ...prev,
+                {
+                  id: `cmd-${Date.now()}`,
+                  prompt: trimmed,
+                  response: `✗ Replanning failed: ${replanResult.reason}\n`,
+                  status: "done"
+                }
+              ]);
+            }
+          }
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: `✗ Error creating replan: ${msg}\n`,
+              status: "done"
+            }
+          ]);
+        }
+      } else {
+        setTurns((prev) => [
+          ...prev,
+          {
+            id: `cmd-${Date.now()}`,
+            prompt: trimmed,
+            response: "Replanning cancelled.\n",
+            status: "done"
+          }
+        ]);
+      }
+      return;
+    }
+
     if (pendingResume) {
       setQuery("");
       const pr = pendingResume;
@@ -382,6 +462,7 @@ export const App: React.FC<AppProps> = ({
           `  /runs                - List persisted run records for current project\n` +
           `  /run <id>            - Inspect details of a specific persisted run\n` +
           `  /plan                - Inspect the current task execution plan\n` +
+          `  /replan [runId]      - Prepare and adapt a replacement execution plan\n` +
           `  /resume <sessionId|runId> - Resume a saved session or incomplete run\n` +
           `  /delete-session <id> - Delete a saved session\n` +
           `  /debug [runId]       - Display execution diagnostics for the latest or specified run\n` +
@@ -1272,6 +1353,75 @@ export const App: React.FC<AppProps> = ({
               }
             ]);
           }
+        }
+        return;
+      }
+
+      if (cmd === "/replan") {
+        setQuery("");
+        const targetArg = parts[1];
+
+        try {
+          if (agent && "prepareReplan" in agent) {
+            const assessment = await (
+              agent as {
+                prepareReplan: (
+                  id?: string,
+                  opts?: { cwd: string }
+                ) => Promise<import("@fecode/agent").ReplanAssessment>;
+              }
+            ).prepareReplan(targetArg, { cwd });
+
+            if (!assessment.eligible) {
+              setTurns((prev) => [
+                ...prev,
+                {
+                  id: `cmd-${Date.now()}`,
+                  prompt: trimmed,
+                  response: `⚠ Plan is not eligible for replanning:\n${assessment.explanation || assessment.reason}\n`,
+                  status: "done"
+                }
+              ]);
+              return;
+            }
+
+            const promptText = PlanFormatter.formatReplanPrompt(assessment);
+            setPendingReplan({
+              planId: assessment.previousPlanId,
+              assessment
+            });
+
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: `${promptText}\n`,
+                status: "done"
+              }
+            ]);
+          } else {
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: "✗ Active agent does not support replanning.\n",
+                status: "done"
+              }
+            ]);
+          }
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: `✗ Failed to prepare replan: ${msg}\n`,
+              status: "done"
+            }
+          ]);
         }
         return;
       }

@@ -43,6 +43,12 @@ export function formatRunDiagnostics(summary: RunSummary): string {
         `  Execution: ${(summary.planExecutionDurationMs / 1000).toFixed(1)}s`
       );
     }
+    if (summary.parentPlanId) {
+      lines.push(`  Parent:    ${summary.parentPlanId} (depth ${summary.replanDepth ?? 0})`);
+    }
+    if (summary.replanReason) {
+      lines.push(`  Reason:    ${summary.replanReason}`);
+    }
     if (summary.replanCount) {
       lines.push(`  Replans:   ${summary.replanCount}`);
     }

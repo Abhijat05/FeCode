@@ -58,6 +58,10 @@ export interface DurableRunRecord {
   failedPlanStep?: string;
   skippedPlanSteps?: number;
   replanCount?: number;
+  parentPlanId?: string;
+  replanDepth?: number;
+  replanReason?: string;
+  replanTimestamp?: number;
   planSummary?: string;
   planExecutionDurationMs?: number;
 }

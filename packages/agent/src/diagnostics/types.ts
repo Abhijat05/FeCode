@@ -79,6 +79,10 @@ export interface RunSummary {
   skippedPlanSteps?: number;
   currentPlanStep?: number;
   replanCount?: number;
+  parentPlanId?: string;
+  replanDepth?: number;
+  replanReason?: string;
+  replanTimestamp?: number;
   planInvalidationReason?: string;
   planSummary?: string;
   planExecutionDurationMs?: number;

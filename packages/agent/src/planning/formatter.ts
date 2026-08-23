@@ -6,9 +6,16 @@ export class PlanFormatter {
     const lines: string[] = [
       `Task Execution Plan: ${plan.planId}`,
       `Status:    [${plan.status.toUpperCase()}]`,
-      `Objective: ${plan.objective}`,
-      ""
+      `Objective: ${plan.objective}`
     ];
+
+    if (plan.parentPlanId) {
+      lines.push(`Parent Plan:  ${plan.parentPlanId} (depth ${plan.replanDepth ?? 0})`);
+    }
+    if (plan.replanReason) {
+      lines.push(`Replan Reason: ${plan.replanReason}`);
+    }
+    lines.push("");
 
     if (plan.assumptions && plan.assumptions.length > 0) {
       lines.push("Assumptions:");
@@ -114,6 +121,47 @@ export class PlanFormatter {
 
     lines.push("");
     lines.push("Approve this execution plan? [y/N]");
+    return lines.join("\n");
+  }
+
+  public static formatReplanPrompt(
+    assessment: import("./types.js").ReplanAssessment
+  ): string {
+    const lines: string[] = [
+      "Replanning Assessment:",
+      "",
+      `  Current Plan:   ${assessment.previousPlanId}`,
+      `  Status:         [${(assessment.previousPlan?.status || "superseded").toUpperCase()}]`,
+      `  Reason:         ${assessment.explanation || assessment.reason}`
+    ];
+
+    if (assessment.previousPlan) {
+      const summary = summarizePlan(assessment.previousPlan);
+      lines.push(
+        `  Progress:       ${summary.completedSteps} / ${summary.totalSteps} steps completed`
+      );
+      if (assessment.affectedStepId) {
+        lines.push(`  Affected Step:  ${assessment.affectedStepId}`);
+      }
+    }
+
+    if (assessment.reassessedRisk) {
+      lines.push(
+        `  Assessed Risk:  ${assessment.reassessedRisk.level.toUpperCase()}`
+      );
+    }
+
+    if (
+      assessment.workspaceChanged &&
+      assessment.workspaceDiffReasons &&
+      assessment.workspaceDiffReasons.length > 0
+    ) {
+      lines.push(`  Workspace:      ${assessment.workspaceDiffReasons.join("; ")}`);
+    }
+
+    lines.push(`  Replan Depth:   ${assessment.replanDepth} / ${assessment.maxReplanDepth}`);
+    lines.push("");
+    lines.push("Create a new execution plan using the current workspace? [y/N]");
     return lines.join("\n");
   }
 }

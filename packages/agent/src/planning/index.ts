@@ -4,3 +4,4 @@ export * from "./planner.js";
 export * from "./formatter.js";
 export * from "./staleness.js";
 export * from "./executor.js";
+export * from "./replanManager.js";

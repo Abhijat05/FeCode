@@ -105,6 +105,10 @@ export class DefaultRunHistoryStore implements RunHistoryStore {
         failedPlanStep: summary.failedPlanStep,
         skippedPlanSteps: summary.skippedPlanSteps,
         replanCount: summary.replanCount,
+        parentPlanId: summary.parentPlanId,
+        replanDepth: summary.replanDepth,
+        replanReason: summary.replanReason,
+        replanTimestamp: summary.replanTimestamp,
         planSummary: summary.planSummary,
         planExecutionDurationMs: summary.planExecutionDurationMs
       };

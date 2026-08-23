@@ -29,6 +29,10 @@ export function createTaskPlan(params: {
   verificationStrategy?: string[];
   status?: PlanStatus;
   replanCount?: number;
+  parentPlanId?: string;
+  rootPlanId?: string;
+  replanDepth?: number;
+  replanReason?: string;
 }): TaskPlan {
   const planId =
     params.planId ||
@@ -59,7 +63,11 @@ export function createTaskPlan(params: {
     ],
     status: params.status || "ready",
     currentStepIndex: 0,
-    replanCount: params.replanCount ?? 0
+    replanCount: params.replanCount ?? 0,
+    parentPlanId: params.parentPlanId,
+    rootPlanId: params.rootPlanId || params.parentPlanId || planId,
+    replanDepth: params.replanDepth ?? 0,
+    replanReason: params.replanReason
   };
 }
 
@@ -282,6 +290,9 @@ export function summarizePlan(plan: TaskPlan): PlanSummary {
     replanCount: plan.replanCount,
     highestRisk: riskLevels[highestRiskIdx],
     requiresApproval,
-    invalidationReason: plan.invalidationReason
+    invalidationReason: plan.invalidationReason,
+    parentPlanId: plan.parentPlanId,
+    replanDepth: plan.replanDepth,
+    replanReason: plan.replanReason
   };
 }
