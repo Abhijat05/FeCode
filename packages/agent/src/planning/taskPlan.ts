@@ -8,11 +8,12 @@ import type {
 
 const VALID_TRANSITIONS: Record<PlanStatus, PlanStatus[]> = {
   draft: ["ready", "cancelled", "superseded"],
-  ready: ["approved", "executing", "completed", "failed", "cancelled", "superseded"],
-  approved: ["executing", "completed", "failed", "cancelled", "superseded"],
-  executing: ["completed", "failed", "cancelled", "superseded"],
+  ready: ["approved", "executing", "completed", "failed", "cancelled", "superseded", "blocked"],
+  approved: ["executing", "completed", "failed", "cancelled", "superseded", "blocked"],
+  executing: ["completed", "failed", "cancelled", "superseded", "blocked"],
+  blocked: ["executing", "failed", "cancelled", "superseded"],
   completed: [],
-  failed: ["superseded"],
+  failed: ["superseded", "blocked"],
   cancelled: ["superseded"],
   superseded: []
 };
@@ -249,6 +250,10 @@ export function failPlanStep(
 
 export function invalidatePlan(plan: TaskPlan, reason: string): TaskPlan {
   return transitionPlanStatus(plan, "superseded", reason);
+}
+
+export function blockPlan(plan: TaskPlan, reason: string): TaskPlan {
+  return transitionPlanStatus(plan, "blocked", reason);
 }
 
 export function summarizePlan(plan: TaskPlan): PlanSummary {

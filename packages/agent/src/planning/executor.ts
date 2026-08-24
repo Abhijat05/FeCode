@@ -7,6 +7,8 @@ import type {
 import type { TaskRiskLevel } from "../policy/types.js";
 import type { AgentEvent } from "../index.js";
 import type {
+  ExecutionFeedbackKind,
+  ExecutionFeedbackManager,
   ExecutionIntent,
   PlanExecutor,
   PlanExecutorContext,
@@ -14,17 +16,19 @@ import type {
   PlanStep,
   PlanStepExecutionResult,
   PlanVerificationResult,
+  StepRetryPolicy,
   TaskPlan
 } from "./types.js";
 import {
   canExecuteStep,
   completePlanStep,
   failPlanStep,
-  invalidatePlan,
   startPlanStep,
   transitionPlanStatus
 } from "./taskPlan.js";
 import { detectPlanStaleness } from "./staleness.js";
+import { DefaultExecutionFeedbackManager } from "./executionFeedback.js";
+import { DefaultStepRetryPolicy } from "./retryPolicy.js";
 import type { CommandResult } from "../commands/types.js";
 
 const RISK_LEVEL_ORDER: Record<TaskRiskLevel, number> = {
@@ -42,9 +46,14 @@ function getHigherRisk(a: TaskRiskLevel, b: TaskRiskLevel): TaskRiskLevel {
 
 export class DefaultPlanExecutor implements PlanExecutor {
   private readonly options: PlanExecutorOptions;
+  private readonly feedbackManager: ExecutionFeedbackManager;
+  private readonly retryPolicy: StepRetryPolicy;
 
   constructor(options: PlanExecutorOptions) {
     this.options = options;
+    this.feedbackManager =
+      options.feedbackManager || new DefaultExecutionFeedbackManager();
+    this.retryPolicy = options.retryPolicy || new DefaultStepRetryPolicy();
   }
 
   public async *executePlan(
@@ -85,7 +94,6 @@ export class DefaultPlanExecutor implements PlanExecutor {
     let failedStepId: string | undefined;
     let failureReason: string | undefined;
     let isCancelled = false;
-    let isSuperseded = false;
 
     // Sort steps in dependency order
     const orderedSteps = [...activePlan.steps].sort(
@@ -139,7 +147,7 @@ export class DefaultPlanExecutor implements PlanExecutor {
         continue;
       }
 
-      // 3. Staleness Detection
+      // 3. Staleness Detection & Workspace Drift
       const staleness = await detectPlanStaleness(activePlan, step, {
         cwd: context.cwd,
         gitRepository: this.options.gitRepository,
@@ -148,22 +156,66 @@ export class DefaultPlanExecutor implements PlanExecutor {
       });
 
       if (staleness.stale) {
-        isSuperseded = true;
         const staleReason = staleness.reason || "Workspace state drifted";
-        activePlan = invalidatePlan(activePlan, staleReason);
-        failureReason = `PLAN_STALE: ${staleReason}`;
         failedStepId = step.stepId;
+        failureReason = `PLAN_STALE: ${staleReason}`;
+
+        const driftFb = this.feedbackManager.recordFeedback({
+          runId: context.runId,
+          planId: activePlan.planId,
+          stepId: step.stepId,
+          kind: "workspace_drift",
+          severity: "blocking",
+          summary: `Workspace drifted: ${staleReason}`,
+          recommendedAction: "replan"
+        });
 
         if (this.options.diagnosticsManager) {
-          this.options.diagnosticsManager.recordPlan(context.runId, activePlan);
+          this.options.diagnosticsManager.recordFeedback(context.runId, driftFb);
         }
 
         yield {
-          type: "plan_execution_failed",
+          type: "execution_feedback_detected",
           runId: context.runId,
           planId: activePlan.planId,
-          failedStep: step.stepId,
-          reason: failureReason,
+          stepId: step.stepId,
+          feedbackId: driftFb.feedbackId,
+          kind: driftFb.kind,
+          severity: driftFb.severity,
+          summary: driftFb.summary,
+          recommendedAction: driftFb.recommendedAction,
+          timestamp: Date.now()
+        };
+
+        const adaptation = this.feedbackManager.assessPlanAdaptation(activePlan);
+        activePlan = transitionPlanStatus(activePlan, "blocked", staleReason);
+
+        if (this.options.diagnosticsManager) {
+          this.options.diagnosticsManager.recordPlan(context.runId, activePlan);
+          this.options.diagnosticsManager.recordPlanAdaptation(
+            context.runId,
+            staleReason,
+            adaptation.affectedSteps
+          );
+        }
+
+        yield {
+          type: "plan_adaptation_required",
+          runId: context.runId,
+          planId: activePlan.planId,
+          reason: staleReason,
+          affectedSteps: adaptation.affectedSteps,
+          timestamp: Date.now()
+        };
+
+        yield {
+          type: "plan_blocked",
+          runId: context.runId,
+          planId: activePlan.planId,
+          blockedStepId: step.stepId,
+          reason: staleReason,
+          affectedSteps: adaptation.affectedSteps,
+          recommendedAction: "replan",
           timestamp: Date.now()
         };
         break;
@@ -186,261 +238,306 @@ export class DefaultPlanExecutor implements PlanExecutor {
         timestamp: stepStartTime
       };
 
-      // 5. Safety & Authoritative Risk Re-Evaluation
       const targetFiles = step.expectedFiles || (step.intent?.target ? [step.intent.target] : []);
       const opName = step.intent?.type || (step.type === "modify" ? "modify_file" : "inspect_file");
-      const assessedRisk = this.options.executionPolicy.assess({
-        userMessage: step.title,
-        cwd: context.cwd,
-        affectedFiles: targetFiles,
-        operations: [opName]
-      });
 
-      const effectiveRisk = getHigherRisk(step.riskLevel, assessedRisk.level);
+      let stepSuccess = false;
+      let stepErrorMsg: string | undefined;
+      let verificationResult: PlanVerificationResult | undefined;
+      let attempt = 1;
+      const maxAttempts = this.retryPolicy.maxAttempts;
 
-      // 6. Checkpoint Enforcement
-      if (
-        (effectiveRisk === "elevated" ||
-          effectiveRisk === "critical" ||
-          assessedRisk.requiresCheckpoint) &&
-        this.options.checkpointManager
-      ) {
-        try {
-          const cpRes = await this.options.checkpointManager.create({
-            cwd: context.cwd,
-            taskId: context.runId,
-            reason:
-              assessedRisk.reasons.join("; ") ||
-              `Step ${step.stepId} mutation checkpoint`,
-            affectedFiles: targetFiles,
-            signal: context.signal
-          });
-          if (!cpRes.success) {
-            hasFailure = true;
-            failedStepId = step.stepId;
-            failureReason = `Checkpoint creation failed: ${cpRes.error || "Unknown error"}. Mutation blocked for safety.`;
-            activePlan = failPlanStep(activePlan, step.stepId, failureReason);
+      while (attempt <= maxAttempts) {
+        if (context.signal?.aborted) {
+          isCancelled = true;
+          break;
+        }
 
-            const durationMs = Date.now() - stepStartTime;
-            stepResults.push({
-              stepId: step.stepId,
-              status: "failed",
-              startedAt: stepStartTime,
-              completedAt: Date.now(),
-              durationMs,
-              executionIntent: step.intent,
-              failureReason
+        // 5. Safety & Authoritative Risk Re-Evaluation (fresh before each attempt)
+        const assessedRisk = this.options.executionPolicy.assess({
+          userMessage: step.title,
+          cwd: context.cwd,
+          affectedFiles: targetFiles,
+          operations: [opName]
+        });
+
+        const effectiveRisk = getHigherRisk(step.riskLevel, assessedRisk.level);
+
+        // 6. Checkpoint Enforcement
+        if (
+          (effectiveRisk === "elevated" ||
+            effectiveRisk === "critical" ||
+            assessedRisk.requiresCheckpoint) &&
+          this.options.checkpointManager
+        ) {
+          try {
+            const cpRes = await this.options.checkpointManager.create({
+              cwd: context.cwd,
+              taskId: context.runId,
+              reason:
+                assessedRisk.reasons.join("; ") ||
+                `Step ${step.stepId} mutation checkpoint (attempt ${attempt})`,
+              affectedFiles: targetFiles,
+              signal: context.signal
             });
+            if (!cpRes.success) {
+              stepErrorMsg = `Checkpoint creation failed: ${cpRes.error || "Unknown error"}. Mutation blocked for safety.`;
+              break;
+            }
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            stepErrorMsg = `Checkpoint creation failed: ${msg}. Mutation blocked for safety.`;
+            break;
+          }
+        }
 
+        // 7. Translate ExecutionIntent into Tool Calls & Execute (FRESH checks on every attempt)
+        const toolCall = this.translateIntentToToolCall(step);
+        let attemptSuccess = true;
+        let attemptErrorMsg: string | undefined;
+
+        if (toolCall) {
+          const tool = this.options.registry.get(toolCall.name);
+          if (!tool) {
+            attemptSuccess = false;
+            attemptErrorMsg = `Tool not found in registry: ${toolCall.name}`;
+          } else {
+            const toolContext: ToolContext = {
+              cwd: context.cwd,
+              signal: context.signal || new AbortController().signal
+            };
+
+            const permissionDecision = await this.options.permissionManager.check(
+              tool,
+              toolContext
+            );
+
+            if (permissionDecision.type === "denied") {
+              attemptSuccess = false;
+              attemptErrorMsg = permissionDecision.reason || "Permission denied";
+            } else if (permissionDecision.type === "requires_approval") {
+              const approvalRequest: ApprovalRequest = {
+                id: `approval-${step.stepId}-${attempt}-${Date.now()}`,
+                toolName: tool.name,
+                category: tool.permissionCategory || "write",
+                arguments: toolCall.arguments,
+                reason:
+                  permissionDecision.reason ||
+                  `Approval required for step ${step.stepId} attempt ${attempt} (${step.title})`
+              };
+
+              yield {
+                type: "plan_step_waiting_approval",
+                runId: context.runId,
+                planId: activePlan.planId,
+                stepId: step.stepId,
+                request: approvalRequest,
+                timestamp: Date.now()
+              };
+
+              yield {
+                type: "approval_required",
+                request: approvalRequest
+              };
+
+              let approvalOutcome = false;
+              if (this.options.approvalResolver) {
+                const decision = await this.options.approvalResolver.resolve(
+                  approvalRequest
+                );
+                if (decision.approved) {
+                  approvalOutcome = true;
+                } else {
+                  approvalOutcome = false;
+                  attemptErrorMsg =
+                    decision.reason || "Tool execution was denied by user.";
+                }
+              } else {
+                attemptErrorMsg =
+                  "Approval required but no ApprovalResolver configured.";
+              }
+
+              if (!approvalOutcome) {
+                attemptSuccess = false;
+              }
+            }
+
+            if (attemptSuccess) {
+              const toolExecResult: ToolResult = await this.options.executor.execute(
+                toolCall,
+                toolContext
+              );
+              yield {
+                type: "tool_result",
+                result: toolExecResult,
+                callId: toolCall.id
+              };
+
+              if (!toolExecResult.success) {
+                attemptSuccess = false;
+                attemptErrorMsg =
+                  toolExecResult.error?.message ||
+                  "Tool execution failed without explicit error";
+              }
+            }
+          }
+        }
+
+        // 8. Perform Verification if Required
+        if (attemptSuccess && step.verificationRequired) {
+          const vCmd =
+            step.intent?.command ||
+            (activePlan.verificationStrategy &&
+            activePlan.verificationStrategy.length > 0
+              ? activePlan.verificationStrategy[0]
+              : "npm test");
+
+          const vStartTime = Date.now();
+          if (context.onStateTransition) {
+            yield* context.onStateTransition(
+              "verifying",
+              `Verifying step ${step.stepId} attempt ${attempt}: ${vCmd}`
+            );
+          }
+
+          let cmdResult: CommandResult | undefined;
+          if (this.options.commandExecutor) {
+            cmdResult = await this.options.commandExecutor.execute(vCmd, {
+              cwd: context.cwd,
+              signal: context.signal
+            });
+          }
+
+          const vDuration = Date.now() - vStartTime;
+          const vSucceeded =
+            cmdResult !== undefined
+              ? cmdResult.exitCode === 0 && !cmdResult.timedOut && !cmdResult.error
+              : true;
+
+          verificationResult = {
+            stepId: step.stepId,
+            command: vCmd,
+            succeeded: vSucceeded,
+            exitCode: cmdResult?.exitCode,
+            output: cmdResult?.stdout || cmdResult?.stderr,
+            durationMs: vDuration,
+            timedOut: cmdResult?.timedOut
+          };
+          verificationResults.push(verificationResult);
+
+          if (this.options.diagnosticsManager) {
+            this.options.diagnosticsManager.recordVerificationStart(
+              context.runId,
+              vCmd,
+              attempt
+            );
+            this.options.diagnosticsManager.recordVerificationComplete(
+              context.runId,
+              vCmd,
+              attempt,
+              vSucceeded,
+              cmdResult?.exitCode ?? (vSucceeded ? 0 : 1),
+              Boolean(cmdResult?.timedOut)
+            );
+          }
+
+          if (!vSucceeded) {
+            attemptSuccess = false;
+            attemptErrorMsg = `Verification failed for command '${vCmd}' (exit code ${cmdResult?.exitCode ?? "non-zero"})`;
+          }
+        }
+
+        if (attemptSuccess) {
+          stepSuccess = true;
+          stepErrorMsg = undefined;
+          if (attempt > 1) {
             yield {
-              type: "plan_step_failed",
+              type: "step_retry_completed",
               runId: context.runId,
               planId: activePlan.planId,
               stepId: step.stepId,
-              stepIndex: step.order - 1,
-              error: failureReason,
-              durationMs,
+              attempt,
+              success: true,
               timestamp: Date.now()
             };
-
-            if (this.options.diagnosticsManager) {
-              this.options.diagnosticsManager.updatePlanStep(
-                context.runId,
-                step.stepId,
-                "failed",
-                failureReason
-              );
-            }
-            break;
           }
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          hasFailure = true;
-          failedStepId = step.stepId;
-          failureReason = `Checkpoint creation failed: ${msg}. Mutation blocked for safety.`;
-          activePlan = failPlanStep(activePlan, step.stepId, failureReason);
+          break;
+        }
 
-          const durationMs = Date.now() - stepStartTime;
-          stepResults.push({
-            stepId: step.stepId,
-            status: "failed",
-            startedAt: stepStartTime,
-            completedAt: Date.now(),
-            durationMs,
-            executionIntent: step.intent,
-            failureReason
-          });
+        // Attempt failed
+        stepErrorMsg = attemptErrorMsg || "Step execution attempt failed";
+        const failureKind: ExecutionFeedbackKind =
+          verificationResult && !verificationResult.succeeded
+            ? "verification_failed"
+            : "tool_failure";
 
-          yield {
-            type: "plan_step_failed",
+        const canRetryThisStep = this.retryPolicy.canRetry(
+          step,
+          attempt,
+          failureKind,
+          opName
+        );
+
+        if (canRetryThisStep) {
+          const warnFb = this.feedbackManager.recordFeedback({
             runId: context.runId,
             planId: activePlan.planId,
             stepId: step.stepId,
-            stepIndex: step.order - 1,
-            error: failureReason,
-            durationMs,
+            kind: failureKind,
+            severity: "warning",
+            summary: `Step ${step.stepId} attempt ${attempt} failed (${stepErrorMsg}), scheduling retry...`,
+            recommendedAction: "retry"
+          });
+
+          if (this.options.diagnosticsManager) {
+            this.options.diagnosticsManager.recordFeedback(context.runId, warnFb);
+            this.options.diagnosticsManager.recordStepRetry(
+              context.runId,
+              step.stepId,
+              attempt + 1
+            );
+          }
+
+          yield {
+            type: "execution_feedback_detected",
+            runId: context.runId,
+            planId: activePlan.planId,
+            stepId: step.stepId,
+            feedbackId: warnFb.feedbackId,
+            kind: warnFb.kind,
+            severity: warnFb.severity,
+            summary: warnFb.summary,
+            recommendedAction: warnFb.recommendedAction,
             timestamp: Date.now()
           };
-          break;
-        }
-      }
 
-      // 7. Translate ExecutionIntent into Tool Calls & Execute
-      const toolCall = this.translateIntentToToolCall(step);
-      let stepSuccess = true;
-      let stepErrorMsg: string | undefined;
-
-      if (toolCall) {
-        const tool = this.options.registry.get(toolCall.name);
-        if (!tool) {
-          stepSuccess = false;
-          stepErrorMsg = `Tool not found in registry: ${toolCall.name}`;
-        } else {
-          const toolContext: ToolContext = {
-            cwd: context.cwd,
-            signal: context.signal || new AbortController().signal
+          yield {
+            type: "step_retry_started",
+            runId: context.runId,
+            planId: activePlan.planId,
+            stepId: step.stepId,
+            attempt: attempt + 1,
+            maxAttempts,
+            reason: stepErrorMsg,
+            timestamp: Date.now()
           };
 
-          // Check permissions
-          const permissionDecision = await this.options.permissionManager.check(
-            tool,
-            toolContext
-          );
-
-          if (permissionDecision.type === "denied") {
-            stepSuccess = false;
-            stepErrorMsg = permissionDecision.reason || "Permission denied";
-          } else if (permissionDecision.type === "requires_approval") {
-            const approvalRequest: ApprovalRequest = {
-              id: `approval-${step.stepId}-${Date.now()}`,
-              toolName: tool.name,
-              category: tool.permissionCategory || "write",
-              arguments: toolCall.arguments,
-              reason:
-                permissionDecision.reason ||
-                `Approval required for step ${step.stepId} (${step.title})`
-            };
-
+          attempt++;
+        } else {
+          // Non-retryable failure or attempts exhausted
+          if (attempt > 1) {
             yield {
-              type: "plan_step_waiting_approval",
+              type: "step_retry_completed",
               runId: context.runId,
               planId: activePlan.planId,
               stepId: step.stepId,
-              request: approvalRequest,
+              attempt,
+              success: false,
+              error: stepErrorMsg,
               timestamp: Date.now()
             };
-
-            yield {
-              type: "approval_required",
-              request: approvalRequest
-            };
-
-            let approvalOutcome = false;
-            if (this.options.approvalResolver) {
-              const decision = await this.options.approvalResolver.resolve(
-                approvalRequest
-              );
-              if (decision.approved) {
-                approvalOutcome = true;
-              } else {
-                approvalOutcome = false;
-                if (!stepErrorMsg) {
-                  stepErrorMsg =
-                    decision.reason || "Tool execution was denied by user.";
-                }
-              }
-            } else {
-              stepErrorMsg = "Approval required but no ApprovalResolver configured.";
-            }
-
-            if (!approvalOutcome) {
-              stepSuccess = false;
-            }
           }
-
-          if (stepSuccess) {
-            const toolExecResult: ToolResult = await this.options.executor.execute(
-              toolCall,
-              toolContext
-            );
-            yield {
-              type: "tool_result",
-              result: toolExecResult,
-              callId: toolCall.id
-            };
-
-            if (!toolExecResult.success) {
-              stepSuccess = false;
-              stepErrorMsg =
-                toolExecResult.error?.message ||
-                "Tool execution failed without explicit error";
-            }
-          }
-        }
-      }
-
-      // 8. Perform Verification if Required
-      let verificationResult: PlanVerificationResult | undefined;
-      if (stepSuccess && step.verificationRequired) {
-        const vCmd =
-          step.intent?.command ||
-          (activePlan.verificationStrategy &&
-          activePlan.verificationStrategy.length > 0
-            ? activePlan.verificationStrategy[0]
-            : "npm test");
-
-        const vStartTime = Date.now();
-        if (context.onStateTransition) {
-          yield* context.onStateTransition(
-            "verifying",
-            `Verifying step ${step.stepId}: ${vCmd}`
-          );
-        }
-
-        let cmdResult: CommandResult | undefined;
-        if (this.options.commandExecutor) {
-          cmdResult = await this.options.commandExecutor.execute(vCmd, {
-            cwd: context.cwd,
-            signal: context.signal
-          });
-        }
-
-        const vDuration = Date.now() - vStartTime;
-        const vSucceeded =
-          cmdResult !== undefined
-            ? cmdResult.exitCode === 0 && !cmdResult.timedOut && !cmdResult.error
-            : true;
-
-        verificationResult = {
-          stepId: step.stepId,
-          command: vCmd,
-          succeeded: vSucceeded,
-          exitCode: cmdResult?.exitCode,
-          output: cmdResult?.stdout || cmdResult?.stderr,
-          durationMs: vDuration,
-          timedOut: cmdResult?.timedOut
-        };
-        verificationResults.push(verificationResult);
-
-        if (this.options.diagnosticsManager) {
-          this.options.diagnosticsManager.recordVerificationStart(
-            context.runId,
-            vCmd,
-            1
-          );
-          this.options.diagnosticsManager.recordVerificationComplete(
-            context.runId,
-            vCmd,
-            1,
-            vSucceeded,
-            cmdResult?.exitCode ?? (vSucceeded ? 0 : 1),
-            Boolean(cmdResult?.timedOut)
-          );
-        }
-
-        if (!vSucceeded) {
-          stepSuccess = false;
-          stepErrorMsg = `Verification failed for command '${vCmd}' (exit code ${cmdResult?.exitCode ?? "non-zero"})`;
+          break;
         }
       }
 
@@ -457,6 +554,33 @@ export class DefaultPlanExecutor implements PlanExecutor {
           executionIntent: step.intent,
           verification: verificationResult
         });
+
+        const okFb = this.feedbackManager.recordFeedback({
+          runId: context.runId,
+          planId: activePlan.planId,
+          stepId: step.stepId,
+          kind: "step_completed",
+          severity: "info",
+          summary: `Step ${step.stepId} completed successfully`,
+          recommendedAction: "continue"
+        });
+
+        if (this.options.diagnosticsManager) {
+          this.options.diagnosticsManager.recordFeedback(context.runId, okFb);
+        }
+
+        yield {
+          type: "execution_feedback_detected",
+          runId: context.runId,
+          planId: activePlan.planId,
+          stepId: step.stepId,
+          feedbackId: okFb.feedbackId,
+          kind: okFb.kind,
+          severity: okFb.severity,
+          summary: okFb.summary,
+          recommendedAction: okFb.recommendedAction,
+          timestamp: Date.now()
+        };
 
         yield {
           type: "plan_step_completed",
@@ -492,6 +616,33 @@ export class DefaultPlanExecutor implements PlanExecutor {
           failureReason
         });
 
+        const blockingFb = this.feedbackManager.recordFeedback({
+          runId: context.runId,
+          planId: activePlan.planId,
+          stepId: step.stepId,
+          kind: "step_failed",
+          severity: "blocking",
+          summary: `Step ${step.stepId} failed: ${failureReason}`,
+          recommendedAction: "replan"
+        });
+
+        if (this.options.diagnosticsManager) {
+          this.options.diagnosticsManager.recordFeedback(context.runId, blockingFb);
+        }
+
+        yield {
+          type: "execution_feedback_detected",
+          runId: context.runId,
+          planId: activePlan.planId,
+          stepId: step.stepId,
+          feedbackId: blockingFb.feedbackId,
+          kind: blockingFb.kind,
+          severity: blockingFb.severity,
+          summary: blockingFb.summary,
+          recommendedAction: blockingFb.recommendedAction,
+          timestamp: Date.now()
+        };
+
         yield {
           type: "plan_step_failed",
           runId: context.runId,
@@ -512,7 +663,39 @@ export class DefaultPlanExecutor implements PlanExecutor {
           );
         }
 
-        // Dependent steps will be blocked on subsequent iterations
+        // Assess adaptation & block the plan
+        const adaptation = this.feedbackManager.assessPlanAdaptation(activePlan);
+        activePlan = transitionPlanStatus(activePlan, "blocked", failureReason);
+
+        if (this.options.diagnosticsManager) {
+          this.options.diagnosticsManager.recordPlan(context.runId, activePlan);
+          this.options.diagnosticsManager.recordPlanAdaptation(
+            context.runId,
+            failureReason,
+            adaptation.affectedSteps
+          );
+        }
+
+        yield {
+          type: "plan_adaptation_required",
+          runId: context.runId,
+          planId: activePlan.planId,
+          reason: failureReason,
+          affectedSteps: adaptation.affectedSteps,
+          timestamp: Date.now()
+        };
+
+        yield {
+          type: "plan_blocked",
+          runId: context.runId,
+          planId: activePlan.planId,
+          blockedStepId: step.stepId,
+          reason: failureReason,
+          affectedSteps: adaptation.affectedSteps,
+          recommendedAction: adaptation.recommendedAction,
+          timestamp: Date.now()
+        };
+
         break;
       }
     }
@@ -538,8 +721,8 @@ export class DefaultPlanExecutor implements PlanExecutor {
       return;
     }
 
-    if (isSuperseded) {
-      // Plan was marked superseded during staleness detection
+    if (activePlan.status === "blocked") {
+      // Plan is in blocked state, requiring user decision (Continue / Replan / Cancel)
       return;
     }
 
@@ -653,6 +836,15 @@ export class DefaultPlanExecutor implements PlanExecutor {
           arguments: {
             path: intent.target || step.expectedFiles?.[0] || "",
             content: ""
+          }
+        };
+
+      case "delete_file":
+        return {
+          id: callId,
+          name: "delete_file",
+          arguments: {
+            path: intent.target || step.expectedFiles?.[0] || ""
           }
         };
 

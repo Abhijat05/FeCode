@@ -52,6 +52,22 @@ export function formatRunDiagnostics(summary: RunSummary): string {
     if (summary.replanCount) {
       lines.push(`  Replans:   ${summary.replanCount}`);
     }
+    if (summary.feedbackCount) {
+      let fbStr = `  Feedback:  ${summary.feedbackCount} recorded`;
+      if (summary.blockingFeedbackCount) {
+        fbStr += ` (${summary.blockingFeedbackCount} blocking)`;
+      }
+      lines.push(fbStr);
+    }
+    if (summary.retryCount) {
+      lines.push(`  Retries:   ${summary.retryCount}`);
+    }
+    if (summary.blockedPlanSteps && summary.blockedPlanSteps.length > 0) {
+      lines.push(`  Blocked:   ${summary.blockedPlanSteps.join(", ")}`);
+    }
+    if (summary.planAdaptationReasons && summary.planAdaptationReasons.length > 0) {
+      lines.push(`  Adaptations: ${summary.planAdaptationReasons.join("; ")}`);
+    }
   }
 
   if (summary.lifecycleTransitions.length > 0) {

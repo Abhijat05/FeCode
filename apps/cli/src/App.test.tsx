@@ -43,6 +43,7 @@ class MockAgent implements Agent {
     req: import("@fecode/agent").ReplanRequest
   ) => Promise<import("@fecode/agent").ReplanResult>;
   public getTaskPlan?: () => import("@fecode/agent").TaskPlan | undefined;
+  public getPlanAdaptationAssessment?: () => import("@fecode/agent").PlanAdaptationAssessment | undefined;
 
   async *resumeRun(
     runId: string
@@ -1329,5 +1330,168 @@ describe("CLI App Component", () => {
 
     frame = lastFrame();
     expect(frame).toContain("Replanning cancelled.");
+  });
+
+  it("renders execution feedback and step retries during plan execution", async () => {
+    const mockAgent = new MockAgent();
+    mockAgent.runFn = async function* () {
+      yield {
+        type: "execution_feedback_detected",
+        runId: "run-fb-1",
+        planId: "plan-fb-1",
+        stepId: "step-1",
+        feedbackId: "fb-1",
+        kind: "tool_failure",
+        severity: "warning",
+        summary: "Syntax error on line 12, attempting retry",
+        recommendedAction: "retry",
+        timestamp: Date.now()
+      };
+      yield {
+        type: "step_retry_started",
+        runId: "run-fb-1",
+        planId: "plan-fb-1",
+        stepId: "step-1",
+        attempt: 2,
+        maxAttempts: 3,
+        reason: "Syntax error on line 12",
+        timestamp: Date.now()
+      };
+      yield {
+        type: "step_retry_completed",
+        runId: "run-fb-1",
+        planId: "plan-fb-1",
+        stepId: "step-1",
+        attempt: 2,
+        success: true,
+        timestamp: Date.now()
+      };
+      yield { type: "done" };
+    };
+
+    const { lastFrame, stdin } = render(
+      <App agent={mockAgent} cwd="/test/dir" />
+    );
+    await delay(50);
+
+    await typeAndSubmit(stdin, "Implement feature");
+    await delay(200);
+
+    const frame = lastFrame();
+    expect(frame).toContain("⚠ Feedback: Syntax error on line 12, attempting retry");
+    expect(frame).toContain("⟳ Retrying Step step-1 (attempt 2/3): Syntax error on line 12");
+    expect(frame).toContain("✓ Step retry succeeded on attempt 2");
+  });
+
+  it("renders plan_blocked prompt and handles user choosing continue ('c')", async () => {
+    const mockAgent = new MockAgent();
+    mockAgent.getTaskPlan = () => ({
+      planId: "plan-blocked-1",
+      runId: "run-blocked-1",
+      createdAt: Date.now(),
+      userRequestSummary: "Refactor auth",
+      objective: "Refactor authentication flow",
+      status: "blocked",
+      steps: [
+        {
+          stepId: "step-1",
+          order: 1,
+          title: "Update auth middleware",
+          objective: "Update middleware",
+          type: "modify",
+          dependencies: [],
+          riskLevel: "normal",
+          verificationRequired: true,
+          status: "failed",
+          failureReason: "Lint error in auth.ts"
+        }
+      ],
+      risks: []
+    });
+
+    mockAgent.runFn = async function* () {
+      yield {
+        type: "plan_blocked",
+        runId: "run-blocked-1",
+        planId: "plan-blocked-1",
+        blockedStepId: "step-1",
+        reason: "Lint error in auth.ts",
+        affectedSteps: ["step-1"],
+        recommendedAction: "replan",
+        timestamp: Date.now()
+      };
+    };
+
+    const { lastFrame, stdin } = render(
+      <App agent={mockAgent} cwd="/test/dir" />
+    );
+    await delay(50);
+
+    await typeAndSubmit(stdin, "Run auth update");
+    await delay(200);
+
+    let frame = lastFrame();
+    expect(frame).toContain("⚠ Plan execution blocked");
+    expect(frame).toContain("Plan: plan-blocked-1");
+    expect(frame).toContain("[c] Continue");
+    expect(frame).toContain("[r] Replan");
+    expect(frame).toContain("[x] Cancel");
+    expect(frame).toContain("Choice [x]:");
+
+    // Respond with 'c' to continue
+    await typeAndSubmit(stdin, "c");
+    await delay(150);
+
+    frame = lastFrame();
+    expect(frame).toContain("Continuing plan execution for plan-blocked-1...");
+  });
+
+  it("renders plan_blocked prompt and handles user choosing cancel by default", async () => {
+    const mockAgent = new MockAgent();
+    mockAgent.getTaskPlan = () => ({
+      planId: "plan-blocked-2",
+      runId: "run-blocked-2",
+      createdAt: Date.now(),
+      userRequestSummary: "Refactor database",
+      objective: "Refactor database models",
+      status: "blocked",
+      steps: [],
+      risks: []
+    });
+
+    mockAgent.runFn = async function* () {
+      yield {
+        type: "plan_blocked",
+        runId: "run-blocked-2",
+        planId: "plan-blocked-2",
+        blockedStepId: "step-1",
+        reason: "Workspace drifted",
+        affectedSteps: ["step-1"],
+        recommendedAction: "replan",
+        timestamp: Date.now()
+      };
+    };
+
+    const { lastFrame, stdin } = render(
+      <App agent={mockAgent} cwd="/test/dir" />
+    );
+    await delay(50);
+
+    await typeAndSubmit(stdin, "Run migration");
+    await delay(200);
+
+    let frame = lastFrame();
+    expect(frame).toContain("⚠ Plan execution blocked");
+    expect(frame).toContain("Plan: plan-blocked-2");
+    expect(frame).toContain("[c] Continue");
+    expect(frame).toContain("[r] Replan");
+    expect(frame).toContain("[x] Cancel");
+
+    // Respond with 'x' (or Enter default) to cancel
+    await typeAndSubmit(stdin, "x");
+    await delay(150);
+
+    frame = lastFrame();
+    expect(frame).toContain("Plan execution cancelled.");
   });
 });

@@ -86,6 +86,12 @@ export interface RunSummary {
   planInvalidationReason?: string;
   planSummary?: string;
   planExecutionDurationMs?: number;
+  feedbackCount?: number;
+  blockingFeedbackCount?: number;
+  retryCount?: number;
+  adaptationCount?: number;
+  blockedPlanSteps?: string[];
+  planAdaptationReasons?: string[];
 }
 
 export interface RunDiagnosticsManagerOptions {
@@ -117,6 +123,16 @@ export interface RunDiagnosticsManager {
     stepId: string,
     status: import("../planning/types.js").PlanStepStatus,
     error?: string
+  ): void;
+  recordFeedback(
+    runId: string,
+    feedback: import("../planning/types.js").ExecutionFeedback
+  ): void;
+  recordStepRetry(runId: string, stepId: string, attempt: number): void;
+  recordPlanAdaptation(
+    runId: string,
+    reason: string,
+    affectedSteps: string[]
   ): void;
   recordToolStart(runId: string, toolName: string, callId: string, targetPath?: string): void;
   recordToolComplete(

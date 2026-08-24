@@ -156,6 +156,56 @@ export type AgentEvent =
       reason: string;
       timestamp?: number;
     }
+  | {
+      type: "execution_feedback_detected";
+      runId: string;
+      planId: string;
+      stepId?: string;
+      feedbackId: string;
+      kind: import("./planning/types.js").ExecutionFeedbackKind;
+      severity: import("./planning/types.js").ExecutionFeedbackSeverity;
+      summary: string;
+      recommendedAction: import("./planning/types.js").ExecutionFeedbackAction;
+      timestamp?: number;
+    }
+  | {
+      type: "step_retry_started";
+      runId: string;
+      planId: string;
+      stepId: string;
+      attempt: number;
+      maxAttempts: number;
+      reason: string;
+      timestamp?: number;
+    }
+  | {
+      type: "step_retry_completed";
+      runId: string;
+      planId: string;
+      stepId: string;
+      attempt: number;
+      success: boolean;
+      error?: string;
+      timestamp?: number;
+    }
+  | {
+      type: "plan_blocked";
+      runId: string;
+      planId: string;
+      blockedStepId?: string;
+      reason: string;
+      affectedSteps: string[];
+      recommendedAction: import("./planning/types.js").ExecutionFeedbackAction;
+      timestamp?: number;
+    }
+  | {
+      type: "plan_adaptation_required";
+      runId: string;
+      planId: string;
+      reason: string;
+      affectedSteps: string[];
+      timestamp?: number;
+    }
   | { type: "task_summary"; summary: TaskCompletionSummary }
   | { type: "run_started"; runId: string }
   | {

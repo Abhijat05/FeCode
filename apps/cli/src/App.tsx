@@ -16,6 +16,7 @@ import {
   formatRunDiagnostics,
   RunHistoryFormatter,
   PlanFormatter,
+  transitionPlanStatus,
   type Agent,
   type ProjectContext,
   type SessionStore,
@@ -150,6 +151,10 @@ export const App: React.FC<AppProps> = ({
     planId: string;
     assessment: import("@fecode/agent").ReplanAssessment;
   } | null>(null);
+  const [pendingPlanBlocked, setPendingPlanBlocked] = useState<{
+    plan: import("@fecode/agent").TaskPlan;
+    assessment: import("@fecode/agent").PlanAdaptationAssessment;
+  } | null>(null);
 
   const persistState = useCallback(
     async (
@@ -268,6 +273,99 @@ export const App: React.FC<AppProps> = ({
   const handleSubmit = async (value: string) => {
     const trimmed = value.trim();
     if (!trimmed || isGenerating) return;
+
+    if (pendingPlanBlocked) {
+      setQuery("");
+      const pb = pendingPlanBlocked;
+      setPendingPlanBlocked(null);
+
+      const choice = trimmed.toLowerCase();
+      if (choice === "c" || choice === "continue") {
+        setTurns((prev) => [
+          ...prev,
+          {
+            id: `cmd-${Date.now()}`,
+            prompt: trimmed,
+            response: `Continuing plan execution for ${pb.plan.planId}...\n`,
+            status: "done"
+          }
+        ]);
+        try {
+          if (agent && "getTaskPlan" in agent) {
+            transitionPlanStatus(pb.plan, "executing");
+          }
+        } catch {
+          // ignore
+        }
+      } else if (choice === "r" || choice === "replan") {
+        try {
+          if (agent && "prepareReplan" in agent) {
+            const assessment = await (
+              agent as {
+                prepareReplan: (
+                  id?: string,
+                  opts?: { cwd: string }
+                ) => Promise<import("@fecode/agent").ReplanAssessment>;
+              }
+            ).prepareReplan(pb.plan.planId, { cwd });
+
+            if (!assessment.eligible) {
+              setTurns((prev) => [
+                ...prev,
+                {
+                  id: `cmd-${Date.now()}`,
+                  prompt: trimmed,
+                  response: `✗ Replanning not eligible: ${assessment.reason}\n`,
+                  status: "done"
+                }
+              ]);
+            } else {
+              setPendingReplan({ planId: pb.plan.planId, assessment });
+              const promptText = PlanFormatter.formatReplanPrompt(assessment);
+              setTurns((prev) => [
+                ...prev,
+                {
+                  id: `cmd-${Date.now()}`,
+                  prompt: trimmed,
+                  response: `\n${promptText}\n`,
+                  status: "done"
+                }
+              ]);
+            }
+          }
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: `✗ Replanning error: ${msg}\n`,
+              status: "done"
+            }
+          ]);
+        }
+      } else {
+        // default / 'x' / 'cancel'
+        try {
+          if (agent && "cancel" in agent) {
+            await agent.cancel();
+          }
+        } catch {
+          // ignore
+        }
+        setTurns((prev) => [
+          ...prev,
+          {
+            id: `cmd-${Date.now()}`,
+            prompt: trimmed,
+            response: "Plan execution cancelled.\n",
+            status: "done"
+          }
+        ]);
+      }
+      return;
+    }
 
     if (pendingReplan) {
       setQuery("");
@@ -1734,6 +1832,99 @@ export const App: React.FC<AppProps> = ({
                     response:
                       t.response +
                       `✗ Plan execution failed${event.reason ? `: ${event.reason}` : ""}\n\n`
+                  }
+                : t
+            )
+          );
+        } else if (event.type === "execution_feedback_detected") {
+          let fbMessage = "";
+          if (event.severity === "warning") {
+            fbMessage = `⚠ Feedback: ${event.summary}\n\n`;
+          } else if (event.severity === "blocking") {
+            fbMessage = `⚠ Blocking issue detected: ${event.summary}\n\n`;
+          }
+          if (fbMessage) {
+            setTurns((prev) =>
+              prev.map((t) =>
+                t.id === turnId
+                  ? {
+                      ...t,
+                      status: "streaming",
+                      response: t.response + fbMessage
+                    }
+                  : t
+              )
+            );
+          }
+        } else if (event.type === "step_retry_started") {
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    status: "streaming",
+                    response:
+                      t.response +
+                      `⟳ Retrying Step ${event.stepId} (attempt ${event.attempt}/${event.maxAttempts}): ${event.reason}\n\n`
+                  }
+                : t
+            )
+          );
+        } else if (event.type === "step_retry_completed") {
+          const retryMsg = event.success
+            ? `✓ Step retry succeeded on attempt ${event.attempt}\n\n`
+            : `✗ Step retry failed on attempt ${event.attempt}: ${event.error || "Retry limit reached"}\n\n`;
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    status: "streaming",
+                    response: t.response + retryMsg
+                  }
+                : t
+            )
+          );
+        } else if (event.type === "plan_blocked") {
+          const currentPlan =
+            (agent as { getTaskPlan?: () => import("@fecode/agent").TaskPlan | undefined })?.getTaskPlan?.() || {
+              planId: event.planId,
+              runId: event.runId,
+              createdAt: Date.now(),
+              userRequestSummary: "Task execution",
+              objective: "Execute task",
+              steps: [],
+              risks: [],
+              status: "blocked" as const
+            };
+
+          const assessment: import("@fecode/agent").PlanAdaptationAssessment =
+            (agent as { getPlanAdaptationAssessment?: () => import("@fecode/agent").PlanAdaptationAssessment | undefined })?.getPlanAdaptationAssessment?.() || {
+              planId: event.planId,
+              assessedAt: Date.now(),
+              canContinue: false,
+              canRetry: false,
+              canAdapt: true,
+              feedback: [],
+              affectedSteps: event.affectedSteps,
+              currentRiskLevel: "normal",
+              requiresUserConfirmation: true,
+              recommendedAction: event.recommendedAction
+            };
+
+          setPendingPlanBlocked({ plan: currentPlan, assessment });
+          const blockedPromptText = PlanFormatter.formatPlanBlockedPrompt(
+            currentPlan,
+            assessment
+          );
+
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    status: "streaming",
+                    response: t.response + `\n${blockedPromptText}\n\n`
                   }
                 : t
             )

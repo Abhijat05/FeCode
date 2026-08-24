@@ -64,6 +64,12 @@ export interface DurableRunRecord {
   replanTimestamp?: number;
   planSummary?: string;
   planExecutionDurationMs?: number;
+  feedbackCount?: number;
+  blockingFeedbackCount?: number;
+  retryCount?: number;
+  adaptationCount?: number;
+  blockedPlanSteps?: string[];
+  planAdaptationReasons?: string[];
 }
 
 export interface RunHistoryStoreOptions {

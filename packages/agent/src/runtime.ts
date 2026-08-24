@@ -99,11 +99,17 @@ import type {
   ReplanManager,
   ReplanAssessment,
   ReplanRequest,
-  ReplanResult
+  ReplanResult,
+  ExecutionFeedback,
+  ExecutionFeedbackManager,
+  PlanAdaptationAssessment,
+  StepRetryPolicy
 } from "./planning/types.js";
 import { DefaultTaskPlanner } from "./planning/planner.js";
 import { DefaultPlanExecutor } from "./planning/executor.js";
 import { DefaultReplanManager } from "./planning/replanManager.js";
+import { DefaultExecutionFeedbackManager } from "./planning/executionFeedback.js";
+import { DefaultStepRetryPolicy } from "./planning/retryPolicy.js";
 import {
   transitionPlanStatus,
   completePlanStep,
@@ -138,6 +144,8 @@ export interface AgentRuntimeOptions {
   planner?: TaskPlanner;
   planExecutor?: PlanExecutor;
   replanManager?: ReplanManager;
+  feedbackManager?: ExecutionFeedbackManager;
+  retryPolicy?: StepRetryPolicy;
   maxReplanDepth?: number;
   maxRetainedRuns?: number;
   emitRunEvents?: boolean;
@@ -174,6 +182,8 @@ export class AgentRuntime implements Agent {
   private readonly planner: TaskPlanner;
   private readonly planExecutor: PlanExecutor;
   private readonly replanManager: ReplanManager;
+  private readonly feedbackManager: ExecutionFeedbackManager;
+  private readonly retryPolicy: StepRetryPolicy;
   private readonly maxReplanDepth: number;
   private readonly completionTracker: TaskCompletionTracker = new TaskCompletionTracker();
   private readonly safeEditValidator: SafeEditValidator = new SafeEditValidator();
@@ -227,6 +237,9 @@ export class AgentRuntime implements Agent {
       options.historyStore ||
       new DefaultRunHistoryStore({ storageDir: options.historyStorageDir });
     this.planner = options.planner || new DefaultTaskPlanner();
+    this.feedbackManager =
+      options.feedbackManager || new DefaultExecutionFeedbackManager();
+    this.retryPolicy = options.retryPolicy || new DefaultStepRetryPolicy();
     this.planExecutor =
       options.planExecutor ||
       new DefaultPlanExecutor({
@@ -239,7 +252,9 @@ export class AgentRuntime implements Agent {
         diagnosticsManager: this.diagnosticsManager,
         safeEditValidator: this.safeEditValidator,
         gitRepository: this.gitRepository,
-        maxVerificationAttempts: this.maxVerificationAttempts
+        maxVerificationAttempts: this.maxVerificationAttempts,
+        feedbackManager: this.feedbackManager,
+        retryPolicy: this.retryPolicy
       });
     this.maxReplanDepth = options.maxReplanDepth ?? 5;
     this.replanManager =
@@ -314,6 +329,28 @@ export class AgentRuntime implements Agent {
 
   public getReplanManager(): ReplanManager {
     return this.replanManager;
+  }
+
+  public getExecutionFeedbackManager(): ExecutionFeedbackManager {
+    return this.feedbackManager;
+  }
+
+  public getRetryPolicy(): StepRetryPolicy {
+    return this.retryPolicy;
+  }
+
+  public getExecutionFeedback(runIdOrPlanId?: string): ExecutionFeedback[] {
+    const targetId =
+      runIdOrPlanId || this.currentPlan?.planId || this.state.sessionId;
+    return this.feedbackManager.getFeedback(targetId);
+  }
+
+  public getPlanAdaptationAssessment(
+    planId?: string
+  ): PlanAdaptationAssessment | undefined {
+    const plan = planId ? undefined : this.currentPlan;
+    if (!plan) return undefined;
+    return this.feedbackManager.assessPlanAdaptation(plan);
   }
 
   public getTaskPlan(): TaskPlan | undefined {

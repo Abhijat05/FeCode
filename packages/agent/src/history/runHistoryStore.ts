@@ -110,7 +110,13 @@ export class DefaultRunHistoryStore implements RunHistoryStore {
         replanReason: summary.replanReason,
         replanTimestamp: summary.replanTimestamp,
         planSummary: summary.planSummary,
-        planExecutionDurationMs: summary.planExecutionDurationMs
+        planExecutionDurationMs: summary.planExecutionDurationMs,
+        feedbackCount: summary.feedbackCount,
+        blockingFeedbackCount: summary.blockingFeedbackCount,
+        retryCount: summary.retryCount,
+        adaptationCount: summary.adaptationCount,
+        blockedPlanSteps: summary.blockedPlanSteps,
+        planAdaptationReasons: summary.planAdaptationReasons
       };
     }
 

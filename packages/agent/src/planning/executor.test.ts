@@ -244,7 +244,7 @@ describe("DefaultPlanExecutor — Phase 5Q", () => {
       }
 
       expect(events.some((e) => e.type === "plan_step_failed")).toBe(true);
-      expect(events.some((e) => e.type === "plan_execution_failed")).toBe(true);
+      expect(events.some((e) => e.type === "plan_blocked")).toBe(true);
 
       const summary = diagnosticsManager.getRunSummary("run-dep-fail");
       expect(summary?.failedPlanStep).toBe("step-1");
@@ -354,7 +354,7 @@ describe("DefaultPlanExecutor — Phase 5Q", () => {
       }
 
       expect(events.some((e) => e.type === "plan_step_failed")).toBe(true);
-      expect(events.some((e) => e.type === "plan_execution_failed")).toBe(true);
+      expect(events.some((e) => e.type === "plan_blocked")).toBe(true);
     });
   });
 
@@ -509,7 +509,7 @@ describe("DefaultPlanExecutor — Phase 5Q", () => {
       }
 
       expect(events.some((e) => e.type === "plan_step_failed")).toBe(true);
-      expect(events.some((e) => e.type === "plan_execution_failed")).toBe(true);
+      expect(events.some((e) => e.type === "plan_blocked")).toBe(true);
     });
   });
 
@@ -519,13 +519,13 @@ describe("DefaultPlanExecutor — Phase 5Q", () => {
 
       let plan = createTaskPlan({
         runId: "run-stale-1",
-        userRequestSummary: "Modify deleted file",
-        objective: "Modify NonExistent.tsx",
+        userRequestSummary: "Modify missing file",
+        objective: "Modify non-existent file",
         steps: [
           {
             stepId: "step-1",
             order: 1,
-            title: "Modify NonExistent.tsx",
+            title: "Modify nonexistent.tsx",
             objective: "Edit file",
             type: "modify",
             dependencies: [],
@@ -534,8 +534,8 @@ describe("DefaultPlanExecutor — Phase 5Q", () => {
             status: "pending",
             intent: {
               type: "modify_file",
-              target: "NonExistent.tsx", // File does not exist
-              reason: "Edit file",
+              target: "nonexistent.tsx",
+              reason: "Edit missing file",
               requiresApproval: false,
               estimatedRisk: "normal"
             }
@@ -553,14 +553,14 @@ describe("DefaultPlanExecutor — Phase 5Q", () => {
         events.push(ev);
       }
 
-      const failEv = events.find((e) => e.type === "plan_execution_failed");
-      expect(failEv).toBeDefined();
-      if (failEv && "reason" in failEv) {
-        expect(failEv.reason).toContain("PLAN_STALE");
+      const blockedEv = events.find((e) => e.type === "plan_blocked");
+      expect(blockedEv).toBeDefined();
+      if (blockedEv && "reason" in blockedEv) {
+        expect(blockedEv.reason).toContain("does not exist");
       }
 
       const summary = diagnosticsManager.getRunSummary("run-stale-1");
-      expect(summary?.planStatus).toBe("superseded");
+      expect(summary?.planStatus).toBe("blocked");
     });
   });
 
@@ -569,15 +569,15 @@ describe("DefaultPlanExecutor — Phase 5Q", () => {
       const executor = createTestExecutor();
 
       let plan = createTaskPlan({
-        runId: "run-verify-pass",
-        userRequestSummary: "Test verification",
-        objective: "Inspect and test",
+        runId: "run-verify-ok",
+        userRequestSummary: "Modify with verify",
+        objective: "Edit and verify",
         steps: [
           {
             stepId: "step-1",
             order: 1,
-            title: "Inspect Button.tsx",
-            objective: "Inspect file",
+            title: "Modify Button.tsx",
+            objective: "Edit button",
             type: "inspect",
             dependencies: [],
             riskLevel: "low",
@@ -586,21 +586,20 @@ describe("DefaultPlanExecutor — Phase 5Q", () => {
             intent: {
               type: "inspect_file",
               target: "Button.tsx",
-              command: "npm test",
-              reason: "Inspect and verify",
+              reason: "Edit and verify",
               requiresApproval: false,
-              estimatedRisk: "low"
+              estimatedRisk: "low",
+              command: "npm test"
             }
           }
-        ],
-        verificationStrategy: ["npm test"]
+        ]
       });
 
       plan = transitionPlanStatus(plan, "approved");
 
       const events: AgentEvent[] = [];
       for await (const ev of executor.executePlan(plan, {
-        runId: "run-verify-pass",
+        runId: "run-verify-ok",
         cwd: tmpDir
       })) {
         events.push(ev);
@@ -611,36 +610,44 @@ describe("DefaultPlanExecutor — Phase 5Q", () => {
     });
 
     it("marks step failed when verification command fails", async () => {
-      commandExecutor.defaultResult = {
-        stdout: "2 tests failed",
-        exitCode: 1,
-        error: "Tests failed"
+      const failingCommandExecutor = new MockCommandExecutor();
+      failingCommandExecutor.defaultResult = {
+        stdout: "",
+        stderr: "Test suite failed: 2 tests failed",
+        exitCode: 1
       };
 
-      const executor = createTestExecutor();
+      const executor = new DefaultPlanExecutor({
+        registry,
+        executor: new DefaultToolExecutor(registry),
+        permissionManager,
+        executionPolicy: riskPolicy,
+        commandExecutor: failingCommandExecutor,
+        diagnosticsManager
+      });
 
       let plan = createTaskPlan({
         runId: "run-verify-fail",
-        userRequestSummary: "Test verification failure",
-        objective: "Inspect and test",
+        userRequestSummary: "Modify with failing verify",
+        objective: "Edit button",
         steps: [
           {
             stepId: "step-1",
             order: 1,
-            title: "Inspect Button.tsx",
-            objective: "Inspect file",
-            type: "inspect",
+            title: "Modify Button.tsx",
+            objective: "Edit button",
+            type: "modify",
             dependencies: [],
-            riskLevel: "low",
+            riskLevel: "normal",
             verificationRequired: true,
             status: "pending",
             intent: {
-              type: "inspect_file",
+              type: "modify_file",
               target: "Button.tsx",
-              command: "npm test",
-              reason: "Inspect and verify",
+              reason: "Edit file",
               requiresApproval: false,
-              estimatedRisk: "low"
+              estimatedRisk: "normal",
+              command: "npm test"
             }
           }
         ]
@@ -657,7 +664,7 @@ describe("DefaultPlanExecutor — Phase 5Q", () => {
       }
 
       expect(events.some((e) => e.type === "plan_step_failed")).toBe(true);
-      expect(events.some((e) => e.type === "plan_execution_failed")).toBe(true);
+      expect(events.some((e) => e.type === "plan_blocked")).toBe(true);
     });
   });
 

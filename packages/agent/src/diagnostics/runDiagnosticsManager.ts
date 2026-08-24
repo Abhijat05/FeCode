@@ -155,7 +155,59 @@ export class DefaultRunDiagnosticsManager implements RunDiagnosticsManager {
     } else if (status === "failed") {
       summary.failedPlanStep = stepId;
       if (error && !summary.failureReason) {
-        summary.failureReason = error;
+        summary.failureReason = sanitizeString(error);
+      }
+    }
+  }
+
+  public recordFeedback(
+    runId: string,
+    feedback: import("../planning/types.js").ExecutionFeedback
+  ): void {
+    const summary = this.runSummaries.get(runId);
+    if (!summary) return;
+
+    summary.feedbackCount = (summary.feedbackCount ?? 0) + 1;
+    if (feedback.severity === "blocking") {
+      summary.blockingFeedbackCount = (summary.blockingFeedbackCount ?? 0) + 1;
+    }
+  }
+
+  public recordStepRetry(
+    runId: string,
+    stepId: string,
+    attempt: number
+  ): void {
+    const summary = this.runSummaries.get(runId);
+    if (!summary) return;
+
+    void stepId;
+    void attempt;
+    summary.retryCount = (summary.retryCount ?? 0) + 1;
+  }
+
+  public recordPlanAdaptation(
+    runId: string,
+    reason: string,
+    affectedSteps: string[]
+  ): void {
+    const summary = this.runSummaries.get(runId);
+    if (!summary) return;
+
+    summary.adaptationCount = (summary.adaptationCount ?? 0) + 1;
+
+    const sanitizedReason = sanitizeString(reason);
+    if (!summary.planAdaptationReasons) {
+      summary.planAdaptationReasons = [];
+    }
+    summary.planAdaptationReasons.push(sanitizedReason);
+
+    if (!summary.blockedPlanSteps) {
+      summary.blockedPlanSteps = [];
+    }
+    for (const s of affectedSteps) {
+      if (!summary.blockedPlanSteps.includes(s)) {
+        summary.blockedPlanSteps.push(s);
       }
     }
   }

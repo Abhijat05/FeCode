@@ -16,7 +16,8 @@ export type PlanStatus =
   | "completed"
   | "failed"
   | "cancelled"
-  | "superseded";
+  | "superseded"
+  | "blocked";
 
 export type PlanStepStatus =
   | "pending"
@@ -210,6 +211,8 @@ export interface PlanExecutorOptions {
   safeEditValidator?: import("../editing/validator.js").SafeEditValidator;
   gitRepository?: import("../git/types.js").GitRepository;
   maxVerificationAttempts?: number;
+  feedbackManager?: ExecutionFeedbackManager;
+  retryPolicy?: StepRetryPolicy;
 }
 
 export interface PlanExecutor {
@@ -299,4 +302,92 @@ export interface ReplanManager {
   ): Promise<ReplanAssessment>;
   executeReplan(request: ReplanRequest): Promise<ReplanResult>;
   getPlanHistory(planId: string): Promise<TaskPlan[]>;
+}
+
+export type ExecutionFeedbackKind =
+  | "step_completed"
+  | "step_failed"
+  | "verification_failed"
+  | "workspace_drift"
+  | "dependency_changed"
+  | "configuration_changed"
+  | "unexpected_file_change"
+  | "tool_failure"
+  | "command_failure";
+
+export type ExecutionFeedbackSeverity = "info" | "warning" | "blocking";
+
+export type ExecutionFeedbackAction =
+  | "continue"
+  | "retry"
+  | "inspect"
+  | "replan"
+  | "cancel";
+
+export interface ExecutionFeedback {
+  feedbackId: string;
+  runId: string;
+  planId: string;
+  stepId?: string;
+  kind: ExecutionFeedbackKind;
+  severity: ExecutionFeedbackSeverity;
+  summary: string;
+  details?: string;
+  detectedAt: number;
+  requiresReplanning: boolean;
+  requiresUserConfirmation: boolean;
+  recommendedAction: ExecutionFeedbackAction;
+}
+
+export interface PlanAdaptationAssessment {
+  planId: string;
+  assessedAt: number;
+  canContinue: boolean;
+  canRetry: boolean;
+  canAdapt: boolean;
+  feedback: ExecutionFeedback[];
+  affectedSteps: string[];
+  currentRiskLevel: TaskRiskLevel;
+  requiresUserConfirmation: boolean;
+  recommendedAction: ExecutionFeedbackAction;
+}
+
+export interface ExecutionFeedbackInput {
+  feedbackId?: string;
+  runId: string;
+  planId: string;
+  stepId?: string;
+  kind: ExecutionFeedbackKind;
+  severity?: ExecutionFeedbackSeverity;
+  summary: string;
+  details?: string;
+  detectedAt?: number;
+  requiresReplanning?: boolean;
+  requiresUserConfirmation?: boolean;
+  recommendedAction?: ExecutionFeedbackAction;
+}
+
+export interface ExecutionFeedbackManager {
+  recordFeedback(feedback: ExecutionFeedbackInput): ExecutionFeedback;
+  getFeedback(runIdOrPlanId: string): ExecutionFeedback[];
+  getPlanFeedback(planId: string): ExecutionFeedback[];
+  assessPlanAdaptation(
+    plan: TaskPlan,
+    context?: { cwd?: string; riskLevel?: TaskRiskLevel }
+  ): PlanAdaptationAssessment;
+  clearFeedback(runIdOrPlanId?: string): void;
+}
+
+export interface StepRetryPolicy {
+  maxAttempts: number;
+  retryableFailures: ExecutionFeedbackKind[];
+  requiresFreshRiskAssessment: boolean;
+  requiresFreshPermission: boolean;
+  canRetry(
+    step: PlanStep,
+    attemptCount: number,
+    failureKind: ExecutionFeedbackKind,
+    opType?: string
+  ): boolean;
+  getRemainingAttempts(stepId: string, currentAttempts: number): number;
 }

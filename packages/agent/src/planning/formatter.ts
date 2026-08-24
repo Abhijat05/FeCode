@@ -164,4 +164,74 @@ export class PlanFormatter {
     lines.push("Create a new execution plan using the current workspace? [y/N]");
     return lines.join("\n");
   }
+
+  public static formatPlanBlockedPrompt(
+    plan: TaskPlan,
+    assessment: import("./types.js").PlanAdaptationAssessment
+  ): string {
+    const failedStep = plan.steps.find(
+      (s) => s.status === "failed" || assessment.affectedSteps.includes(s.stepId)
+    );
+
+    const stepIndex = failedStep
+      ? (plan.steps.findIndex((s) => s.stepId === failedStep.stepId) + 1)
+      : (plan.currentStepIndex ?? 0) + 1;
+
+    const failedTitle = failedStep?.title || "Execution step";
+
+    const reason =
+      failedStep?.error ||
+      assessment.feedback.find((f) => f.severity === "blocking")?.summary ||
+      assessment.feedback[0]?.summary ||
+      plan.invalidationReason ||
+      "Plan execution was blocked by safety policy or failure";
+
+    const lines: string[] = [
+      "⚠ Plan execution blocked",
+      "",
+      `Plan: ${plan.planId}`,
+      `Step: ${stepIndex}/${plan.steps.length} — ${failedTitle}`,
+      "",
+      "Reason:",
+      reason,
+      ""
+    ];
+
+    if (assessment.affectedSteps.length > 0) {
+      lines.push("Affected steps:");
+      for (const stepId of assessment.affectedSteps) {
+        const sObj = plan.steps.find((s) => s.stepId === stepId);
+        if (sObj) {
+          lines.push(`  • Step ${sObj.order} — ${sObj.title}`);
+        } else {
+          lines.push(`  • Step ${stepId}`);
+        }
+      }
+      lines.push("");
+    }
+
+    lines.push("Risk:");
+    lines.push(assessment.currentRiskLevel);
+    lines.push("");
+
+    lines.push("Recommended action:");
+    if (assessment.recommendedAction === "replan") {
+      lines.push("Create a new execution plan using the current workspace.");
+    } else if (assessment.recommendedAction === "retry") {
+      lines.push("Retry the failed step with fresh permissions.");
+    } else {
+      lines.push("Cancel execution to avoid unintended changes.");
+    }
+    lines.push("");
+
+    lines.push("What would you like to do?");
+    lines.push("");
+    lines.push("[c] Continue");
+    lines.push("[r] Replan");
+    lines.push("[x] Cancel");
+    lines.push("");
+    lines.push("Choice [x]:");
+
+    return lines.join("\n");
+  }
 }

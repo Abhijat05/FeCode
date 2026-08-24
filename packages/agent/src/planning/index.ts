@@ -5,3 +5,5 @@ export * from "./formatter.js";
 export * from "./staleness.js";
 export * from "./executor.js";
 export * from "./replanManager.js";
+export * from "./executionFeedback.js";
+export * from "./retryPolicy.js";
