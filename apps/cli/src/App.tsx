@@ -281,24 +281,60 @@ export const App: React.FC<AppProps> = ({
 
       const choice = trimmed.toLowerCase();
       if (choice === "c" || choice === "continue") {
-        setTurns((prev) => [
-          ...prev,
-          {
-            id: `cmd-${Date.now()}`,
-            prompt: trimmed,
-            response: `Continuing plan execution for ${pb.plan.planId}...\n`,
-            status: "done"
-          }
-        ]);
+        let resumeNotice = `↻ Resuming plan ${pb.plan.planId}...\n`;
         try {
+          if (agent && "resolveExecutionDecision" in agent) {
+            const decisionResult = await (
+              agent as {
+                resolveExecutionDecision: (
+                  id: string,
+                  d: string,
+                  opts?: { cwd: string }
+                ) => Promise<import("@fecode/agent").ExecutionDecisionResult>;
+              }
+            ).resolveExecutionDecision(pb.plan.planId, "continue", { cwd });
+
+            const incompleteStep =
+              pb.plan.steps.find((s) => s.stepId === decisionResult.resumedStepId) ||
+              pb.plan.steps[0];
+            if (incompleteStep) {
+              resumeNotice = `${PlanFormatter.formatResumeNotice(
+                pb.plan.planId,
+                incompleteStep.order,
+                pb.plan.steps.length,
+                incompleteStep.title
+              )}\n`;
+            }
+          }
           if (agent && "getTaskPlan" in agent) {
             transitionPlanStatus(pb.plan, "executing");
           }
         } catch {
           // ignore
         }
+        setTurns((prev) => [
+          ...prev,
+          {
+            id: `cmd-${Date.now()}`,
+            prompt: trimmed,
+            response: resumeNotice,
+            status: "done"
+          }
+        ]);
       } else if (choice === "r" || choice === "replan") {
         try {
+          if (agent && "resolveExecutionDecision" in agent) {
+            await (
+              agent as {
+                resolveExecutionDecision: (
+                  id: string,
+                  d: string,
+                  opts?: { cwd: string }
+                ) => Promise<import("@fecode/agent").ExecutionDecisionResult>;
+              }
+            ).resolveExecutionDecision(pb.plan.planId, "replan", { cwd });
+          }
+
           if (agent && "prepareReplan" in agent) {
             const assessment = await (
               agent as {
@@ -322,12 +358,13 @@ export const App: React.FC<AppProps> = ({
             } else {
               setPendingReplan({ planId: pb.plan.planId, assessment });
               const promptText = PlanFormatter.formatReplanPrompt(assessment);
+              const replanNotice = PlanFormatter.formatReplanNotice();
               setTurns((prev) => [
                 ...prev,
                 {
                   id: `cmd-${Date.now()}`,
                   prompt: trimmed,
-                  response: `\n${promptText}\n`,
+                  response: `${replanNotice}\n\n${promptText}\n`,
                   status: "done"
                 }
               ]);
@@ -348,6 +385,17 @@ export const App: React.FC<AppProps> = ({
       } else {
         // default / 'x' / 'cancel'
         try {
+          if (agent && "resolveExecutionDecision" in agent) {
+            await (
+              agent as {
+                resolveExecutionDecision: (
+                  id: string,
+                  d: string,
+                  opts?: { cwd: string }
+                ) => Promise<import("@fecode/agent").ExecutionDecisionResult>;
+              }
+            ).resolveExecutionDecision(pb.plan.planId, "cancel", { cwd });
+          }
           if (agent && "cancel" in agent) {
             await agent.cancel();
           }
@@ -359,7 +407,7 @@ export const App: React.FC<AppProps> = ({
           {
             id: `cmd-${Date.now()}`,
             prompt: trimmed,
-            response: "Plan execution cancelled.\n",
+            response: `${PlanFormatter.formatCancelNotice()}\n`,
             status: "done"
           }
         ]);
@@ -1939,6 +1987,62 @@ export const App: React.FC<AppProps> = ({
                     response:
                       t.response +
                       `✗ Plan execution cancelled${event.reason ? `: ${event.reason}` : ""}\n\n`
+                  }
+                : t
+            )
+          );
+        } else if (event.type === "execution_resume_started") {
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    status: "streaming",
+                    response:
+                      t.response +
+                      `↻ Resuming plan ${event.planId}\nStarting from step ${event.stepOrder}: Step ${event.stepId}\n\n`
+                  }
+                : t
+            )
+          );
+        } else if (event.type === "execution_resume_completed") {
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    status: "streaming",
+                    response:
+                      t.response +
+                      `✓ Resumed execution completed (${event.completedSteps}/${event.totalSteps} steps completed)\n\n`
+                  }
+                : t
+            )
+          );
+        } else if (event.type === "execution_resume_failed") {
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    status: "streaming",
+                    response:
+                      t.response +
+                      `✗ Resumed execution failed: ${event.reason}\n\n`
+                  }
+                : t
+            )
+          );
+        } else if (event.type === "execution_cancelled") {
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    status: "streaming",
+                    response:
+                      t.response +
+                      `✓ Plan cancelled: ${event.reason}\n\n`
                   }
                 : t
             )

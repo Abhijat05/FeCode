@@ -218,7 +218,13 @@ export interface PlanExecutorOptions {
 export interface PlanExecutor {
   executePlan(
     plan: TaskPlan,
-    context: PlanExecutorContext
+    context: PlanExecutorContext,
+    options?: { isResume?: boolean; resumedFromStepId?: string }
+  ): AsyncIterable<import("../index.js").AgentEvent>;
+  resumePlan?(
+    plan: TaskPlan,
+    context: PlanExecutorContext,
+    options?: { resumedFromStepId?: string }
   ): AsyncIterable<import("../index.js").AgentEvent>;
 }
 
@@ -266,13 +272,14 @@ export interface ReplanAssessment {
 }
 
 export interface ReplanResult {
+  status: "created" | "rejected" | "limit_reached" | "failed";
   previousPlanId: string;
   newPlanId?: string;
-  status: "created" | "rejected" | "limit_reached" | "failed";
+  newPlan?: TaskPlan;
   reason: string;
   createdAt: number;
-  newPlan?: TaskPlan;
   replanDepth?: number;
+  assessment?: ReplanAssessment;
 }
 
 export interface ReplanManagerOptions {
@@ -289,6 +296,7 @@ export interface ReplanManagerOptions {
 
 export interface ReplanManager {
   registerPlan(plan: TaskPlan): void;
+  getPlan(planId: string): Promise<TaskPlan | null>;
   assessReplanning(request: ReplanRequest): Promise<ReplanAssessment>;
   prepareReplan(
     planIdOrRunId: string,
@@ -390,4 +398,59 @@ export interface StepRetryPolicy {
     opType?: string
   ): boolean;
   getRemainingAttempts(stepId: string, currentAttempts: number): number;
+}
+
+export type ExecutionDecision = "continue" | "replan" | "cancel";
+
+export interface ExecutionDecisionRequest {
+  decisionId: string;
+  runId: string;
+  planId: string;
+  blockedStepId: string;
+  affectedStepIds: string[];
+  reason: string;
+  requestedAt: number;
+  allowedDecisions: ExecutionDecision[];
+  defaultDecision: ExecutionDecision;
+}
+
+export interface ExecutionDecisionResult {
+  decisionId: string;
+  decision: ExecutionDecision;
+  accepted: boolean;
+  resultingPlanId?: string;
+  resultingRunId?: string;
+  resumedStepId?: string;
+  resumedStepOrder?: number;
+  cancelled: boolean;
+  reason?: string;
+  resolvedAt: number;
+}
+
+export interface ExecutionDecisionManager {
+  createDecisionRequest(params: {
+    decisionId?: string;
+    runId: string;
+    planId: string;
+    blockedStepId: string;
+    affectedStepIds: string[];
+    reason: string;
+    allowedDecisions?: ExecutionDecision[];
+    defaultDecision?: ExecutionDecision;
+    requestedAt?: number;
+  }): ExecutionDecisionRequest;
+
+  resolveDecision(
+    requestOrDecisionId: string | ExecutionDecisionRequest,
+    decision: ExecutionDecision | string,
+    options?: {
+      cwd?: string;
+      userRequest?: string;
+      plan?: TaskPlan;
+    }
+  ): Promise<ExecutionDecisionResult>;
+
+  getActiveRequest(planIdOrRunId: string): ExecutionDecisionRequest | undefined;
+  getDecisionResult(decisionId: string): ExecutionDecisionResult | undefined;
+  clear(planIdOrRunId?: string): void;
 }

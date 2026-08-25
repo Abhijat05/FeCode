@@ -116,7 +116,15 @@ export class DefaultRunHistoryStore implements RunHistoryStore {
         retryCount: summary.retryCount,
         adaptationCount: summary.adaptationCount,
         blockedPlanSteps: summary.blockedPlanSteps,
-        planAdaptationReasons: summary.planAdaptationReasons
+        planAdaptationReasons: summary.planAdaptationReasons,
+        decisionRequestedAt: summary.decisionRequestedAt,
+        decisionResolvedAt: summary.decisionResolvedAt,
+        executionDecision: summary.executionDecision,
+        decisionReason: summary.decisionReason,
+        decisionOutcome: summary.decisionOutcome,
+        resumedFromStepId: summary.resumedFromStepId,
+        resumedStepOrder: summary.resumedStepOrder,
+        decisionCount: summary.decisionCount
       };
     }
 

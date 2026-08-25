@@ -103,13 +103,18 @@ import type {
   ExecutionFeedback,
   ExecutionFeedbackManager,
   PlanAdaptationAssessment,
-  StepRetryPolicy
+  StepRetryPolicy,
+  ExecutionDecision,
+  ExecutionDecisionRequest,
+  ExecutionDecisionResult,
+  ExecutionDecisionManager
 } from "./planning/types.js";
 import { DefaultTaskPlanner } from "./planning/planner.js";
 import { DefaultPlanExecutor } from "./planning/executor.js";
 import { DefaultReplanManager } from "./planning/replanManager.js";
 import { DefaultExecutionFeedbackManager } from "./planning/executionFeedback.js";
 import { DefaultStepRetryPolicy } from "./planning/retryPolicy.js";
+import { DefaultExecutionDecisionManager } from "./planning/decisionManager.js";
 import {
   transitionPlanStatus,
   completePlanStep,
@@ -146,6 +151,7 @@ export interface AgentRuntimeOptions {
   replanManager?: ReplanManager;
   feedbackManager?: ExecutionFeedbackManager;
   retryPolicy?: StepRetryPolicy;
+  decisionManager?: ExecutionDecisionManager;
   maxReplanDepth?: number;
   maxRetainedRuns?: number;
   emitRunEvents?: boolean;
@@ -184,6 +190,7 @@ export class AgentRuntime implements Agent {
   private readonly replanManager: ReplanManager;
   private readonly feedbackManager: ExecutionFeedbackManager;
   private readonly retryPolicy: StepRetryPolicy;
+  private readonly decisionManager: ExecutionDecisionManager;
   private readonly maxReplanDepth: number;
   private readonly completionTracker: TaskCompletionTracker = new TaskCompletionTracker();
   private readonly safeEditValidator: SafeEditValidator = new SafeEditValidator();
@@ -240,6 +247,8 @@ export class AgentRuntime implements Agent {
     this.feedbackManager =
       options.feedbackManager || new DefaultExecutionFeedbackManager();
     this.retryPolicy = options.retryPolicy || new DefaultStepRetryPolicy();
+    this.decisionManager =
+      options.decisionManager || new DefaultExecutionDecisionManager();
     this.planExecutor =
       options.planExecutor ||
       new DefaultPlanExecutor({
@@ -339,6 +348,34 @@ export class AgentRuntime implements Agent {
     return this.retryPolicy;
   }
 
+  public getExecutionDecisionManager(): ExecutionDecisionManager {
+    return this.decisionManager;
+  }
+
+  public async resolveExecutionDecision(
+    requestOrDecisionId: string | ExecutionDecisionRequest,
+    decision: ExecutionDecision | string,
+    options: {
+      cwd?: string;
+      userRequest?: string;
+    } = {}
+  ): Promise<ExecutionDecisionResult> {
+    const result = await this.decisionManager.resolveDecision(
+      requestOrDecisionId,
+      decision,
+      {
+        cwd: options.cwd || process.cwd(),
+        userRequest: options.userRequest || this.currentPlan?.userRequestSummary,
+        plan: this.currentPlan
+      }
+    );
+
+    const runId = result.resultingRunId || this.state.sessionId;
+    this.diagnosticsManager.recordDecisionResolution(runId, result);
+
+    return result;
+  }
+
   public getExecutionFeedback(runIdOrPlanId?: string): ExecutionFeedback[] {
     const targetId =
       runIdOrPlanId || this.currentPlan?.planId || this.state.sessionId;
@@ -402,13 +439,73 @@ export class AgentRuntime implements Agent {
     const runId = targetPlan.runId || `run-${Date.now()}`;
     const targetCwd = options.cwd || process.cwd();
 
-    yield* this.planExecutor.executePlan(targetPlan, {
+    for await (const ev of this.planExecutor.executePlan(targetPlan, {
       runId,
       cwd: targetCwd,
       signal: this.activeController?.signal,
       initialFingerprint: this.currentWorkspaceFingerprint,
       emitRunEvents: this.emitRunEvents
-    });
+    })) {
+      yield ev;
+
+      if (ev.type === "plan_blocked") {
+        const req = this.decisionManager.createDecisionRequest({
+          runId,
+          planId: ev.planId,
+          blockedStepId: ev.blockedStepId || "",
+          affectedStepIds: ev.affectedSteps,
+          reason: ev.reason
+        });
+        this.diagnosticsManager.recordDecisionRequest(runId, req);
+        yield {
+          type: "execution_decision_requested",
+          request: req,
+          timestamp: Date.now()
+        };
+      }
+    }
+  }
+
+  public async *resumeExecution(
+    planId?: string,
+    options: { cwd?: string } = {}
+  ): AsyncIterable<AgentEvent> {
+    const targetPlan = planId ? await this.replanManager.getPlan(planId) : this.currentPlan;
+    if (!targetPlan) {
+      throw new Error("No execution plan available to resume.");
+    }
+    const runId = targetPlan.runId || `run-${Date.now()}`;
+    const targetCwd = options.cwd || process.cwd();
+
+    for await (const ev of this.planExecutor.executePlan(
+      targetPlan,
+      {
+        runId,
+        cwd: targetCwd,
+        signal: this.activeController?.signal,
+        initialFingerprint: this.currentWorkspaceFingerprint,
+        emitRunEvents: this.emitRunEvents
+      },
+      { isResume: true }
+    )) {
+      yield ev;
+
+      if (ev.type === "plan_blocked") {
+        const req = this.decisionManager.createDecisionRequest({
+          runId,
+          planId: ev.planId,
+          blockedStepId: ev.blockedStepId || "",
+          affectedStepIds: ev.affectedSteps,
+          reason: ev.reason
+        });
+        this.diagnosticsManager.recordDecisionRequest(runId, req);
+        yield {
+          type: "execution_decision_requested",
+          request: req,
+          timestamp: Date.now()
+        };
+      }
+    }
   }
 
   public async prepareResume(

@@ -92,6 +92,14 @@ export interface RunSummary {
   adaptationCount?: number;
   blockedPlanSteps?: string[];
   planAdaptationReasons?: string[];
+  decisionRequestedAt?: number;
+  decisionResolvedAt?: number;
+  executionDecision?: import("../planning/types.js").ExecutionDecision;
+  decisionReason?: string;
+  decisionOutcome?: "accepted" | "rejected" | "superseded" | "cancelled";
+  resumedFromStepId?: string;
+  resumedStepOrder?: number;
+  decisionCount?: number;
 }
 
 export interface RunDiagnosticsManagerOptions {
@@ -133,6 +141,20 @@ export interface RunDiagnosticsManager {
     runId: string,
     reason: string,
     affectedSteps: string[]
+  ): void;
+  recordDecisionRequest(
+    runId: string,
+    request: import("../planning/types.js").ExecutionDecisionRequest
+  ): void;
+  recordDecisionResolution(
+    runId: string,
+    result: import("../planning/types.js").ExecutionDecisionResult
+  ): void;
+  recordResumeStart(
+    runId: string,
+    planId: string,
+    stepId: string,
+    stepOrder: number
   ): void;
   recordToolStart(runId: string, toolName: string, callId: string, targetPath?: string): void;
   recordToolComplete(

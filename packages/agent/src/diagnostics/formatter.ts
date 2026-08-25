@@ -68,6 +68,16 @@ export function formatRunDiagnostics(summary: RunSummary): string {
     if (summary.planAdaptationReasons && summary.planAdaptationReasons.length > 0) {
       lines.push(`  Adaptations: ${summary.planAdaptationReasons.join("; ")}`);
     }
+    if (summary.executionDecision) {
+      let decStr = `  Decision:  ${summary.executionDecision.toUpperCase()}`;
+      if (summary.decisionOutcome) {
+        decStr += ` (${summary.decisionOutcome})`;
+      }
+      lines.push(decStr);
+    }
+    if (summary.resumedFromStepId) {
+      lines.push(`  Resumed:   step ${summary.resumedFromStepId} (order ${summary.resumedStepOrder ?? 1})`);
+    }
   }
 
   if (summary.lifecycleTransitions.length > 0) {

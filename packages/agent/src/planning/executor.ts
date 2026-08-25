@@ -24,7 +24,8 @@ import {
   completePlanStep,
   failPlanStep,
   startPlanStep,
-  transitionPlanStatus
+  transitionPlanStatus,
+  unblockPlan
 } from "./taskPlan.js";
 import { detectPlanStaleness } from "./staleness.js";
 import { DefaultExecutionFeedbackManager } from "./executionFeedback.js";
@@ -58,12 +59,23 @@ export class DefaultPlanExecutor implements PlanExecutor {
 
   public async *executePlan(
     plan: TaskPlan,
-    context: PlanExecutorContext
+    context: PlanExecutorContext,
+    options?: { isResume?: boolean; resumedFromStepId?: string }
   ): AsyncIterable<AgentEvent> {
     const startTime = Date.now();
 
-    // 1. Approved Plan Boundary Check
-    if (plan.status !== "approved") {
+    const isResume = Boolean(
+      options?.isResume ||
+      plan.status === "blocked" ||
+      (plan.status === "executing" && plan.steps.some((s) => s.status === "completed"))
+    );
+
+    // 1. Approved / Blocked / Executing Plan Boundary Check
+    if (
+      plan.status !== "approved" &&
+      plan.status !== "blocked" &&
+      plan.status !== "executing"
+    ) {
       const errMsg = `Only approved plans can be executed. Current status: ${plan.status}`;
       yield {
         type: "plan_execution_failed",
@@ -75,7 +87,15 @@ export class DefaultPlanExecutor implements PlanExecutor {
       throw new Error(errMsg);
     }
 
-    let activePlan: TaskPlan = transitionPlanStatus(plan, "executing");
+    let activePlan: TaskPlan;
+    if (plan.status === "blocked") {
+      activePlan = unblockPlan(plan);
+    } else if (plan.status === "approved") {
+      activePlan = transitionPlanStatus(plan, "executing");
+    } else {
+      activePlan = plan;
+    }
+
     if (this.options.diagnosticsManager) {
       this.options.diagnosticsManager.recordPlan(context.runId, activePlan);
     }
@@ -94,6 +114,7 @@ export class DefaultPlanExecutor implements PlanExecutor {
     let failedStepId: string | undefined;
     let failureReason: string | undefined;
     let isCancelled = false;
+    let resumeEventEmitted = false;
 
     // Sort steps in dependency order
     const orderedSteps = [...activePlan.steps].sort(
@@ -105,6 +126,40 @@ export class DefaultPlanExecutor implements PlanExecutor {
       if (context.signal?.aborted) {
         isCancelled = true;
         break;
+      }
+
+      // If step is already completed, PRESERVE IT and DO NOT REPLAY!
+      if (step.status === "completed") {
+        stepResults.push({
+          stepId: step.stepId,
+          status: "completed",
+          startedAt: Date.now(),
+          completedAt: Date.now(),
+          durationMs: 0,
+          executionIntent: step.intent
+        });
+        continue;
+      }
+
+      // On first incomplete step during resume, emit execution_resume_started
+      if (isResume && !resumeEventEmitted) {
+        resumeEventEmitted = true;
+        yield {
+          type: "execution_resume_started",
+          runId: context.runId,
+          planId: activePlan.planId,
+          stepId: step.stepId,
+          stepOrder: step.order,
+          timestamp: Date.now()
+        };
+        if (this.options.diagnosticsManager) {
+          this.options.diagnosticsManager.recordResumeStart(
+            context.runId,
+            activePlan.planId,
+            step.stepId,
+            step.order
+          );
+        }
       }
 
       // 2. Check Dependency Constraints
@@ -186,6 +241,17 @@ export class DefaultPlanExecutor implements PlanExecutor {
           recommendedAction: driftFb.recommendedAction,
           timestamp: Date.now()
         };
+
+        if (isResume) {
+          yield {
+            type: "execution_resume_failed",
+            runId: context.runId,
+            planId: activePlan.planId,
+            stepId: step.stepId,
+            reason: staleReason,
+            timestamp: Date.now()
+          };
+        }
 
         const adaptation = this.feedbackManager.assessPlanAdaptation(activePlan);
         activePlan = transitionPlanStatus(activePlan, "blocked", staleReason);
@@ -747,6 +813,18 @@ export class DefaultPlanExecutor implements PlanExecutor {
       if (this.options.diagnosticsManager) {
         this.options.diagnosticsManager.recordPlan(context.runId, activePlan);
       }
+
+      if (isResume) {
+        yield {
+          type: "execution_resume_completed",
+          runId: context.runId,
+          planId: activePlan.planId,
+          completedSteps: completedCount,
+          totalSteps: activePlan.steps.length,
+          timestamp: Date.now()
+        };
+      }
+
       yield {
         type: "plan_execution_completed",
         runId: context.runId,
@@ -757,6 +835,17 @@ export class DefaultPlanExecutor implements PlanExecutor {
         timestamp: Date.now()
       };
     }
+  }
+
+  public async *resumePlan(
+    plan: TaskPlan,
+    context: PlanExecutorContext,
+    options: { resumedFromStepId?: string } = {}
+  ): AsyncIterable<AgentEvent> {
+    yield* this.executePlan(plan, context, {
+      isResume: true,
+      resumedFromStepId: options.resumedFromStepId
+    });
   }
 
   /**

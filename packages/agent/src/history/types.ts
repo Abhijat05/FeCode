@@ -70,6 +70,14 @@ export interface DurableRunRecord {
   adaptationCount?: number;
   blockedPlanSteps?: string[];
   planAdaptationReasons?: string[];
+  decisionRequestedAt?: number;
+  decisionResolvedAt?: number;
+  executionDecision?: import("../planning/types.js").ExecutionDecision;
+  decisionReason?: string;
+  decisionOutcome?: "accepted" | "rejected" | "superseded" | "cancelled";
+  resumedFromStepId?: string;
+  resumedStepOrder?: number;
+  decisionCount?: number;
 }
 
 export interface RunHistoryStoreOptions {

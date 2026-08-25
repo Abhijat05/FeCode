@@ -226,12 +226,29 @@ export class PlanFormatter {
 
     lines.push("What would you like to do?");
     lines.push("");
-    lines.push("[c] Continue");
-    lines.push("[r] Replan");
-    lines.push("[x] Cancel");
+    lines.push("[c] Continue — resume incomplete steps after fresh safety checks");
+    lines.push("[r] Replan  — create a new plan from the current workspace");
+    lines.push("[x] Cancel  — stop execution");
     lines.push("");
     lines.push("Choice [x]:");
 
     return lines.join("\n");
+  }
+
+  public static formatResumeNotice(
+    planId: string,
+    stepIndex: number,
+    totalSteps: number,
+    stepTitle: string
+  ): string {
+    return `↻ Resuming plan ${planId}\nStarting from step ${stepIndex}/${totalSteps}: ${stepTitle}`;
+  }
+
+  public static formatReplanNotice(): string {
+    return "→ Existing plan preserved\n→ Creating replacement plan";
+  }
+
+  public static formatCancelNotice(): string {
+    return "✓ Plan cancelled";
   }
 }

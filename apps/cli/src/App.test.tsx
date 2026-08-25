@@ -1433,9 +1433,9 @@ describe("CLI App Component", () => {
     let frame = lastFrame();
     expect(frame).toContain("⚠ Plan execution blocked");
     expect(frame).toContain("Plan: plan-blocked-1");
-    expect(frame).toContain("[c] Continue");
-    expect(frame).toContain("[r] Replan");
-    expect(frame).toContain("[x] Cancel");
+    expect(frame).toContain("[c] Continue — resume incomplete steps after fresh safety checks");
+    expect(frame).toContain("[r] Replan  — create a new plan from the current workspace");
+    expect(frame).toContain("[x] Cancel  — stop execution");
     expect(frame).toContain("Choice [x]:");
 
     // Respond with 'c' to continue
@@ -1443,7 +1443,67 @@ describe("CLI App Component", () => {
     await delay(150);
 
     frame = lastFrame();
-    expect(frame).toContain("Continuing plan execution for plan-blocked-1...");
+    expect(frame).toContain("↻ Resuming plan plan-blocked-1");
+  });
+
+  it("renders plan_blocked prompt and handles user choosing replan ('r')", async () => {
+    const mockAgent = new MockAgent();
+    mockAgent.getTaskPlan = () => ({
+      planId: "plan-blocked-replan",
+      runId: "run-blocked-replan",
+      createdAt: Date.now(),
+      userRequestSummary: "Refactor auth",
+      objective: "Refactor authentication flow",
+      status: "blocked",
+      steps: [],
+      risks: []
+    });
+
+    mockAgent.prepareReplan = async () => ({
+      eligible: true,
+      reason: "step_failed",
+      previousPlanId: "plan-blocked-replan",
+      workspaceChanged: false,
+      riskChanged: false,
+      planStale: true,
+      requiresUserConfirmation: true,
+      replanDepth: 1,
+      maxReplanDepth: 5,
+      isLimitReached: false
+    });
+
+    mockAgent.runFn = async function* () {
+      yield {
+        type: "plan_blocked",
+        runId: "run-blocked-replan",
+        planId: "plan-blocked-replan",
+        blockedStepId: "step-1",
+        reason: "Verification failed",
+        affectedSteps: ["step-1"],
+        recommendedAction: "replan",
+        timestamp: Date.now()
+      };
+    };
+
+    const { lastFrame, stdin } = render(
+      <App agent={mockAgent} cwd="/test/dir" />
+    );
+    await delay(50);
+
+    await typeAndSubmit(stdin, "Run task");
+    await delay(200);
+
+    let frame = lastFrame();
+    expect(frame).toContain("⚠ Plan execution blocked");
+
+    // Respond with 'r' to replan
+    await typeAndSubmit(stdin, "r");
+    await delay(150);
+
+    frame = lastFrame();
+    expect(frame).toContain("→ Existing plan preserved");
+    expect(frame).toContain("→ Creating replacement plan");
+    expect(frame).toContain("Replanning Assessment:");
   });
 
   it("renders plan_blocked prompt and handles user choosing cancel by default", async () => {
@@ -1483,15 +1543,57 @@ describe("CLI App Component", () => {
     let frame = lastFrame();
     expect(frame).toContain("⚠ Plan execution blocked");
     expect(frame).toContain("Plan: plan-blocked-2");
-    expect(frame).toContain("[c] Continue");
-    expect(frame).toContain("[r] Replan");
-    expect(frame).toContain("[x] Cancel");
+    expect(frame).toContain("[c] Continue — resume incomplete steps after fresh safety checks");
+    expect(frame).toContain("[r] Replan  — create a new plan from the current workspace");
+    expect(frame).toContain("[x] Cancel  — stop execution");
 
-    // Respond with 'x' (or Enter default) to cancel
+    // Respond with 'x' (or default) to cancel
     await typeAndSubmit(stdin, "x");
     await delay(150);
 
     frame = lastFrame();
-    expect(frame).toContain("Plan execution cancelled.");
+    expect(frame).toContain("✓ Plan cancelled");
+  });
+
+  it("defaults invalid user input on blocked plan prompt to cancel", async () => {
+    const mockAgent = new MockAgent();
+    mockAgent.getTaskPlan = () => ({
+      planId: "plan-blocked-invalid",
+      runId: "run-blocked-invalid",
+      createdAt: Date.now(),
+      userRequestSummary: "Refactor auth",
+      objective: "Refactor auth flow",
+      status: "blocked",
+      steps: [],
+      risks: []
+    });
+
+    mockAgent.runFn = async function* () {
+      yield {
+        type: "plan_blocked",
+        runId: "run-blocked-invalid",
+        planId: "plan-blocked-invalid",
+        blockedStepId: "step-1",
+        reason: "Blocked step",
+        affectedSteps: ["step-1"],
+        recommendedAction: "cancel",
+        timestamp: Date.now()
+      };
+    };
+
+    const { lastFrame, stdin } = render(
+      <App agent={mockAgent} cwd="/test/dir" />
+    );
+    await delay(50);
+
+    await typeAndSubmit(stdin, "Do auth");
+    await delay(200);
+
+    // Provide invalid choice string "invalid_choice"
+    await typeAndSubmit(stdin, "invalid_choice");
+    await delay(150);
+
+    const frame = lastFrame();
+    expect(frame).toContain("✓ Plan cancelled");
   });
 });

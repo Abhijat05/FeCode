@@ -206,6 +206,47 @@ export type AgentEvent =
       affectedSteps: string[];
       timestamp?: number;
     }
+  | {
+      type: "execution_decision_requested";
+      request: import("./planning/types.js").ExecutionDecisionRequest;
+      timestamp: number;
+    }
+  | {
+      type: "execution_decision_resolved";
+      result: import("./planning/types.js").ExecutionDecisionResult;
+      timestamp: number;
+    }
+  | {
+      type: "execution_resume_started";
+      runId: string;
+      planId: string;
+      stepId: string;
+      stepOrder: number;
+      timestamp: number;
+    }
+  | {
+      type: "execution_resume_completed";
+      runId: string;
+      planId: string;
+      completedSteps: number;
+      totalSteps: number;
+      timestamp: number;
+    }
+  | {
+      type: "execution_resume_failed";
+      runId: string;
+      planId: string;
+      stepId?: string;
+      reason: string;
+      timestamp: number;
+    }
+  | {
+      type: "execution_cancelled";
+      runId: string;
+      planId?: string;
+      reason: string;
+      timestamp: number;
+    }
   | { type: "task_summary"; summary: TaskCompletionSummary }
   | { type: "run_started"; runId: string }
   | {

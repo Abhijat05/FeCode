@@ -99,6 +99,35 @@ export async function detectPlanStaleness(
     }
   }
 
+  // 4. Check workspace file drift if initial fingerprint had fileFingerprints
+  if (targetFile && options.initialFingerprint?.fileFingerprints) {
+    const fullPath = path.isAbsolute(targetFile)
+      ? targetFile
+      : path.join(options.cwd, targetFile);
+    const initialFileFp =
+      options.initialFingerprint.fileFingerprints[fullPath] ||
+      options.initialFingerprint.fileFingerprints[targetFile];
+
+    if (initialFileFp) {
+      try {
+        const stats = await fs.stat(fullPath);
+        if (
+          (initialFileFp.size !== undefined && stats.size !== initialFileFp.size) ||
+          (initialFileFp.mtimeMs !== undefined && Math.abs(stats.mtimeMs - initialFileFp.mtimeMs) > 1)
+        ) {
+          return {
+            stale: true,
+            reason: `Target file '${targetFile}' was modified outside the execution plan`,
+            affectedStep: step.stepId,
+            timestamp: now
+          };
+        }
+      } catch {
+        // Handled in target file existence check
+      }
+    }
+  }
+
   return {
     stale: false,
     timestamp: now

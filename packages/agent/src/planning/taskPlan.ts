@@ -256,6 +256,40 @@ export function blockPlan(plan: TaskPlan, reason: string): TaskPlan {
   return transitionPlanStatus(plan, "blocked", reason);
 }
 
+export function getFirstIncompleteStep(plan: TaskPlan): PlanStep | undefined {
+  const orderedSteps = [...plan.steps].sort((a, b) => a.order - b.order);
+  return orderedSteps.find((s) => s.status !== "completed");
+}
+
+export function unblockPlan(plan: TaskPlan): TaskPlan {
+  const updatedPlan = transitionPlanStatus(plan, "executing");
+  const updatedSteps = updatedPlan.steps.map((step) => {
+    // Preserve completed steps! Only reset failed/skipped/in_progress to pending
+    if (
+      step.status === "failed" ||
+      step.status === "in_progress" ||
+      step.status === "skipped"
+    ) {
+      return {
+        ...step,
+        status: "pending" as PlanStepStatus,
+        error: undefined
+      };
+    }
+    return step;
+  });
+
+  const firstIncompleteIdx = updatedSteps.findIndex(
+    (s) => s.status !== "completed"
+  );
+
+  return {
+    ...updatedPlan,
+    currentStepIndex: firstIncompleteIdx >= 0 ? firstIncompleteIdx : 0,
+    steps: updatedSteps
+  };
+}
+
 export function summarizePlan(plan: TaskPlan): PlanSummary {
   const totalSteps = plan.steps.length;
   const completedSteps = plan.steps.filter(

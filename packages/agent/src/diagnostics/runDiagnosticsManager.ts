@@ -212,6 +212,58 @@ export class DefaultRunDiagnosticsManager implements RunDiagnosticsManager {
     }
   }
 
+  public recordDecisionRequest(
+    runId: string,
+    request: import("../planning/types.js").ExecutionDecisionRequest
+  ): void {
+    const summary = this.runSummaries.get(runId);
+    if (!summary) return;
+
+    summary.decisionRequestedAt = request.requestedAt;
+    summary.decisionCount = (summary.decisionCount ?? 0) + 1;
+    if (request.reason && !summary.decisionReason) {
+      summary.decisionReason = sanitizeString(request.reason);
+    }
+  }
+
+  public recordDecisionResolution(
+    runId: string,
+    result: import("../planning/types.js").ExecutionDecisionResult
+  ): void {
+    const summary = this.runSummaries.get(runId);
+    if (!summary) return;
+
+    summary.decisionResolvedAt = result.resolvedAt;
+    summary.executionDecision = result.decision;
+    summary.decisionOutcome = result.accepted
+      ? result.cancelled
+        ? "cancelled"
+        : "accepted"
+      : "rejected";
+
+    if (result.resumedStepId) {
+      summary.resumedFromStepId = result.resumedStepId;
+      summary.resumedStepOrder = result.resumedStepOrder;
+    }
+    if (result.reason) {
+      summary.decisionReason = sanitizeString(result.reason);
+    }
+  }
+
+  public recordResumeStart(
+    runId: string,
+    _planId: string,
+    stepId: string,
+    stepOrder: number
+  ): void {
+    const summary = this.runSummaries.get(runId);
+    if (!summary) return;
+
+    void _planId;
+    summary.resumedFromStepId = stepId;
+    summary.resumedStepOrder = stepOrder;
+  }
+
   public recordToolStart(
     runId: string,
     toolName: string,
