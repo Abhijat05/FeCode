@@ -17,7 +17,9 @@ import type {
   PlanStepExecutionResult,
   PlanVerificationResult,
   StepRetryPolicy,
-  TaskPlan
+  TaskPlan,
+  FinalWorkspaceReconciler,
+  FinalReconciliationPolicy
 } from "./types.js";
 import {
   canExecuteStep,
@@ -30,6 +32,7 @@ import {
 import { detectPlanStaleness } from "./staleness.js";
 import { DefaultExecutionFeedbackManager } from "./executionFeedback.js";
 import { DefaultStepRetryPolicy } from "./retryPolicy.js";
+import { DefaultFinalWorkspaceReconciler } from "./reconciliation.js";
 import type { CommandResult } from "../commands/types.js";
 
 const RISK_LEVEL_ORDER: Record<TaskRiskLevel, number> = {
@@ -49,12 +52,19 @@ export class DefaultPlanExecutor implements PlanExecutor {
   private readonly options: PlanExecutorOptions;
   private readonly feedbackManager: ExecutionFeedbackManager;
   private readonly retryPolicy: StepRetryPolicy;
+  private readonly reconciler: FinalWorkspaceReconciler;
+  private readonly reconciliationPolicy: FinalReconciliationPolicy;
 
   constructor(options: PlanExecutorOptions) {
     this.options = options;
     this.feedbackManager =
       options.feedbackManager || new DefaultExecutionFeedbackManager();
     this.retryPolicy = options.retryPolicy || new DefaultStepRetryPolicy();
+    this.reconciler =
+      options.reconciler || new DefaultFinalWorkspaceReconciler();
+    this.reconciliationPolicy = options.reconciliationPolicy || {
+      required: true
+    };
   }
 
   public async *executePlan(
@@ -809,6 +819,115 @@ export class DefaultPlanExecutor implements PlanExecutor {
     }
 
     if (completedCount === activePlan.steps.length) {
+      // 10. Final Workspace Reconciliation
+      if (this.reconciliationPolicy.required) {
+        yield {
+          type: "final_reconciliation_started",
+          runId: context.runId,
+          planId: activePlan.planId,
+          timestamp: Date.now()
+        };
+
+        if (this.options.diagnosticsManager) {
+          this.options.diagnosticsManager.recordReconciliationStart?.(
+            context.runId,
+            activePlan.planId
+          );
+        }
+
+        const reconResult = await this.reconciler.reconcile({
+          runId: context.runId,
+          plan: activePlan,
+          cwd: context.cwd,
+          initialFingerprint: context.initialFingerprint,
+          gitRepository: this.options.gitRepository,
+          verificationPassed: true,
+          policy: this.reconciliationPolicy
+        });
+
+        if (this.options.diagnosticsManager) {
+          this.options.diagnosticsManager.recordReconciliationResult?.(
+            context.runId,
+            reconResult
+          );
+        }
+
+        if (!reconResult.consistent) {
+          yield {
+            type: "final_reconciliation_failed",
+            result: reconResult,
+            timestamp: Date.now()
+          };
+
+          const failureMsg =
+            reconResult.failureReason || "Final workspace reconciliation failed";
+
+          const reconFb = this.feedbackManager.recordFeedback({
+            runId: context.runId,
+            planId: activePlan.planId,
+            kind: "workspace_drift",
+            severity: "blocking",
+            summary: `Final workspace reconciliation failed: ${failureMsg}`,
+            recommendedAction: "replan"
+          });
+
+          if (this.options.diagnosticsManager) {
+            this.options.diagnosticsManager.recordFeedback(context.runId, reconFb);
+          }
+
+          yield {
+            type: "execution_feedback_detected",
+            runId: context.runId,
+            planId: activePlan.planId,
+            feedbackId: reconFb.feedbackId,
+            kind: reconFb.kind,
+            severity: reconFb.severity,
+            summary: reconFb.summary,
+            recommendedAction: reconFb.recommendedAction,
+            timestamp: Date.now()
+          };
+
+          const adaptation = this.feedbackManager.assessPlanAdaptation(activePlan);
+          activePlan = transitionPlanStatus(activePlan, "blocked", failureMsg);
+
+          if (this.options.diagnosticsManager) {
+            this.options.diagnosticsManager.recordPlan(context.runId, activePlan);
+            this.options.diagnosticsManager.recordPlanAdaptation(
+              context.runId,
+              failureMsg,
+              adaptation.affectedSteps
+            );
+          }
+
+          yield {
+            type: "plan_adaptation_required",
+            runId: context.runId,
+            planId: activePlan.planId,
+            reason: failureMsg,
+            affectedSteps: adaptation.affectedSteps,
+            timestamp: Date.now()
+          };
+
+          yield {
+            type: "plan_blocked",
+            runId: context.runId,
+            planId: activePlan.planId,
+            reason: failureMsg,
+            affectedSteps: adaptation.affectedSteps,
+            recommendedAction: adaptation.recommendedAction,
+            timestamp: Date.now()
+          };
+
+          return;
+        }
+
+        yield {
+          type: "final_reconciliation_completed",
+          result: reconResult,
+          timestamp: Date.now()
+        };
+      }
+
       activePlan = transitionPlanStatus(activePlan, "completed");
       if (this.options.diagnosticsManager) {
         this.options.diagnosticsManager.recordPlan(context.runId, activePlan);

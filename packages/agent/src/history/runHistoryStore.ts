@@ -124,7 +124,17 @@ export class DefaultRunHistoryStore implements RunHistoryStore {
         decisionOutcome: summary.decisionOutcome,
         resumedFromStepId: summary.resumedFromStepId,
         resumedStepOrder: summary.resumedStepOrder,
-        decisionCount: summary.decisionCount
+        decisionCount: summary.decisionCount,
+        reconciliationId: summary.reconciliationId,
+        reconciliationStatus: summary.reconciliationStatus,
+        reconciliationStartedAt: summary.reconciliationStartedAt,
+        reconciliationCompletedAt: summary.reconciliationCompletedAt,
+        expectedFileCount: summary.expectedFileCount,
+        modifiedFileCount: summary.modifiedFileCount,
+        unexpectedFileCount: summary.unexpectedFileCount,
+        missingFileCount: summary.missingFileCount,
+        reconciliationConsistent: summary.reconciliationConsistent,
+        reconciliationFailureReason: summary.reconciliationFailureReason
       };
     }
 

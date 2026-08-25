@@ -186,13 +186,8 @@ export function completePlanStep(plan: TaskPlan, stepId: string): TaskPlan {
     return step;
   });
 
-  const allCompleted = updatedSteps.every(
-    (s) => s.status === "completed" || s.status === "skipped"
-  );
-
   return {
     ...plan,
-    status: allCompleted ? "completed" : plan.status,
     steps: updatedSteps
   };
 }

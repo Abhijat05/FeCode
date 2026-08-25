@@ -100,6 +100,16 @@ export interface RunSummary {
   resumedFromStepId?: string;
   resumedStepOrder?: number;
   decisionCount?: number;
+  reconciliationId?: string;
+  reconciliationStatus?: import("../planning/types.js").FinalReconciliationStatus;
+  reconciliationStartedAt?: number;
+  reconciliationCompletedAt?: number;
+  expectedFileCount?: number;
+  modifiedFileCount?: number;
+  unexpectedFileCount?: number;
+  missingFileCount?: number;
+  reconciliationConsistent?: boolean;
+  reconciliationFailureReason?: string;
 }
 
 export interface RunDiagnosticsManagerOptions {
@@ -155,6 +165,11 @@ export interface RunDiagnosticsManager {
     planId: string,
     stepId: string,
     stepOrder: number
+  ): void;
+  recordReconciliationStart?(runId: string, planId: string): void;
+  recordReconciliationResult?(
+    runId: string,
+    result: import("../planning/types.js").FinalReconciliationResult
   ): void;
   recordToolStart(runId: string, toolName: string, callId: string, targetPath?: string): void;
   recordToolComplete(

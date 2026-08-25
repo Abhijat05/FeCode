@@ -57,6 +57,7 @@ export async function detectPlanStaleness(
 
   if (
     targetFile &&
+    step.intent?.type !== "create_file" &&
     (step.intent?.type === "modify_file" ||
       step.intent?.type === "inspect_file" ||
       step.type === "modify")

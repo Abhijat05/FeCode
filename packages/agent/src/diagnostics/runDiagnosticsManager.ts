@@ -264,6 +264,34 @@ export class DefaultRunDiagnosticsManager implements RunDiagnosticsManager {
     summary.resumedStepOrder = stepOrder;
   }
 
+  public recordReconciliationStart(runId: string, _planId: string): void {
+    const summary = this.runSummaries.get(runId);
+    if (!summary) return;
+
+    void _planId;
+    summary.reconciliationStartedAt = Date.now();
+  }
+
+  public recordReconciliationResult(
+    runId: string,
+    result: import("../planning/types.js").FinalReconciliationResult
+  ): void {
+    const summary = this.runSummaries.get(runId);
+    if (!summary) return;
+
+    summary.reconciliationId = result.reconciliationId;
+    summary.reconciliationStatus = result.status;
+    summary.reconciliationCompletedAt = result.checkedAt;
+    summary.expectedFileCount = result.expectedFiles.length;
+    summary.modifiedFileCount = result.modifiedFiles.length;
+    summary.unexpectedFileCount = result.unexpectedFiles.length;
+    summary.missingFileCount = result.missingFiles.length;
+    summary.reconciliationConsistent = result.consistent;
+    if (result.failureReason) {
+      summary.reconciliationFailureReason = sanitizeString(result.failureReason);
+    }
+  }
+
   public recordToolStart(
     runId: string,
     toolName: string,

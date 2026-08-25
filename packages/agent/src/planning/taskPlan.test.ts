@@ -195,6 +195,7 @@ describe("Task Plan Contracts & Lifecycle — Phase 5P", () => {
       plan = startPlanStep(plan, "step-3");
       plan = completePlanStep(plan, "step-3");
       expect(plan.steps[2].status).toBe("completed");
+      plan = transitionPlanStatus(plan, "completed");
       expect(plan.status).toBe("completed");
     });
 

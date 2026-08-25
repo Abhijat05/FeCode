@@ -1596,4 +1596,68 @@ describe("CLI App Component", () => {
     const frame = lastFrame();
     expect(frame).toContain("✓ Plan cancelled");
   });
+
+  it("renders final_reconciliation_failed prompt with missing and unexpected files", async () => {
+    const mockAgent = new MockAgent();
+    mockAgent.getTaskPlan = () => ({
+      planId: "plan-recon-cli",
+      runId: "run-recon-cli",
+      createdAt: Date.now(),
+      userRequestSummary: "Create auth files",
+      objective: "Auth files",
+      status: "blocked",
+      steps: [],
+      risks: []
+    });
+
+    mockAgent.runFn = async function* () {
+      yield {
+        type: "final_reconciliation_failed",
+        result: {
+          reconciliationId: "recon-1",
+          runId: "run-recon-cli",
+          planId: "plan-recon-cli",
+          status: "inconsistent",
+          checkedAt: Date.now(),
+          expectedFiles: ["src/auth.ts"],
+          modifiedFiles: [],
+          unexpectedFiles: ["unexpected.log"],
+          missingFiles: ["src/auth.ts"],
+          changedFiles: ["unexpected.log"],
+          branchChanged: false,
+          workspaceChanged: true,
+          verificationPassed: true,
+          consistent: false,
+          failureReason: "Missing expected files: src/auth.ts"
+        },
+        timestamp: Date.now()
+      };
+    };
+
+    const { lastFrame, stdin } = render(
+      <App agent={mockAgent} cwd="/test/dir" />
+    );
+    await delay(50);
+
+    await typeAndSubmit(stdin, "Run auth");
+    await delay(200);
+
+    let frame = lastFrame();
+    expect(frame).toContain("⚠ Final workspace reconciliation failed");
+    expect(frame).toContain("Missing expected files:");
+    expect(frame).toContain("• src/auth.ts");
+    expect(frame).toContain("Unexpected changes:");
+    expect(frame).toContain("• unexpected.log");
+    expect(frame).toContain("[c] Re-check workspace");
+    expect(frame).toContain("[r] Replan");
+    expect(frame).toContain("[x] Cancel");
+
+    // Choose [c] to re-check
+    await typeAndSubmit(stdin, "c");
+    await delay(150);
+
+    frame = lastFrame();
+    expect(frame).toContain("↻ Resuming plan plan-recon-cli");
+  });
 });
+

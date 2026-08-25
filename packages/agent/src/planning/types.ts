@@ -213,6 +213,8 @@ export interface PlanExecutorOptions {
   maxVerificationAttempts?: number;
   feedbackManager?: ExecutionFeedbackManager;
   retryPolicy?: StepRetryPolicy;
+  reconciler?: FinalWorkspaceReconciler;
+  reconciliationPolicy?: FinalReconciliationPolicy;
 }
 
 export interface PlanExecutor {
@@ -453,4 +455,48 @@ export interface ExecutionDecisionManager {
   getActiveRequest(planIdOrRunId: string): ExecutionDecisionRequest | undefined;
   getDecisionResult(decisionId: string): ExecutionDecisionResult | undefined;
   clear(planIdOrRunId?: string): void;
+}
+
+export type FinalReconciliationStatus =
+  | "pending"
+  | "checking"
+  | "consistent"
+  | "inconsistent"
+  | "failed";
+
+export interface FinalReconciliationResult {
+  reconciliationId: string;
+  runId: string;
+  planId: string;
+  status: FinalReconciliationStatus;
+  checkedAt: number;
+  expectedFiles: string[];
+  modifiedFiles: string[];
+  unexpectedFiles: string[];
+  missingFiles: string[];
+  changedFiles: string[];
+  branchChanged: boolean;
+  workspaceChanged: boolean;
+  verificationPassed: boolean;
+  consistent: boolean;
+  failureReason?: string;
+}
+
+export interface FinalReconciliationPolicy {
+  required: boolean;
+  allowUnexpectedFiles?: boolean;
+  allowBranchChange?: boolean;
+  allowMissingExpectedFiles?: boolean;
+}
+
+export interface FinalWorkspaceReconciler {
+  reconcile(params: {
+    runId: string;
+    plan: TaskPlan;
+    cwd: string;
+    initialFingerprint?: import("../history/types.js").WorkspaceFingerprint;
+    gitRepository?: import("../git/types.js").GitRepository;
+    verificationPassed?: boolean;
+    policy?: FinalReconciliationPolicy;
+  }): Promise<FinalReconciliationResult>;
 }

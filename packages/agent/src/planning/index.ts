@@ -8,3 +8,4 @@ export * from "./replanManager.js";
 export * from "./executionFeedback.js";
 export * from "./retryPolicy.js";
 export * from "./decisionManager.js";
+export * from "./reconciliation.js";

@@ -247,6 +247,22 @@ export type AgentEvent =
       reason: string;
       timestamp: number;
     }
+  | {
+      type: "final_reconciliation_started";
+      runId: string;
+      planId: string;
+      timestamp: number;
+    }
+  | {
+      type: "final_reconciliation_completed";
+      result: import("./planning/types.js").FinalReconciliationResult;
+      timestamp: number;
+    }
+  | {
+      type: "final_reconciliation_failed";
+      result: import("./planning/types.js").FinalReconciliationResult;
+      timestamp: number;
+    }
   | { type: "task_summary"; summary: TaskCompletionSummary }
   | { type: "run_started"; runId: string }
   | {

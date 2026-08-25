@@ -251,4 +251,39 @@ export class PlanFormatter {
   public static formatCancelNotice(): string {
     return "✓ Plan cancelled";
   }
+
+  public static formatReconciliationBlockedPrompt(
+    _plan: TaskPlan,
+    result: import("./types.js").FinalReconciliationResult
+  ): string {
+    const lines: string[] = [
+      "⚠ Final workspace reconciliation failed",
+      "",
+      "Reason:",
+      result.failureReason || "Workspace state did not match execution plan",
+      ""
+    ];
+
+    if (result.missingFiles && result.missingFiles.length > 0) {
+      lines.push("Missing expected files:");
+      result.missingFiles.forEach((f) => lines.push(`  • ${f}`));
+      lines.push("");
+    }
+
+    if (result.unexpectedFiles && result.unexpectedFiles.length > 0) {
+      lines.push("Unexpected changes:");
+      result.unexpectedFiles.forEach((f) => lines.push(`  • ${f}`));
+      lines.push("");
+    }
+
+    lines.push("What would you like to do?");
+    lines.push("");
+    lines.push("[c] Re-check workspace");
+    lines.push("[r] Replan");
+    lines.push("[x] Cancel");
+    lines.push("");
+    lines.push("Choice [x]:");
+
+    return lines.join("\n");
+  }
 }

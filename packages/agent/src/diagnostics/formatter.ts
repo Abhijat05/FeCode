@@ -157,5 +157,26 @@ export function formatRunDiagnostics(summary: RunSummary): string {
     }
   }
 
+  if (summary.reconciliationStatus) {
+    lines.push("");
+    lines.push("Final Reconciliation:");
+    lines.push(`  status:     ${summary.reconciliationStatus}`);
+    if (summary.reconciliationConsistent !== undefined) {
+      lines.push(`  consistent: ${summary.reconciliationConsistent ? "yes" : "no"}`);
+    }
+    if (summary.expectedFileCount !== undefined) {
+      lines.push(`  expected:   ${summary.expectedFileCount} files`);
+    }
+    if (summary.missingFileCount !== undefined && summary.missingFileCount > 0) {
+      lines.push(`  missing:    ${summary.missingFileCount} files`);
+    }
+    if (summary.unexpectedFileCount !== undefined && summary.unexpectedFileCount > 0) {
+      lines.push(`  unexpected: ${summary.unexpectedFileCount} files`);
+    }
+    if (summary.reconciliationFailureReason) {
+      lines.push(`  reason:     ${summary.reconciliationFailureReason}`);
+    }
+  }
+
   return lines.join("\n");
 }

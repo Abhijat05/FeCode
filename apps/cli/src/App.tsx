@@ -2047,6 +2047,74 @@ export const App: React.FC<AppProps> = ({
                 : t
             )
           );
+        } else if (event.type === "final_reconciliation_started") {
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    status: "streaming",
+                    response: t.response + "Checking workspace reconciliation...\n"
+                  }
+                : t
+            )
+          );
+        } else if (event.type === "final_reconciliation_completed") {
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    status: "streaming",
+                    response: t.response + "✓ Workspace reconciliation passed\n\n"
+                  }
+                : t
+            )
+          );
+        } else if (event.type === "final_reconciliation_failed") {
+          const currentPlan =
+            (agent as { getTaskPlan?: () => import("@fecode/agent").TaskPlan | undefined })?.getTaskPlan?.() || {
+              planId: event.result.planId,
+              runId: event.result.runId,
+              createdAt: Date.now(),
+              userRequestSummary: "Task execution",
+              objective: "Execute task",
+              steps: [],
+              risks: [],
+              status: "blocked" as const
+            };
+
+          const assessment: import("@fecode/agent").PlanAdaptationAssessment =
+            (agent as { getPlanAdaptationAssessment?: () => import("@fecode/agent").PlanAdaptationAssessment | undefined })?.getPlanAdaptationAssessment?.() || {
+              planId: event.result.planId,
+              assessedAt: Date.now(),
+              canContinue: true,
+              canRetry: false,
+              canAdapt: true,
+              feedback: [],
+              affectedSteps: [],
+              currentRiskLevel: "normal",
+              requiresUserConfirmation: true,
+              recommendedAction: "replan"
+            };
+
+          setPendingPlanBlocked({ plan: currentPlan, assessment });
+          const blockedPromptText = PlanFormatter.formatReconciliationBlockedPrompt(
+            currentPlan,
+            event.result
+          );
+
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    status: "streaming",
+                    response: t.response + `\n${blockedPromptText}\n\n`
+                  }
+                : t
+            )
+          );
         } else if (event.type === "task_summary") {
           const fullSummary: TaskCompletionSummary = {
             ...event.summary,

@@ -3,6 +3,7 @@ export type AgentRunStatus =
   | "planning"
   | "executing"
   | "verifying"
+  | "reconciling"
   | "recovering"
   | "completed"
   | "failed"

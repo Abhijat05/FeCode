@@ -107,7 +107,9 @@ import type {
   ExecutionDecision,
   ExecutionDecisionRequest,
   ExecutionDecisionResult,
-  ExecutionDecisionManager
+  ExecutionDecisionManager,
+  FinalWorkspaceReconciler,
+  FinalReconciliationPolicy
 } from "./planning/types.js";
 import { DefaultTaskPlanner } from "./planning/planner.js";
 import { DefaultPlanExecutor } from "./planning/executor.js";
@@ -115,6 +117,7 @@ import { DefaultReplanManager } from "./planning/replanManager.js";
 import { DefaultExecutionFeedbackManager } from "./planning/executionFeedback.js";
 import { DefaultStepRetryPolicy } from "./planning/retryPolicy.js";
 import { DefaultExecutionDecisionManager } from "./planning/decisionManager.js";
+import { DefaultFinalWorkspaceReconciler } from "./planning/reconciliation.js";
 import {
   transitionPlanStatus,
   completePlanStep,
@@ -152,6 +155,8 @@ export interface AgentRuntimeOptions {
   feedbackManager?: ExecutionFeedbackManager;
   retryPolicy?: StepRetryPolicy;
   decisionManager?: ExecutionDecisionManager;
+  reconciler?: FinalWorkspaceReconciler;
+  reconciliationPolicy?: FinalReconciliationPolicy;
   maxReplanDepth?: number;
   maxRetainedRuns?: number;
   emitRunEvents?: boolean;
@@ -191,6 +196,8 @@ export class AgentRuntime implements Agent {
   private readonly feedbackManager: ExecutionFeedbackManager;
   private readonly retryPolicy: StepRetryPolicy;
   private readonly decisionManager: ExecutionDecisionManager;
+  private readonly reconciler: FinalWorkspaceReconciler;
+  private readonly reconciliationPolicy: FinalReconciliationPolicy;
   private readonly maxReplanDepth: number;
   private readonly completionTracker: TaskCompletionTracker = new TaskCompletionTracker();
   private readonly safeEditValidator: SafeEditValidator = new SafeEditValidator();
@@ -249,6 +256,11 @@ export class AgentRuntime implements Agent {
     this.retryPolicy = options.retryPolicy || new DefaultStepRetryPolicy();
     this.decisionManager =
       options.decisionManager || new DefaultExecutionDecisionManager();
+    this.reconciler =
+      options.reconciler || new DefaultFinalWorkspaceReconciler();
+    this.reconciliationPolicy = options.reconciliationPolicy || {
+      required: true
+    };
     this.planExecutor =
       options.planExecutor ||
       new DefaultPlanExecutor({
@@ -263,7 +275,9 @@ export class AgentRuntime implements Agent {
         gitRepository: this.gitRepository,
         maxVerificationAttempts: this.maxVerificationAttempts,
         feedbackManager: this.feedbackManager,
-        retryPolicy: this.retryPolicy
+        retryPolicy: this.retryPolicy,
+        reconciler: this.reconciler,
+        reconciliationPolicy: this.reconciliationPolicy
       });
     this.maxReplanDepth = options.maxReplanDepth ?? 5;
     this.replanManager =
@@ -428,6 +442,10 @@ export class AgentRuntime implements Agent {
     return result;
   }
 
+  public getReconciler(): FinalWorkspaceReconciler {
+    return this.reconciler;
+  }
+
   public async *executeApprovedPlan(
     plan?: TaskPlan,
     options: { cwd?: string } = {}
@@ -448,7 +466,17 @@ export class AgentRuntime implements Agent {
     })) {
       yield ev;
 
-      if (ev.type === "plan_blocked") {
+      if (ev.type === "final_reconciliation_started") {
+        this.currentRunStateMachine?.transition(
+          "reconciling",
+          "Final workspace reconciliation started"
+        );
+      } else if (ev.type === "final_reconciliation_completed") {
+        this.currentRunStateMachine?.transition(
+          "completed",
+          "Final workspace reconciliation completed successfully"
+        );
+      } else if (ev.type === "plan_blocked") {
         const req = this.decisionManager.createDecisionRequest({
           runId,
           planId: ev.planId,
@@ -490,7 +518,17 @@ export class AgentRuntime implements Agent {
     )) {
       yield ev;
 
-      if (ev.type === "plan_blocked") {
+      if (ev.type === "final_reconciliation_started") {
+        this.currentRunStateMachine?.transition(
+          "reconciling",
+          "Final workspace reconciliation started"
+        );
+      } else if (ev.type === "final_reconciliation_completed") {
+        this.currentRunStateMachine?.transition(
+          "completed",
+          "Final workspace reconciliation completed successfully"
+        );
+      } else if (ev.type === "plan_blocked") {
         const req = this.decisionManager.createDecisionRequest({
           runId,
           planId: ev.planId,

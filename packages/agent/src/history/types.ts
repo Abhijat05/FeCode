@@ -78,6 +78,16 @@ export interface DurableRunRecord {
   resumedFromStepId?: string;
   resumedStepOrder?: number;
   decisionCount?: number;
+  reconciliationId?: string;
+  reconciliationStatus?: import("../planning/types.js").FinalReconciliationStatus;
+  reconciliationStartedAt?: number;
+  reconciliationCompletedAt?: number;
+  expectedFileCount?: number;
+  modifiedFileCount?: number;
+  unexpectedFileCount?: number;
+  missingFileCount?: number;
+  reconciliationConsistent?: boolean;
+  reconciliationFailureReason?: string;
 }
 
 export interface RunHistoryStoreOptions {
