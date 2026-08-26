@@ -142,6 +142,12 @@ export interface RunSummary {
   lastContinuationDurationMs?: number;
   lastContinuationBlockingReasons?: string[];
   continuationFailureReason?: string;
+  checkpointRecordCount?: number;
+  lastCheckpointStatus?: import("../checkpoints/types.js").CheckpointStatus;
+  lastCheckpointId?: string;
+  lastCheckpointRiskLevel?: import("../policy/types.js").TaskRiskLevel;
+  lastCheckpointReason?: string;
+  checkpointRecords?: import("../checkpoints/types.js").CheckpointRecord[];
 }
 
 export interface RunDiagnosticsManagerOptions {
@@ -214,6 +220,10 @@ export interface RunDiagnosticsManager {
   recordContinuationResult(
     runId: string,
     result: import("../planning/types.js").RecoveryContinuationResult
+  ): void;
+  recordCheckpointRecord(
+    runId: string,
+    record: import("../checkpoints/types.js").CheckpointRecord
   ): void;
   recordToolStart(runId: string, toolName: string, callId: string, targetPath?: string): void;
   recordToolComplete(

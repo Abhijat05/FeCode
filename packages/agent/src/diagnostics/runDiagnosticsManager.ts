@@ -405,6 +405,67 @@ export class DefaultRunDiagnosticsManager implements RunDiagnosticsManager {
     }
   }
 
+  public recordCheckpointRecord(
+    runId: string,
+    record: import("../checkpoints/types.js").CheckpointRecord
+  ): void {
+    let summary = this.runSummaries.get(runId);
+    if (!summary) {
+      this.startRun({
+        runId,
+        cwd: process.cwd(),
+        userRequest: "Checkpoint execution"
+      });
+      summary = this.runSummaries.get(runId);
+      if (!summary) return;
+    }
+
+    summary.checkpointRecordCount = (summary.checkpointRecordCount || 0) + 1;
+    summary.lastCheckpointId = record.checkpointId;
+    summary.lastCheckpointStatus = record.status;
+    summary.lastCheckpointRiskLevel = record.riskLevel;
+    summary.lastCheckpointReason = sanitizeString(record.reason);
+
+    if (!summary.checkpointRecords) {
+      summary.checkpointRecords = [];
+    }
+
+    const sanitizedRecord: import("../checkpoints/types.js").CheckpointRecord = {
+      checkpointId: record.checkpointId,
+      runId: record.runId,
+      planId: record.planId,
+      stepId: record.stepId,
+      stepOrder: record.stepOrder,
+      createdAt: record.createdAt,
+      expiresAt: record.expiresAt,
+      riskLevel: record.riskLevel,
+      reason: sanitizeString(record.reason),
+      affectedTargets: record.affectedTargets.map((t) => sanitizeString(t)),
+      requiredAction: record.requiredAction ? sanitizeString(record.requiredAction) : undefined,
+      status: record.status,
+      approval: record.approval
+        ? {
+            ...record.approval,
+            reason: record.approval.reason ? sanitizeString(record.approval.reason) : undefined
+          }
+        : undefined,
+      consumedAt: record.consumedAt,
+      invalidationReason: record.invalidationReason
+        ? sanitizeString(record.invalidationReason)
+        : undefined,
+      branch: record.branch
+    };
+
+    const existingIdx = summary.checkpointRecords.findIndex(
+      (r) => r.checkpointId === record.checkpointId
+    );
+    if (existingIdx >= 0) {
+      summary.checkpointRecords[existingIdx] = sanitizedRecord;
+    } else {
+      summary.checkpointRecords.push(sanitizedRecord);
+    }
+  }
+
   public recordToolStart(
     runId: string,
     toolName: string,

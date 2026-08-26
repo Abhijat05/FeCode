@@ -167,7 +167,19 @@ export class DefaultRunHistoryStore implements RunHistoryStore {
         lastContinuationBlockingReasons: summary.lastContinuationBlockingReasons
           ? [...summary.lastContinuationBlockingReasons]
           : undefined,
-        continuationFailureReason: summary.continuationFailureReason
+        continuationFailureReason: summary.continuationFailureReason,
+        checkpointRecordCount: summary.checkpointRecordCount,
+        lastCheckpointId: summary.lastCheckpointId,
+        lastCheckpointStatus: summary.lastCheckpointStatus,
+        lastCheckpointRiskLevel: summary.lastCheckpointRiskLevel,
+        lastCheckpointReason: summary.lastCheckpointReason,
+        checkpointRecords: summary.checkpointRecords
+          ? summary.checkpointRecords.map((r) => ({
+              ...r,
+              affectedTargets: [...r.affectedTargets],
+              approval: r.approval ? { ...r.approval } : undefined
+            }))
+          : undefined
       };
     }
 

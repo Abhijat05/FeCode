@@ -149,4 +149,231 @@ describe("DefaultCheckpointManager — Phase 5G", () => {
     const discarded = await manager.get(id);
     expect(discarded?.status).toBe("discarded");
   });
+
+  describe("Phase 5Y — Checkpoint Continuity & Approval Lifecycle", () => {
+    it("manages complete approval lifecycle: request -> approve -> consume", async () => {
+      const store = new DefaultCheckpointStore(storeDir);
+      const manager = new DefaultCheckpointManager(store);
+
+      const record = await manager.requestApproval({
+        runId: "run-5y-1",
+        planId: "plan-5y-1",
+        stepId: "step-1",
+        stepOrder: 1,
+        riskLevel: "elevated",
+        reason: "Modifying sensitive auth files",
+        affectedTargets: ["src/auth.ts"],
+        cwd: tmpDir
+      });
+
+      expect(record.status).toBe("pending");
+      expect(record.riskLevel).toBe("elevated");
+      expect(record.affectedTargets).toEqual(["src/auth.ts"]);
+
+      // Approve
+      const approved = await manager.approve(record.checkpointId, {
+        approved: true,
+        approvedBy: "user",
+        decision: "approved",
+        timestamp: Date.now()
+      });
+      expect(approved.status).toBe("approved");
+
+      // Validate
+      const val = await manager.validateApproval(record.checkpointId, {
+        runId: "run-5y-1",
+        planId: "plan-5y-1",
+        stepId: "step-1",
+        riskLevel: "elevated",
+        cwd: tmpDir
+      });
+      expect(val.valid).toBe(true);
+
+      // Consume
+      const consumed = await manager.consume(record.checkpointId, {
+        runId: "run-5y-1",
+        planId: "plan-5y-1",
+        stepId: "step-1",
+        riskLevel: "elevated",
+        cwd: tmpDir
+      });
+      expect(consumed.success).toBe(true);
+      expect(consumed.status).toBe("consumed");
+
+      // Single-use guarantee: second consumption must fail
+      const secondConsume = await manager.consume(record.checkpointId, {
+        runId: "run-5y-1",
+        planId: "plan-5y-1",
+        stepId: "step-1",
+        riskLevel: "elevated",
+        cwd: tmpDir
+      });
+      expect(secondConsume.success).toBe(false);
+      expect(secondConsume.error).toContain("already been consumed");
+    });
+
+    it("handles rejection lifecycle cleanly", async () => {
+      const store = new DefaultCheckpointStore(storeDir);
+      const manager = new DefaultCheckpointManager(store);
+
+      const record = await manager.requestApproval({
+        runId: "run-5y-2",
+        planId: "plan-5y-2",
+        stepId: "step-1",
+        riskLevel: "critical",
+        reason: "Database schema migration",
+        affectedTargets: ["db/schema.sql"],
+        cwd: tmpDir
+      });
+
+      const rejected = await manager.reject(
+        record.checkpointId,
+        "User declined migration"
+      );
+      expect(rejected.status).toBe("rejected");
+      expect(rejected.invalidationReason).toBe("User declined migration");
+
+      const val = await manager.validateApproval(record.checkpointId, {
+        runId: "run-5y-2",
+        planId: "plan-5y-2",
+        stepId: "step-1",
+        riskLevel: "critical",
+        cwd: tmpDir
+      });
+      expect(val.valid).toBe(false);
+      expect(val.status).toBe("rejected");
+    });
+
+    it("invalidates approval on execution context mismatch (runId, planId, stepId)", async () => {
+      const store = new DefaultCheckpointStore(storeDir);
+      const manager = new DefaultCheckpointManager(store);
+
+      const record = await manager.requestApproval({
+        runId: "run-5y-3",
+        planId: "plan-5y-3",
+        stepId: "step-1",
+        riskLevel: "elevated",
+        reason: "Elevated task",
+        affectedTargets: ["src/config.ts"],
+        cwd: tmpDir
+      });
+
+      await manager.approve(record.checkpointId, {
+        approved: true,
+        approvedBy: "user",
+        decision: "approved",
+        timestamp: Date.now()
+      });
+
+      // Different Run ID
+      const valDiffRun = await manager.validateApproval(record.checkpointId, {
+        runId: "run-other",
+        planId: "plan-5y-3",
+        stepId: "step-1",
+        riskLevel: "elevated",
+        cwd: tmpDir
+      });
+      expect(valDiffRun.valid).toBe(false);
+      expect(valDiffRun.status).toBe("invalidated");
+      expect(valDiffRun.reason).toContain("Run ID mismatch");
+
+      // Reset record to approved
+      const record2 = await manager.requestApproval({
+        runId: "run-5y-3",
+        planId: "plan-5y-3",
+        stepId: "step-1",
+        riskLevel: "elevated",
+        reason: "Elevated task 2",
+        affectedTargets: ["src/config.ts"],
+        cwd: tmpDir
+      });
+      await manager.approve(record2.checkpointId, {
+        approved: true,
+        approvedBy: "user",
+        decision: "approved",
+        timestamp: Date.now()
+      });
+
+      // Different Step ID
+      const valDiffStep = await manager.validateApproval(record2.checkpointId, {
+        runId: "run-5y-3",
+        planId: "plan-5y-3",
+        stepId: "step-999",
+        riskLevel: "elevated",
+        cwd: tmpDir
+      });
+      expect(valDiffStep.valid).toBe(false);
+      expect(valDiffStep.status).toBe("invalidated");
+      expect(valDiffStep.reason).toContain("Step ID mismatch");
+    });
+
+    it("invalidates approval on risk level escalation", async () => {
+      const store = new DefaultCheckpointStore(storeDir);
+      const manager = new DefaultCheckpointManager(store);
+
+      const record = await manager.requestApproval({
+        runId: "run-5y-4",
+        planId: "plan-5y-4",
+        stepId: "step-1",
+        riskLevel: "normal",
+        reason: "Normal task",
+        affectedTargets: ["src/app.ts"],
+        cwd: tmpDir
+      });
+
+      await manager.approve(record.checkpointId, {
+        approved: true,
+        approvedBy: "user",
+        decision: "approved",
+        timestamp: Date.now()
+      });
+
+      // Risk escalated to critical
+      const val = await manager.validateApproval(record.checkpointId, {
+        runId: "run-5y-4",
+        planId: "plan-5y-4",
+        stepId: "step-1",
+        riskLevel: "critical",
+        cwd: tmpDir
+      });
+      expect(val.valid).toBe(false);
+      expect(val.status).toBe("invalidated");
+      expect(val.reason).toContain("Risk level escalated");
+    });
+
+    it("expires approval when TTL elapsed", async () => {
+      const store = new DefaultCheckpointStore(storeDir);
+      const manager = new DefaultCheckpointManager(store);
+
+      const record = await manager.requestApproval({
+        runId: "run-5y-5",
+        planId: "plan-5y-5",
+        stepId: "step-1",
+        riskLevel: "elevated",
+        reason: "Quick expiry task",
+        affectedTargets: ["src/app.ts"],
+        cwd: tmpDir,
+        ttlMs: -100 // already expired
+      });
+
+      await expect(
+        manager.approve(record.checkpointId, {
+          approved: true,
+          approvedBy: "user",
+          decision: "approved",
+          timestamp: Date.now()
+        })
+      ).rejects.toThrow("expired");
+
+      const val = await manager.validateApproval(record.checkpointId, {
+        runId: "run-5y-5",
+        planId: "plan-5y-5",
+        stepId: "step-1",
+        riskLevel: "elevated",
+        cwd: tmpDir
+      });
+      expect(val.valid).toBe(false);
+      expect(val.status).toBe("expired");
+    });
+  });
 });

@@ -95,4 +95,58 @@ export class CheckpointFormatter {
     text += `\nTotal:\n  +${comparison.totalAdditions} -${comparison.totalDeletions}\n`;
     return text;
   }
+
+  public static formatApprovalPrompt(params: {
+    planId?: string;
+    stepOrder?: number;
+    totalSteps?: number;
+    stepTitle?: string;
+    riskLevel: import("../policy/types.js").TaskRiskLevel;
+    reason: string;
+    affectedTargets: string[];
+  }): string {
+    const lines: string[] = ["⚠ Approval required", ""];
+
+    if (params.planId) {
+      lines.push(`Plan: ${params.planId}`);
+    }
+    if (params.stepOrder !== undefined) {
+      const total = params.totalSteps ? `/${params.totalSteps}` : "";
+      const title = params.stepTitle ? ` — ${params.stepTitle}` : "";
+      lines.push(`Step: ${params.stepOrder}${total}${title}`);
+    }
+
+    lines.push("");
+    lines.push(`Risk: ${params.riskLevel.toUpperCase()}`);
+    lines.push("");
+    lines.push("Reason:");
+    lines.push(sanitizeText(params.reason));
+
+    if (params.affectedTargets && params.affectedTargets.length > 0) {
+      lines.push("");
+      lines.push("Affected targets:");
+      for (const t of params.affectedTargets) {
+        lines.push(`  • ${sanitizeText(t)}`);
+      }
+    }
+
+    lines.push("");
+    lines.push("This approval is valid only for this execution step.");
+    lines.push("");
+    lines.push("Approve this operation? [y/N]:");
+
+    return lines.join("\n");
+  }
+
+  public static formatApprovalGranted(): string {
+    return "✓ Approval granted\nRe-validating workspace...\n✓ Checkpoint validated\nExecuting...\n";
+  }
+
+  public static formatApprovalRejected(): string {
+    return "Approval rejected.\nStep cancelled.\n";
+  }
+
+  public static formatApprovalInvalidated(reason: string): string {
+    return `⚠ Approval invalidated\n\nReason:\n${sanitizeText(reason)}\n\nA new approval is required.\n`;
+  }
 }

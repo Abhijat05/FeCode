@@ -448,7 +448,76 @@ export type AgentEvent =
   | { type: "recovery_completed"; runId?: string; checkpointId: string; success: boolean }
   | { type: "run_completed"; runId: string }
   | { type: "run_failed"; runId: string; code?: string; error?: string }
-  | { type: "run_cancelled"; runId: string };
+  | { type: "run_cancelled"; runId: string }
+  | {
+      type: "checkpoint_created";
+      checkpointId: string;
+      runId: string;
+      planId?: string;
+      stepId?: string;
+      riskLevel: import("./policy/types.js").TaskRiskLevel;
+      reason: string;
+      affectedTargets: string[];
+      timestamp: number;
+    }
+  | {
+      type: "checkpoint_approval_requested";
+      checkpointId: string;
+      runId: string;
+      planId?: string;
+      stepId?: string;
+      stepOrder?: number;
+      riskLevel: import("./policy/types.js").TaskRiskLevel;
+      reason: string;
+      affectedTargets: string[];
+      requiredAction?: string;
+      expiresAt?: number;
+      timestamp: number;
+    }
+  | {
+      type: "checkpoint_approved";
+      checkpointId: string;
+      runId: string;
+      planId?: string;
+      stepId?: string;
+      approvedBy: "user" | "policy";
+      timestamp: number;
+    }
+  | {
+      type: "checkpoint_rejected";
+      checkpointId: string;
+      runId: string;
+      planId?: string;
+      stepId?: string;
+      reason?: string;
+      timestamp: number;
+    }
+  | {
+      type: "checkpoint_invalidated";
+      checkpointId: string;
+      runId: string;
+      planId?: string;
+      stepId?: string;
+      reason: string;
+      timestamp: number;
+    }
+  | {
+      type: "checkpoint_expired";
+      checkpointId: string;
+      runId: string;
+      planId?: string;
+      stepId?: string;
+      timestamp: number;
+    }
+  | {
+      type: "checkpoint_consumed";
+      checkpointId: string;
+      runId: string;
+      planId?: string;
+      stepId?: string;
+      consumedAt: number;
+      timestamp: number;
+    };
 
 export * from "./runtime.js";
 export * from "./systemPrompt.js";

@@ -339,13 +339,14 @@ export class DefaultPlanExecutor implements PlanExecutor {
 
         const effectiveRisk = getHigherRisk(step.riskLevel, assessedRisk.level);
 
-        // 6. Checkpoint Enforcement
+        // 6. Checkpoint Enforcement & Approval Lifecycle
         if (
           (effectiveRisk === "elevated" ||
             effectiveRisk === "critical" ||
             assessedRisk.requiresCheckpoint) &&
           this.options.checkpointManager
         ) {
+          let cpRecord: import("../checkpoints/types.js").CheckpointRecord | undefined;
           try {
             const cpRes = await this.options.checkpointManager.create({
               cwd: context.cwd,
@@ -360,10 +361,182 @@ export class DefaultPlanExecutor implements PlanExecutor {
               stepErrorMsg = `Checkpoint creation failed: ${cpRes.error || "Unknown error"}. Mutation blocked for safety.`;
               break;
             }
+
+            if (this.options.checkpointManager.requestApproval) {
+              cpRecord = await this.options.checkpointManager.requestApproval({
+                runId: context.runId,
+                planId: activePlan.planId,
+                stepId: step.stepId,
+                stepOrder: step.order,
+                riskLevel: effectiveRisk,
+                reason:
+                  assessedRisk.reasons.join("; ") ||
+                  `Step ${step.stepId} mutation checkpoint (attempt ${attempt})`,
+                affectedTargets: targetFiles,
+                requiredAction: step.title,
+                cwd: context.cwd
+              });
+
+              yield {
+                type: "checkpoint_created",
+                checkpointId: cpRecord.checkpointId,
+                runId: context.runId,
+                planId: activePlan.planId,
+                stepId: step.stepId,
+                riskLevel: effectiveRisk,
+                reason: cpRecord.reason,
+                affectedTargets: targetFiles,
+                timestamp: Date.now()
+              };
+
+              yield {
+                type: "checkpoint_approval_requested",
+                checkpointId: cpRecord.checkpointId,
+                runId: context.runId,
+                planId: activePlan.planId,
+                stepId: step.stepId,
+                stepOrder: step.order,
+                riskLevel: effectiveRisk,
+                reason: cpRecord.reason,
+                affectedTargets: targetFiles,
+                requiredAction: step.title,
+                expiresAt: cpRecord.expiresAt,
+                timestamp: Date.now()
+              };
+
+              if (this.options.diagnosticsManager) {
+                this.options.diagnosticsManager.recordCheckpointRecord(
+                  context.runId,
+                  cpRecord
+                );
+              }
+            }
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
             stepErrorMsg = `Checkpoint creation failed: ${msg}. Mutation blocked for safety.`;
             break;
+          }
+
+          // Checkpoint approval boundary for elevated/critical mutating steps
+          if (
+            cpRecord &&
+            (assessedRisk.requiresExplicitApproval ||
+              effectiveRisk === "elevated" ||
+              effectiveRisk === "critical") &&
+            this.options.approvalResolver
+          ) {
+            const approvalRequest: ApprovalRequest = {
+              id: `approval-${step.stepId}-${attempt}-${Date.now()}`,
+              toolName: step.type,
+              category: "write",
+              arguments: { stepId: step.stepId, targetFiles },
+              reason:
+                assessedRisk.reasons.join("; ") ||
+                `Approval required for step ${step.stepId} (${step.title})`
+            };
+
+            const decision = await this.options.approvalResolver.resolve(
+              approvalRequest
+            );
+
+            if (decision.approved) {
+              if (this.options.checkpointManager.approve) {
+                const approvedRecord =
+                  await this.options.checkpointManager.approve(
+                    cpRecord.checkpointId,
+                    {
+                      approved: true,
+                      approvedBy: "user",
+                      decision: "approved",
+                      timestamp: Date.now()
+                    }
+                  );
+                if (this.options.diagnosticsManager) {
+                  this.options.diagnosticsManager.recordCheckpointRecord(
+                    context.runId,
+                    approvedRecord
+                  );
+                }
+              }
+
+              yield {
+                type: "checkpoint_approved",
+                checkpointId: cpRecord.checkpointId,
+                runId: context.runId,
+                planId: activePlan.planId,
+                stepId: step.stepId,
+                approvedBy: "user",
+                timestamp: Date.now()
+              };
+
+              // Validate and atomically consume checkpoint before execution
+              if (this.options.checkpointManager.consume) {
+                const consumeRes = await this.options.checkpointManager.consume(
+                  cpRecord.checkpointId,
+                  {
+                    runId: context.runId,
+                    planId: activePlan.planId,
+                    stepId: step.stepId,
+                    riskLevel: effectiveRisk,
+                    cwd: context.cwd,
+                    gitRepository: this.options.gitRepository
+                  }
+                );
+
+                if (!consumeRes.success) {
+                  yield {
+                    type: "checkpoint_invalidated",
+                    checkpointId: cpRecord.checkpointId,
+                    runId: context.runId,
+                    planId: activePlan.planId,
+                    stepId: step.stepId,
+                    reason:
+                      consumeRes.error ||
+                      "Checkpoint approval invalidated before consumption",
+                    timestamp: Date.now()
+                  };
+                  stepErrorMsg = `Checkpoint validation failed: ${consumeRes.error}. Protected execution blocked.`;
+                  break;
+                }
+
+                yield {
+                  type: "checkpoint_consumed",
+                  checkpointId: cpRecord.checkpointId,
+                  runId: context.runId,
+                  planId: activePlan.planId,
+                  stepId: step.stepId,
+                  consumedAt: consumeRes.consumedAt || Date.now(),
+                  timestamp: Date.now()
+                };
+              }
+            } else {
+              if (this.options.checkpointManager.reject) {
+                const rejectedRecord =
+                  await this.options.checkpointManager.reject(
+                    cpRecord.checkpointId,
+                    decision.reason
+                  );
+                if (this.options.diagnosticsManager) {
+                  this.options.diagnosticsManager.recordCheckpointRecord(
+                    context.runId,
+                    rejectedRecord
+                  );
+                }
+              }
+
+              yield {
+                type: "checkpoint_rejected",
+                checkpointId: cpRecord.checkpointId,
+                runId: context.runId,
+                planId: activePlan.planId,
+                stepId: step.stepId,
+                reason: decision.reason,
+                timestamp: Date.now()
+              };
+
+              stepErrorMsg = decision.reason || "Step cancelled by user.";
+              break;
+            }
           }
         }
 

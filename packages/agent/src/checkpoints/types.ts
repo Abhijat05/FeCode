@@ -1,17 +1,90 @@
 export type CheckpointStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "expired"
+  | "consumed"
+  | "invalidated"
+  | "cancelled"
   | "created"
   | "active"
   | "ready"
   | "restored"
   | "discarded"
-  | "invalid"
-  | "expired";
+  | "invalid";
 
 export interface CheckpointFile {
   path: string;
   status: string;
   hash?: string;
   size?: number;
+}
+
+export interface CheckpointApproval {
+  approved: boolean;
+  approvedBy: "user" | "policy";
+  decision: "approved" | "rejected";
+  timestamp: number;
+  reason?: string;
+}
+
+export interface CheckpointRecord {
+  checkpointId: string;
+  runId: string;
+  planId?: string;
+  stepId?: string;
+  stepOrder?: number;
+  createdAt: number;
+  expiresAt?: number;
+  riskLevel: import("../policy/types.js").TaskRiskLevel;
+  reason: string;
+  affectedTargets: string[];
+  requiredAction?: string;
+  status: CheckpointStatus;
+  approval?: CheckpointApproval;
+  consumedAt?: number;
+  invalidationReason?: string;
+  branch?: string | null;
+  fingerprint?: string;
+}
+
+export interface CheckpointValidationContext {
+  runId: string;
+  planId?: string;
+  stepId?: string;
+  riskLevel: import("../policy/types.js").TaskRiskLevel;
+  cwd: string;
+  affectedTargets?: string[];
+  gitRepository?: import("../git/types.js").GitRepository;
+}
+
+export interface CheckpointValidationResult {
+  valid: boolean;
+  status: CheckpointStatus;
+  checkpointId: string;
+  reason?: string;
+  invalidated?: boolean;
+}
+
+export interface CheckpointConsumptionResult {
+  success: boolean;
+  checkpointId: string;
+  status: CheckpointStatus;
+  consumedAt?: number;
+  error?: string;
+}
+
+export interface CheckpointApprovalRequest {
+  runId: string;
+  planId?: string;
+  stepId?: string;
+  stepOrder?: number;
+  riskLevel: import("../policy/types.js").TaskRiskLevel;
+  reason: string;
+  affectedTargets: string[];
+  requiredAction?: string;
+  cwd: string;
+  ttlMs?: number;
 }
 
 export interface Checkpoint {
@@ -111,4 +184,34 @@ export interface CheckpointManager {
     id: string,
     options?: import("../recovery/types.js").RecoveryOptions
   ): Promise<import("../recovery/types.js").RecoveryResult>;
+
+  requestApproval?(
+    request: CheckpointApprovalRequest
+  ): Promise<CheckpointRecord>;
+  approve?(
+    checkpointId: string,
+    approval: CheckpointApproval
+  ): Promise<CheckpointRecord>;
+  reject?(
+    checkpointId: string,
+    reason?: string
+  ): Promise<CheckpointRecord>;
+  validateApproval?(
+    checkpointId: string,
+    context: CheckpointValidationContext
+  ): Promise<CheckpointValidationResult>;
+  consume?(
+    checkpointId: string,
+    context: CheckpointValidationContext
+  ): Promise<CheckpointConsumptionResult>;
+  invalidate?(
+    checkpointId: string,
+    reason: string
+  ): Promise<CheckpointRecord>;
+  getRecord?(
+    checkpointId: string
+  ): Promise<CheckpointRecord | null>;
+  listRecords?(
+    filter?: { runId?: string; planId?: string; status?: CheckpointStatus }
+  ): Promise<CheckpointRecord[]>;
 }

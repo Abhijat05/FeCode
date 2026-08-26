@@ -120,6 +120,12 @@ export interface DurableRunRecord {
   lastContinuationDurationMs?: number;
   lastContinuationBlockingReasons?: string[];
   continuationFailureReason?: string;
+  checkpointRecordCount?: number;
+  lastCheckpointStatus?: import("../checkpoints/types.js").CheckpointStatus;
+  lastCheckpointId?: string;
+  lastCheckpointRiskLevel?: import("../policy/types.js").TaskRiskLevel;
+  lastCheckpointReason?: string;
+  checkpointRecords?: import("../checkpoints/types.js").CheckpointRecord[];
 }
 
 export interface RunHistoryStoreOptions {

@@ -1,17 +1,32 @@
 import type {
   Checkpoint,
+  CheckpointApproval,
+  CheckpointApprovalRequest,
   CheckpointComparison,
   CheckpointComparisonFile,
+  CheckpointConsumptionResult,
   CheckpointCreateOptions,
   CheckpointFile,
   CheckpointManager,
+  CheckpointRecord,
   CheckpointResult,
-  CheckpointStore
+  CheckpointStatus,
+  CheckpointStore,
+  CheckpointValidationContext,
+  CheckpointValidationResult
 } from "./types.js";
 import { DefaultCheckpointStore } from "./checkpointStore.js";
 import { DefaultGitRepository } from "../git/gitRepository.js";
 import type { GitRepository } from "../git/types.js";
+import type { TaskRiskLevel } from "../policy/types.js";
 import * as fs from "fs/promises";
+
+const RISK_LEVEL_ORDER: Record<TaskRiskLevel, number> = {
+  low: 1,
+  normal: 2,
+  elevated: 3,
+  critical: 4
+};
 
 function generateCheckpointId(): string {
   const now = new Date();
@@ -27,6 +42,7 @@ function generateCheckpointId(): string {
 export class DefaultCheckpointManager implements CheckpointManager {
   private readonly store: CheckpointStore;
   private readonly gitRepo: GitRepository;
+  private readonly records = new Map<string, CheckpointRecord>();
 
   constructor(store?: CheckpointStore, gitRepo?: GitRepository) {
     this.store = store || new DefaultCheckpointStore();
@@ -219,5 +235,301 @@ export class DefaultCheckpointManager implements CheckpointManager {
       this.gitRepo
     );
     return recoveryManager.recover(id, options);
+  }
+
+  // --- Phase 5Y Approval Lifecycle Methods ---
+
+  public async requestApproval(
+    request: CheckpointApprovalRequest
+  ): Promise<CheckpointRecord> {
+    const checkpointId = generateCheckpointId();
+    const now = Date.now();
+    const ttl = request.ttlMs ?? 300000; // default 5 minutes
+    const expiresAt = now + ttl;
+
+    let branch: string | null = null;
+    try {
+      if (await this.gitRepo.isRepository(request.cwd)) {
+        branch = await this.gitRepo.getBranch(request.cwd);
+      }
+    } catch {
+      // non-fatal
+    }
+
+    const record: CheckpointRecord = {
+      checkpointId,
+      runId: request.runId,
+      planId: request.planId,
+      stepId: request.stepId,
+      stepOrder: request.stepOrder,
+      createdAt: now,
+      expiresAt,
+      riskLevel: request.riskLevel,
+      reason: request.reason,
+      affectedTargets: [...request.affectedTargets],
+      requiredAction: request.requiredAction,
+      status: "pending",
+      branch
+    };
+
+    this.records.set(checkpointId, record);
+    return { ...record };
+  }
+
+  public async approve(
+    checkpointId: string,
+    approval: CheckpointApproval
+  ): Promise<CheckpointRecord> {
+    const record = this.records.get(checkpointId);
+    if (!record) {
+      throw new Error(`Checkpoint record not found: ${checkpointId}`);
+    }
+
+    if (record.expiresAt && Date.now() > record.expiresAt) {
+      record.status = "expired";
+      record.invalidationReason = "Checkpoint has expired";
+      throw new Error(`Checkpoint ${checkpointId} has expired`);
+    }
+
+    if (record.status !== "pending") {
+      throw new Error(
+        `Cannot approve checkpoint in status '${record.status}'. Only pending checkpoints can be approved.`
+      );
+    }
+
+    record.status = "approved";
+    record.approval = { ...approval };
+    return { ...record };
+  }
+
+  public async reject(
+    checkpointId: string,
+    reason?: string
+  ): Promise<CheckpointRecord> {
+    const record = this.records.get(checkpointId);
+    if (!record) {
+      throw new Error(`Checkpoint record not found: ${checkpointId}`);
+    }
+
+    if (record.status === "consumed") {
+      throw new Error(
+        `Cannot reject checkpoint ${checkpointId}: it has already been consumed.`
+      );
+    }
+
+    record.status = "rejected";
+    record.invalidationReason = reason || "Rejected by user";
+    record.approval = {
+      approved: false,
+      approvedBy: "user",
+      decision: "rejected",
+      timestamp: Date.now(),
+      reason: record.invalidationReason
+    };
+    return { ...record };
+  }
+
+  public async validateApproval(
+    checkpointId: string,
+    context: CheckpointValidationContext
+  ): Promise<CheckpointValidationResult> {
+    const record = this.records.get(checkpointId);
+    if (!record) {
+      return {
+        valid: false,
+        status: "invalid",
+        checkpointId,
+        reason: `Checkpoint record not found: ${checkpointId}`,
+        invalidated: true
+      };
+    }
+
+    // Check expiration
+    if (record.expiresAt && Date.now() > record.expiresAt) {
+      record.status = "expired";
+      record.invalidationReason = "Checkpoint has expired";
+      return {
+        valid: false,
+        status: "expired",
+        checkpointId,
+        reason: "Checkpoint has expired",
+        invalidated: true
+      };
+    }
+
+    // Check status is approved
+    if (record.status !== "approved") {
+      return {
+        valid: false,
+        status: record.status,
+        checkpointId,
+        reason: `Checkpoint is not in approved status (current status: ${record.status})`
+      };
+    }
+
+    // Check Run ID binding
+    if (record.runId !== context.runId) {
+      record.status = "invalidated";
+      record.invalidationReason = `Run ID mismatch: checkpoint belongs to run '${record.runId}', but validation attempted for run '${context.runId}'`;
+      return {
+        valid: false,
+        status: "invalidated",
+        checkpointId,
+        reason: record.invalidationReason,
+        invalidated: true
+      };
+    }
+
+    // Check Plan ID binding
+    if (record.planId && context.planId && record.planId !== context.planId) {
+      record.status = "invalidated";
+      record.invalidationReason = `Plan ID mismatch: checkpoint belongs to plan '${record.planId}', but validation attempted for plan '${context.planId}'`;
+      return {
+        valid: false,
+        status: "invalidated",
+        checkpointId,
+        reason: record.invalidationReason,
+        invalidated: true
+      };
+    }
+
+    // Check Step ID binding
+    if (record.stepId && context.stepId && record.stepId !== context.stepId) {
+      record.status = "invalidated";
+      record.invalidationReason = `Step ID mismatch: checkpoint belongs to step '${record.stepId}', but validation attempted for step '${context.stepId}'`;
+      return {
+        valid: false,
+        status: "invalidated",
+        checkpointId,
+        reason: record.invalidationReason,
+        invalidated: true
+      };
+    }
+
+    // Check Risk Level escalation
+    const recordRiskOrder = RISK_LEVEL_ORDER[record.riskLevel] ?? 2;
+    const contextRiskOrder = RISK_LEVEL_ORDER[context.riskLevel] ?? 2;
+    if (contextRiskOrder > recordRiskOrder) {
+      record.status = "invalidated";
+      record.invalidationReason = `Risk level escalated from '${record.riskLevel}' to '${context.riskLevel}'. A fresh approval is required.`;
+      return {
+        valid: false,
+        status: "invalidated",
+        checkpointId,
+        reason: record.invalidationReason,
+        invalidated: true
+      };
+    }
+
+    // Check Git branch change
+    if (record.branch && context.gitRepository) {
+      try {
+        const currentBranch = await context.gitRepository.getBranch(context.cwd);
+        if (currentBranch && currentBranch !== record.branch) {
+          record.status = "invalidated";
+          record.invalidationReason = `Git branch changed from '${record.branch}' to '${currentBranch}'. Workspace state has drifted.`;
+          return {
+            valid: false,
+            status: "invalidated",
+            checkpointId,
+            reason: record.invalidationReason,
+            invalidated: true
+          };
+        }
+      } catch {
+        // non-fatal
+      }
+    }
+
+    return {
+      valid: true,
+      status: "approved",
+      checkpointId
+    };
+  }
+
+  public async consume(
+    checkpointId: string,
+    context: CheckpointValidationContext
+  ): Promise<CheckpointConsumptionResult> {
+    const record = this.records.get(checkpointId);
+    if (!record) {
+      return {
+        success: false,
+        checkpointId,
+        status: "invalid",
+        error: `Checkpoint record not found: ${checkpointId}`
+      };
+    }
+
+    // If already consumed, single-use consumption strictly prevents reuse
+    if (record.status === "consumed") {
+      return {
+        success: false,
+        checkpointId,
+        status: "consumed",
+        error: `Checkpoint ${checkpointId} has already been consumed.`
+      };
+    }
+
+    const valResult = await this.validateApproval(checkpointId, context);
+    if (!valResult.valid) {
+      return {
+        success: false,
+        checkpointId,
+        status: valResult.status,
+        error: valResult.reason
+      };
+    }
+
+    // Atomic consumption transition
+    record.status = "consumed";
+    record.consumedAt = Date.now();
+
+    return {
+      success: true,
+      checkpointId,
+      status: "consumed",
+      consumedAt: record.consumedAt
+    };
+  }
+
+  public async invalidate(
+    checkpointId: string,
+    reason: string
+  ): Promise<CheckpointRecord> {
+    const record = this.records.get(checkpointId);
+    if (!record) {
+      throw new Error(`Checkpoint record not found: ${checkpointId}`);
+    }
+
+    record.status = "invalidated";
+    record.invalidationReason = reason;
+    return { ...record };
+  }
+
+  public async getRecord(
+    checkpointId: string
+  ): Promise<CheckpointRecord | null> {
+    const record = this.records.get(checkpointId);
+    return record ? { ...record } : null;
+  }
+
+  public async listRecords(filter?: {
+    runId?: string;
+    planId?: string;
+    status?: CheckpointStatus;
+  }): Promise<CheckpointRecord[]> {
+    let list = Array.from(this.records.values());
+    if (filter?.runId) {
+      list = list.filter((r) => r.runId === filter.runId);
+    }
+    if (filter?.planId) {
+      list = list.filter((r) => r.planId === filter.planId);
+    }
+    if (filter?.status) {
+      list = list.filter((r) => r.status === filter.status);
+    }
+    return list.map((r) => ({ ...r }));
   }
 }
