@@ -2194,6 +2194,82 @@ describe("CLI App Component", () => {
     expect(frame).toContain("[c] Re-check");
     expect(frame).toContain("[x] Cancel");
   });
+
+  it("Phase 5AC: derives UI state cleanly from runtime events during interactive CLI turns", async () => {
+    const { createInitialUIState, reduceUIState, selectApplicationShellProps } = await import("@fecode/agent");
+
+    let uiState = createInitialUIState({
+      cwd: "/test/prod-cli",
+      sessionId: "session-prod-cli"
+    });
+
+    expect(uiState.status).toBe("idle");
+    let shellProps = selectApplicationShellProps(uiState);
+    expect(shellProps.status).toBe("idle");
+    expect(shellProps.cwd).toBe("/test/prod-cli");
+
+    // Reduce run_started
+    uiState = reduceUIState(uiState, {
+      type: "run_started",
+      runId: "run-prod-cli-1"
+    });
+
+    expect(uiState.status).toBe("executing");
+    shellProps = selectApplicationShellProps(uiState);
+    expect(shellProps.status).toBe("executing");
+    expect(shellProps.runId).toBe("run-prod-cli-1");
+
+    // Reduce plan_step_waiting_approval
+    uiState = reduceUIState(uiState, {
+      type: "plan_step_waiting_approval",
+      runId: "run-prod-cli-1",
+      planId: "plan-1",
+      stepId: "step-1",
+      request: {
+        id: "req-1",
+        toolName: "edit_file",
+        category: "write",
+        arguments: { path: "src/app.ts" },
+        reason: "Write permission needed"
+      },
+      timestamp: Date.now()
+    });
+
+    expect(uiState.status).toBe("awaiting_step_approval");
+    shellProps = selectApplicationShellProps(uiState);
+    expect(shellProps.hasPendingApproval).toBe(true);
+
+    // Reduce approval granted
+    uiState = reduceUIState(uiState, {
+      type: "execution_handoff_approved",
+      runId: "run-prod-cli-1",
+      planId: "plan-1",
+      stepId: "step-1",
+      checkpointId: "cp-1",
+      approvedBy: "user",
+      timestamp: Date.now()
+    });
+
+    expect(uiState.status).toBe("executing");
+    shellProps = selectApplicationShellProps(uiState);
+    expect(shellProps.hasPendingApproval).toBe(false);
+
+    // Reduce plan completion
+    uiState = reduceUIState(uiState, {
+      type: "plan_execution_completed",
+      runId: "run-prod-cli-1",
+      planId: "plan-1",
+      completedSteps: 1,
+      totalSteps: 1,
+      durationMs: 250,
+      timestamp: Date.now()
+    });
+
+    expect(uiState.status).toBe("completed");
+    shellProps = selectApplicationShellProps(uiState);
+    expect(shellProps.status).toBe("completed");
+  });
 });
+
 
 

@@ -36,6 +36,8 @@ import {
   createChangeReview,
   type ChangeReviewFile
 } from "./editing/changeReview.js";
+import type { ProductRuntime } from "./product/types.js";
+import { DefaultProductRuntime } from "./product/productRuntime.js";
 
 export type AgentStatus =
   | "idle"
@@ -873,6 +875,27 @@ export class AgentRuntime implements Agent {
 
   public getDiagnosticsManager(): RunDiagnosticsManager {
     return this.diagnosticsManager;
+  }
+
+  public getGitRepository(): GitRepository | undefined {
+    return this.gitRepository;
+  }
+
+  public getApprovalResolver(): ApprovalResolver | undefined {
+    return this.approvalResolver;
+  }
+
+  public getProductRuntime(options?: {
+    initialCwd?: string;
+    initialSessionId?: string;
+  }): ProductRuntime {
+    return new DefaultProductRuntime({
+      agentRuntime: this,
+      gitRepository: this.gitRepository,
+      approvalResolver: this.approvalResolver,
+      initialCwd: options?.initialCwd,
+      initialSessionId: options?.initialSessionId
+    });
   }
 
   public assessTaskRisk(context: TaskRiskContext): TaskRiskAssessment {

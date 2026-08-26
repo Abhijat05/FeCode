@@ -653,3 +653,4 @@ export * from "./run/index.js";
 export * from "./diagnostics/index.js";
 export * from "./history/index.js";
 export * from "./planning/index.js";
+export * from "./product/index.js";
