@@ -160,6 +160,9 @@ export const App: React.FC<AppProps> = ({
     plan: import("@fecode/agent").TaskPlan;
     assessment: import("@fecode/agent").ExecutionRecoveryAssessment;
   } | null>(null);
+  const [pendingRecoveryContinuation, setPendingRecoveryContinuation] = useState<{
+    plan: import("@fecode/agent").TaskPlan;
+  } | null>(null);
 
   const persistState = useCallback(
     async (
@@ -279,6 +282,101 @@ export const App: React.FC<AppProps> = ({
     const trimmed = value.trim();
     if (!trimmed || isGenerating) return;
 
+    if (pendingRecoveryContinuation) {
+      setQuery("");
+      const prc = pendingRecoveryContinuation;
+      setPendingRecoveryContinuation(null);
+
+      const choice = trimmed.toLowerCase();
+      if (choice === "y" || choice === "yes") {
+        const contTurnId = `turn-${Date.now()}`;
+        setTurns((prev) => [
+          ...prev,
+          {
+            id: contTurnId,
+            prompt: trimmed,
+            response: `↻ Continuing plan ${prc.plan.planId}...\n`,
+            status: "streaming"
+          }
+        ]);
+
+        if (agent && "executeApprovedPlan" in agent) {
+          try {
+            for await (const ev of (
+              agent as {
+                executeApprovedPlan: (
+                  plan: import("@fecode/agent").TaskPlan,
+                  opts: { cwd: string }
+                ) => AsyncIterable<import("@fecode/agent").AgentEvent>;
+              }
+            ).executeApprovedPlan(prc.plan, { cwd })) {
+              if (ev.type === "plan_step_started") {
+                setTurns((prev) =>
+                  prev.map((t) =>
+                    t.id === contTurnId
+                      ? {
+                          ...t,
+                          response:
+                            t.response +
+                            `[${ev.stepIndex + 1}/${prc.plan.steps.length}] ${ev.title || "Step"} ... `
+                        }
+                      : t
+                  )
+                );
+              } else if (ev.type === "plan_step_completed") {
+                setTurns((prev) =>
+                  prev.map((t) =>
+                    t.id === contTurnId
+                      ? {
+                          ...t,
+                          response: t.response + "✓\n"
+                        }
+                      : t
+                  )
+                );
+              } else if (ev.type === "plan_execution_completed") {
+                setTurns((prev) =>
+                  prev.map((t) =>
+                    t.id === contTurnId
+                      ? {
+                          ...t,
+                          status: "done",
+                          response: t.response + `✓ Plan completed\n`
+                        }
+                      : t
+                  )
+                );
+              }
+            }
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            setTurns((prev) =>
+              prev.map((t) =>
+                t.id === contTurnId
+                  ? {
+                      ...t,
+                      status: "error",
+                      response: t.response + `✗ Continuation error: ${msg}\n`
+                    }
+                  : t
+              )
+            );
+          }
+        }
+      } else {
+        setTurns((prev) => [
+          ...prev,
+          {
+            id: `cmd-${Date.now()}`,
+            prompt: trimmed,
+            response: "✓ Continuation declined\n",
+            status: "done"
+          }
+        ]);
+      }
+      return;
+    }
+
     if (pendingRecovery) {
       setQuery("");
       const pr = pendingRecovery;
@@ -379,6 +477,86 @@ export const App: React.FC<AppProps> = ({
                       : t
                   )
                 );
+              } else if (ev.type === "recovery_outcome_determined") {
+                const outcomeText = PlanFormatter.formatRecoveryOutcome(ev.result);
+                if (
+                  ev.outcome === "recovered" ||
+                  ev.outcome === "recovered_with_changes"
+                ) {
+                  const incompleteSteps = pr.plan.steps.filter(
+                    (s) => s.status !== "completed" && s.status !== "skipped"
+                  );
+                  if (incompleteSteps.length > 0) {
+                    setPendingRecoveryContinuation({ plan: pr.plan });
+                    const contText = PlanFormatter.formatContinuationPrompt(
+                      pr.plan
+                    );
+                    setTurns((prev) =>
+                      prev.map((t) =>
+                        t.id === recTurnId
+                          ? {
+                              ...t,
+                              status: "done",
+                              response: `${outcomeText}\n\n${contText}\n`
+                            }
+                          : t
+                      )
+                    );
+                  } else {
+                    setTurns((prev) =>
+                      prev.map((t) =>
+                        t.id === recTurnId
+                          ? {
+                              ...t,
+                              status: "done",
+                              response: `${outcomeText}\n`
+                            }
+                          : t
+                      )
+                    );
+                  }
+                } else if (ev.outcome === "still_blocked") {
+                  const defaultAdaptation: import("@fecode/agent").PlanAdaptationAssessment = {
+                    planId: pr.plan.planId,
+                    assessedAt: Date.now(),
+                    canContinue: false,
+                    canRetry: false,
+                    canAdapt: true,
+                    feedback: [],
+                    affectedSteps: [...ev.result.affectedSteps],
+                    currentRiskLevel: "normal",
+                    requiresUserConfirmation: true,
+                    recommendedAction: "replan"
+                  };
+                  setPendingPlanBlocked({
+                    plan: pr.plan,
+                    assessment: defaultAdaptation,
+                    reconciliationResult: ev.result.reconciliationResult
+                  });
+                  setTurns((prev) =>
+                    prev.map((t) =>
+                      t.id === recTurnId
+                        ? {
+                            ...t,
+                            status: "done",
+                            response: `${outcomeText}\n`
+                          }
+                        : t
+                    )
+                  );
+                } else {
+                  setTurns((prev) =>
+                    prev.map((t) =>
+                      t.id === recTurnId
+                        ? {
+                            ...t,
+                            status: "done",
+                            response: `${outcomeText}\n`
+                          }
+                        : t
+                    )
+                  );
+                }
               } else if (ev.type === "recovery_completed") {
                 setTurns((prev) =>
                   prev.map((t) =>
@@ -386,38 +564,9 @@ export const App: React.FC<AppProps> = ({
                       ? {
                           ...t,
                           status: "done",
-                          response: t.response + `✓ Recovery completed\n`
-                        }
-                      : t
-                  )
-                );
-              } else if (
-                ev.type === "recovery_blocked" ||
-                ev.type === "recovery_failed"
-              ) {
-                setTurns((prev) =>
-                  prev.map((t) =>
-                    t.id === recTurnId
-                      ? {
-                          ...t,
-                          status: "done",
-                          response:
-                            t.response +
-                            `✗ Recovery ${ev.type === "recovery_blocked" ? "blocked" : "failed"}: ${ev.reason}\n`
-                        }
-                      : t
-                  )
-                );
-              } else if (ev.type === "recovery_cancelled") {
-                setTurns((prev) =>
-                  prev.map((t) =>
-                    t.id === recTurnId
-                      ? {
-                          ...t,
-                          status: "done",
-                          response:
-                            t.response +
-                            `✓ Recovery cancelled: ${ev.reason}\n`
+                          response: t.response.includes("Recovery completed")
+                            ? t.response
+                            : t.response + "✓ Recovery completed\n"
                         }
                       : t
                   )

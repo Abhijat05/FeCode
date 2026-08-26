@@ -7,10 +7,15 @@ import type {
   ExecutionRecoveryOptions,
   ExecutionRecoveryRequest,
   ExecutionRecoveryResult,
+  FailedRecoveryAction,
+  PlanStatus,
+  PlanVerificationResult,
+  RecoveryOutcomeStatus,
   RecoveryStrategy,
   RepairAction,
   TaskPlan
 } from "./types.js";
+import { transitionPlanStatus } from "./taskPlan.js";
 import type { AgentEvent } from "../index.js";
 import type { TaskRiskLevel } from "../policy/types.js";
 
@@ -259,17 +264,33 @@ export class DefaultExecutionRecoveryManager implements ExecutionRecoveryManager
         planId: plan.planId,
         strategy: assessment.strategy,
         status: "cancelled",
+        outcome: "cancelled",
         startedAt: startTime,
         completedAt: Date.now(),
         durationMs: Date.now() - startTime,
-        affectedSteps: assessment.affectedSteps,
+        affectedSteps: [...assessment.affectedSteps],
+        completedRecoveryActions: [],
+        failedRecoveryActions: [],
         repairedFiles: [],
+        workspaceConsistent: false,
+        finalPlanStatus: plan.status,
+        cancellationReason: "Recovery cancelled by signal",
         failureReason: "Recovery cancelled by signal",
         parentRecoveryId: options.parentRecoveryId,
         recoveryDepth: assessment.recoveryDepth
       });
 
       this.recordResult(plan.planId, cancelResult);
+
+      yield {
+        type: "recovery_outcome_determined",
+        recoveryId,
+        runId,
+        planId: plan.planId,
+        outcome: "cancelled",
+        result: cancelResult,
+        timestamp: Date.now()
+      };
 
       yield {
         type: "recovery_cancelled",
@@ -291,20 +312,34 @@ export class DefaultExecutionRecoveryManager implements ExecutionRecoveryManager
       timestamp: Date.now()
     };
 
+    const completedRecoveryActions: RepairAction[] = [];
+    const failedRecoveryActions: FailedRecoveryAction[] = [];
     const repairedFiles: string[] = [];
 
     if (assessment.strategy === "cancel") {
+      try {
+        transitionPlanStatus(plan, "cancelled");
+      } catch {
+        // ignore
+      }
+
       const cancelResult: ExecutionRecoveryResult = Object.freeze({
         recoveryId,
         runId,
         planId: plan.planId,
         strategy: "cancel",
         status: "cancelled",
+        outcome: "cancelled",
         startedAt: startTime,
         completedAt: Date.now(),
         durationMs: Date.now() - startTime,
-        affectedSteps: assessment.affectedSteps,
+        affectedSteps: [...assessment.affectedSteps],
+        completedRecoveryActions: [],
+        failedRecoveryActions: [],
         repairedFiles: [],
+        workspaceConsistent: false,
+        finalPlanStatus: plan.status,
+        cancellationReason: options.reason || "Recovery cancelled by user request",
         parentRecoveryId: options.parentRecoveryId,
         recoveryDepth: assessment.recoveryDepth
       });
@@ -312,17 +347,69 @@ export class DefaultExecutionRecoveryManager implements ExecutionRecoveryManager
       this.recordResult(plan.planId, cancelResult);
 
       yield {
+        type: "recovery_outcome_determined",
+        recoveryId,
+        runId,
+        planId: plan.planId,
+        outcome: "cancelled",
+        result: cancelResult,
+        timestamp: Date.now()
+      };
+
+      yield {
         type: "recovery_cancelled",
         recoveryId,
         runId,
         planId: plan.planId,
-        reason: "Recovery cancelled by user request",
+        reason: options.reason || "Recovery cancelled by user request",
         timestamp: Date.now()
       };
       return;
     }
 
     if (assessment.strategy === "replan") {
+      if (!this.options.replanManager) {
+        const failedResult: ExecutionRecoveryResult = Object.freeze({
+          recoveryId,
+          runId,
+          planId: plan.planId,
+          strategy: "replan",
+          status: "failed",
+          outcome: "failed",
+          startedAt: startTime,
+          completedAt: Date.now(),
+          durationMs: Date.now() - startTime,
+          affectedSteps: [...assessment.affectedSteps],
+          completedRecoveryActions: [],
+          failedRecoveryActions: [],
+          repairedFiles: [],
+          workspaceConsistent: false,
+          finalPlanStatus: "failed",
+          failureReason: "ReplanManager is not configured",
+          parentRecoveryId: options.parentRecoveryId,
+          recoveryDepth: assessment.recoveryDepth
+        });
+
+        this.recordResult(plan.planId, failedResult);
+
+        yield {
+          type: "recovery_outcome_determined",
+          recoveryId,
+          runId,
+          planId: plan.planId,
+          outcome: "failed",
+          result: failedResult,
+          timestamp: Date.now()
+        };
+
+        yield {
+          type: "recovery_failed",
+          result: failedResult,
+          reason: "ReplanManager is not configured",
+          timestamp: Date.now()
+        };
+        return;
+      }
       const replanResult = await this.options.replanManager.executeReplan({
         runId,
         previousPlanId: plan.planId,
@@ -332,24 +419,61 @@ export class DefaultExecutionRecoveryManager implements ExecutionRecoveryManager
         requestedBy: "user"
       });
 
+      const outcome: RecoveryOutcomeStatus =
+        replanResult.status === "created" ? "recovered" : "failed";
+
+      let finalPlanStatus: PlanStatus = plan.status;
+      if (replanResult.status === "created") {
+        try {
+          const updated = transitionPlanStatus(plan, "superseded");
+          plan.status = updated.status;
+          finalPlanStatus = "superseded";
+        } catch {
+          // ignore
+        }
+      } else {
+        try {
+          const updated = transitionPlanStatus(plan, "failed");
+          plan.status = updated.status;
+          finalPlanStatus = "failed";
+        } catch {
+          // ignore
+        }
+      }
+
       const recoveryRes: ExecutionRecoveryResult = Object.freeze({
         recoveryId,
         runId,
         planId: plan.planId,
         strategy: "replan",
-        status: replanResult.status === "created" ? "completed" : "failed",
+        status: outcome === "recovered" ? "completed" : "failed",
+        outcome,
         startedAt: startTime,
         completedAt: Date.now(),
         durationMs: Date.now() - startTime,
-        affectedSteps: assessment.affectedSteps,
+        affectedSteps: [...assessment.affectedSteps],
+        completedRecoveryActions: [],
+        failedRecoveryActions: [],
         repairedFiles: [],
         replanResult,
+        workspaceConsistent: replanResult.status === "created",
+        finalPlanStatus,
         failureReason: replanResult.status !== "created" ? replanResult.reason : undefined,
         parentRecoveryId: options.parentRecoveryId,
         recoveryDepth: assessment.recoveryDepth
       });
 
       this.recordResult(plan.planId, recoveryRes);
+
+      yield {
+        type: "recovery_outcome_determined",
+        recoveryId,
+        runId,
+        planId: plan.planId,
+        outcome,
+        result: recoveryRes,
+        timestamp: Date.now()
+      };
 
       if (replanResult.status === "created") {
         yield {
@@ -373,7 +497,13 @@ export class DefaultExecutionRecoveryManager implements ExecutionRecoveryManager
       const totalSteps = assessment.repairActions.length;
 
       for (const action of assessment.repairActions) {
-        if (options.signal?.aborted) break;
+        if (options.signal?.aborted) {
+          failedRecoveryActions.push({
+            action: { ...action },
+            error: "Action cancelled by abort signal"
+          });
+          break;
+        }
 
         yield {
           type: "recovery_step_started",
@@ -388,29 +518,52 @@ export class DefaultExecutionRecoveryManager implements ExecutionRecoveryManager
           ? action.target
           : path.join(options.cwd, action.target);
 
-        this.options.executionPolicy.assess({
-          userMessage: `Repair ${action.target}`,
-          cwd: options.cwd,
-          affectedFiles: [action.target],
-          operations: ["repair", "write_file"]
-        });
+        try {
+          this.options.executionPolicy.assess({
+            userMessage: `Repair ${action.target}`,
+            cwd: options.cwd,
+            affectedFiles: [action.target],
+            operations: ["repair", "write_file"]
+          });
 
-        await fs.mkdir(path.dirname(targetFullPath), { recursive: true });
-        await fs.writeFile(targetFullPath, action.content || "", "utf-8");
-        repairedFiles.push(action.target);
+          await fs.mkdir(path.dirname(targetFullPath), { recursive: true });
+          await fs.writeFile(targetFullPath, action.content || "", "utf-8");
 
-        yield {
-          type: "recovery_step_completed",
-          recoveryId,
-          stepIndex: stepIdx,
-          totalSteps,
-          title: `Repair ${action.target}`,
-          success: true,
-          timestamp: Date.now()
-        };
+          completedRecoveryActions.push({ ...action });
+          repairedFiles.push(action.target);
+
+          yield {
+            type: "recovery_step_completed",
+            recoveryId,
+            stepIndex: stepIdx,
+            totalSteps,
+            title: `Repair ${action.target}`,
+            success: true,
+            timestamp: Date.now()
+          };
+        } catch (err: unknown) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          failedRecoveryActions.push({
+            action: { ...action },
+            error: errMsg
+          });
+
+          yield {
+            type: "recovery_step_completed",
+            recoveryId,
+            stepIndex: stepIdx,
+            totalSteps,
+            title: `Repair ${action.target}`,
+            success: false,
+            timestamp: Date.now()
+          };
+        }
         stepIdx++;
       }
     }
+
+    let verificationResult: PlanVerificationResult | undefined;
+    let verificationPassed = true;
 
     if (this.options.commandExecutor) {
       const vCmd = "npm test";
@@ -421,26 +574,47 @@ export class DefaultExecutionRecoveryManager implements ExecutionRecoveryManager
         timestamp: Date.now()
       };
 
+      const vStart = Date.now();
       try {
         const cmdRes = await this.options.commandExecutor.execute(vCmd, {
           cwd: options.cwd
         });
-        yield {
-          type: "recovery_verification_completed",
-          recoveryId,
+        const success = cmdRes.exitCode === 0;
+        verificationPassed = success;
+        verificationResult = {
+          planId: plan.planId,
+          stepId: "recovery-verification",
           command: vCmd,
-          success: cmdRes.exitCode === 0,
-          timestamp: Date.now()
+          succeeded: success,
+          success,
+          exitCode: cmdRes.exitCode,
+          durationMs: Date.now() - vStart,
+          failureReason: !success
+            ? `Command exited with code ${cmdRes.exitCode}`
+            : undefined
         };
-      } catch {
-        yield {
-          type: "recovery_verification_completed",
-          recoveryId,
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        verificationPassed = false;
+        verificationResult = {
+          planId: plan.planId,
+          stepId: "recovery-verification",
           command: vCmd,
+          succeeded: false,
           success: false,
-          timestamp: Date.now()
+          exitCode: 1,
+          durationMs: Date.now() - vStart,
+          failureReason: errMsg
         };
       }
+
+      yield {
+        type: "recovery_verification_completed",
+        recoveryId,
+        command: vCmd,
+        success: verificationPassed,
+        timestamp: Date.now()
+      };
     }
 
     yield {
@@ -454,7 +628,7 @@ export class DefaultExecutionRecoveryManager implements ExecutionRecoveryManager
       plan,
       cwd: options.cwd,
       gitRepository: this.options.gitRepository,
-      verificationPassed: true
+      verificationPassed
     });
 
     yield {
@@ -464,38 +638,170 @@ export class DefaultExecutionRecoveryManager implements ExecutionRecoveryManager
       timestamp: Date.now()
     };
 
-    const finalStatus = reconResult.consistent ? "completed" : "blocked";
+    let outcome: RecoveryOutcomeStatus;
+    const blockingReasons: string[] = [];
+
+    if (options.signal?.aborted) {
+      outcome = "cancelled";
+    } else if (verificationPassed && reconResult.consistent) {
+      if (
+        reconResult.workspaceChanged ||
+        reconResult.changedFiles.length > 0 ||
+        failedRecoveryActions.length > 0
+      ) {
+        outcome = "recovered_with_changes";
+      } else {
+        outcome = "recovered";
+      }
+    } else {
+      outcome = "still_blocked";
+      if (!verificationPassed) {
+        blockingReasons.push(
+          verificationResult?.failureReason || "Verification checks failed"
+        );
+      }
+      if (!reconResult.consistent && reconResult.failureReason) {
+        blockingReasons.push(reconResult.failureReason);
+      }
+      for (const f of failedRecoveryActions) {
+        blockingReasons.push(
+          `Failed to repair ${f.action.target}: ${f.error}`
+        );
+      }
+    }
+
+    let finalPlanStatus: PlanStatus = plan.status;
+    if (outcome === "recovered" || outcome === "recovered_with_changes") {
+      const allStepsDone = plan.steps.every(
+        (s) => s.status === "completed" || s.status === "skipped"
+      );
+      if (allStepsDone) {
+        try {
+          const updated = transitionPlanStatus(plan, "completed");
+          plan.status = updated.status;
+          finalPlanStatus = "completed";
+        } catch {
+          // ignore
+        }
+      } else {
+        try {
+          const updated = transitionPlanStatus(plan, "executing");
+          plan.status = updated.status;
+          finalPlanStatus = "executing";
+        } catch {
+          // ignore
+        }
+      }
+    } else if (outcome === "still_blocked") {
+      try {
+        if (plan.status !== "blocked") {
+          const updated = transitionPlanStatus(plan, "blocked");
+          plan.status = updated.status;
+        }
+        finalPlanStatus = "blocked";
+      } catch {
+        finalPlanStatus = plan.status;
+      }
+    } else if (outcome === "cancelled") {
+      try {
+        const updated = transitionPlanStatus(plan, "cancelled");
+        plan.status = updated.status;
+        finalPlanStatus = "cancelled";
+      } catch {
+        finalPlanStatus = plan.status;
+      }
+    } else if (outcome === "failed") {
+      try {
+        const updated = transitionPlanStatus(plan, "failed");
+        plan.status = updated.status;
+        finalPlanStatus = "failed";
+      } catch {
+        finalPlanStatus = plan.status;
+      }
+    }
 
     const finalResult: ExecutionRecoveryResult = Object.freeze({
       recoveryId,
       runId,
       planId: plan.planId,
       strategy: assessment.strategy,
-      status: finalStatus,
+      status:
+        outcome === "recovered" || outcome === "recovered_with_changes"
+          ? "completed"
+          : outcome === "still_blocked"
+            ? "blocked"
+            : outcome,
+      outcome,
       startedAt: startTime,
       completedAt: Date.now(),
       durationMs: Date.now() - startTime,
-      affectedSteps: assessment.affectedSteps,
-      repairedFiles,
+      affectedSteps: [...assessment.affectedSteps],
+      completedRecoveryActions: [...completedRecoveryActions],
+      failedRecoveryActions: failedRecoveryActions.map((f) => ({
+        action: { ...f.action },
+        error: f.error
+      })),
+      repairedFiles: [...repairedFiles],
+      verificationResult: verificationResult ? { ...verificationResult } : undefined,
       reconciliationResult: reconResult,
-      failureReason: !reconResult.consistent ? reconResult.failureReason : undefined,
+      workspaceConsistent: reconResult.consistent,
+      finalPlanStatus,
+      failureReason:
+        outcome !== "recovered" && outcome !== "recovered_with_changes"
+          ? blockingReasons[0] || reconResult.failureReason
+          : undefined,
+      blockingReasons: blockingReasons.length > 0 ? [...blockingReasons] : undefined,
       parentRecoveryId: options.parentRecoveryId,
       recoveryDepth: assessment.recoveryDepth
     });
 
     this.recordResult(plan.planId, finalResult);
 
-    if (reconResult.consistent) {
+    yield {
+      type: "recovery_outcome_determined",
+      recoveryId,
+      runId,
+      planId: plan.planId,
+      outcome,
+      result: finalResult,
+      timestamp: Date.now()
+    };
+
+    if (outcome === "recovered" || outcome === "recovered_with_changes") {
       yield {
         type: "recovery_completed",
         result: finalResult,
         timestamp: Date.now()
       };
-    } else {
+    } else if (outcome === "still_blocked") {
+      yield {
+        type: "recovery_still_blocked",
+        recoveryId,
+        planId: plan.planId,
+        result: finalResult,
+        blockingReasons,
+        timestamp: Date.now()
+      };
       yield {
         type: "recovery_blocked",
         result: finalResult,
-        reason: reconResult.failureReason || "Workspace reconciliation inconsistent after recovery",
+        reason: blockingReasons.join("; ") || "Recovery remains blocked",
+        timestamp: Date.now()
+      };
+    } else if (outcome === "cancelled") {
+      yield {
+        type: "recovery_cancelled",
+        recoveryId,
+        runId,
+        planId: plan.planId,
+        reason: options.reason || "Recovery cancelled",
+        timestamp: Date.now()
+      };
+    } else {
+      yield {
+        type: "recovery_failed",
+        result: finalResult,
+        reason: finalResult.failureReason || "Recovery failed",
         timestamp: Date.now()
       };
     }

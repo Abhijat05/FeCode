@@ -1885,6 +1885,278 @@ describe("CLI App Component", () => {
     frame = lastFrame();
     expect(frame).toContain("✓ Recovery cancelled");
   });
+
+  it("handles recovery outcome determined and prompts for continuation when steps remain", async () => {
+    const mockAgent = new MockAgent();
+    const plan = {
+      planId: "plan-5w-cli-1",
+      runId: "run-5w-cli-1",
+      createdAt: Date.now(),
+      userRequestSummary: "Multi-step build",
+      objective: "Build app",
+      status: "blocked" as const,
+      steps: [
+        {
+          stepId: "step-1",
+          order: 1,
+          title: "Step 1 Repair",
+          objective: "Repair",
+          type: "modify" as const,
+          dependencies: [],
+          riskLevel: "normal" as const,
+          verificationRequired: false,
+          status: "completed" as const,
+          expectedFiles: ["src/app.ts"]
+        },
+        {
+          stepId: "step-2",
+          order: 2,
+          title: "Step 2 Next",
+          objective: "Next",
+          type: "modify" as const,
+          dependencies: ["step-1"],
+          riskLevel: "low" as const,
+          verificationRequired: false,
+          status: "pending" as const
+        }
+      ],
+      risks: []
+    };
+
+    mockAgent.getTaskPlan = () => plan;
+
+    (mockAgent as unknown as { assessExecutionRecovery: () => Promise<unknown> }).assessExecutionRecovery = async () => ({
+      eligible: true,
+      strategy: "repair",
+      riskLevel: "normal",
+      riskReasons: [],
+      workspaceDrift: false,
+      affectedSteps: ["step-1"],
+      affectedFiles: ["src/app.ts"],
+      requiresExplicitApproval: true,
+      reason: "Missing expected file: src/app.ts",
+      recoveryDepth: 0,
+      maxRecoveryDepth: 5,
+      isLimitReached: false
+    });
+
+    (mockAgent as unknown as { executeExecutionRecovery: () => AsyncIterable<unknown> }).executeExecutionRecovery = async function* () {
+      yield {
+        type: "recovery_outcome_determined",
+        recoveryId: "rec-5w-1",
+        runId: "run-5w-cli-1",
+        planId: "plan-5w-cli-1",
+        outcome: "recovered",
+        result: {
+          recoveryId: "rec-5w-1",
+          runId: "run-5w-cli-1",
+          planId: "plan-5w-cli-1",
+          strategy: "repair",
+          status: "completed",
+          outcome: "recovered",
+          startedAt: Date.now() - 50,
+          completedAt: Date.now(),
+          durationMs: 50,
+          affectedSteps: ["step-1"],
+          repairedFiles: ["src/app.ts"],
+          completedRecoveryActions: [],
+          failedRecoveryActions: [],
+          workspaceConsistent: true,
+          finalPlanStatus: "executing",
+          recoveryDepth: 0
+        },
+        timestamp: Date.now()
+      };
+    };
+
+    (mockAgent as unknown as { executeApprovedPlan: () => AsyncIterable<unknown> }).executeApprovedPlan = async function* () {
+      yield {
+        type: "plan_step_started",
+        planId: "plan-5w-cli-1",
+        stepId: "step-2",
+        stepIndex: 1,
+        title: "Step 2 Next",
+        timestamp: Date.now()
+      };
+      yield {
+        type: "plan_step_completed",
+        planId: "plan-5w-cli-1",
+        stepId: "step-2",
+        stepIndex: 1,
+        durationMs: 20,
+        timestamp: Date.now()
+      };
+      yield {
+        type: "plan_execution_completed",
+        planId: "plan-5w-cli-1",
+        completedSteps: 2,
+        totalSteps: 2,
+        durationMs: 50,
+        timestamp: Date.now()
+      };
+    };
+
+    mockAgent.runFn = async function* () {
+      yield {
+        type: "final_reconciliation_failed",
+        result: {
+          reconciliationId: "recon-5w-cli",
+          runId: "run-5w-cli-1",
+          planId: "plan-5w-cli-1",
+          status: "inconsistent",
+          checkedAt: Date.now(),
+          expectedFiles: ["src/app.ts"],
+          modifiedFiles: [],
+          unexpectedFiles: [],
+          missingFiles: ["src/app.ts"],
+          changedFiles: [],
+          branchChanged: false,
+          workspaceChanged: false,
+          verificationPassed: true,
+          consistent: false,
+          failureReason: "Missing expected file: src/app.ts"
+        },
+        timestamp: Date.now()
+      };
+    };
+
+    const { lastFrame, stdin } = render(
+      <App agent={mockAgent} cwd="/test/dir" />
+    );
+    await delay(50);
+
+    await typeAndSubmit(stdin, "Build app");
+    await delay(200);
+
+    // Choose [r] to recover
+    await typeAndSubmit(stdin, "r");
+    await delay(150);
+
+    // Confirm recovery with "y"
+    await typeAndSubmit(stdin, "y");
+    await delay(150);
+
+    let frame = lastFrame();
+    expect(frame).toContain("Recovery outcome: RECOVERED");
+    expect(frame).toContain("Continue remaining plan steps? [y/N]:");
+
+    // Approve continuation with "y"
+    await typeAndSubmit(stdin, "y");
+    await delay(150);
+
+    frame = lastFrame();
+    expect(frame).toContain("Continuing plan plan-5w-cli-1");
+    expect(frame).toContain("[2/2] Step 2 Next ... ✓");
+    expect(frame).toContain("✓ Plan completed");
+  });
+
+  it("handles recovery outcome 'still_blocked' and presents decision choices", async () => {
+    const mockAgent = new MockAgent();
+    const plan = {
+      planId: "plan-5w-cli-2",
+      runId: "run-5w-cli-2",
+      createdAt: Date.now(),
+      userRequestSummary: "Broken app",
+      objective: "Fix app",
+      status: "blocked" as const,
+      steps: [],
+      risks: []
+    };
+
+    mockAgent.getTaskPlan = () => plan;
+
+    (mockAgent as unknown as { assessExecutionRecovery: () => Promise<unknown> }).assessExecutionRecovery = async () => ({
+      eligible: true,
+      strategy: "repair",
+      riskLevel: "normal",
+      riskReasons: [],
+      workspaceDrift: false,
+      affectedSteps: [],
+      affectedFiles: ["src/broken.ts"],
+      requiresExplicitApproval: true,
+      reason: "Missing src/broken.ts",
+      recoveryDepth: 0,
+      maxRecoveryDepth: 5,
+      isLimitReached: false
+    });
+
+    (mockAgent as unknown as { executeExecutionRecovery: () => AsyncIterable<unknown> }).executeExecutionRecovery = async function* () {
+      yield {
+        type: "recovery_outcome_determined",
+        recoveryId: "rec-5w-2",
+        runId: "run-5w-cli-2",
+        planId: "plan-5w-cli-2",
+        outcome: "still_blocked",
+        result: {
+          recoveryId: "rec-5w-2",
+          runId: "run-5w-cli-2",
+          planId: "plan-5w-cli-2",
+          strategy: "repair",
+          status: "blocked",
+          outcome: "still_blocked",
+          startedAt: Date.now() - 50,
+          completedAt: Date.now(),
+          durationMs: 50,
+          affectedSteps: [],
+          repairedFiles: [],
+          completedRecoveryActions: [],
+          failedRecoveryActions: [],
+          blockingReasons: ["Type check failed: 2 errors"],
+          workspaceConsistent: false,
+          finalPlanStatus: "blocked",
+          recoveryDepth: 0
+        },
+        timestamp: Date.now()
+      };
+    };
+
+    mockAgent.runFn = async function* () {
+      yield {
+        type: "final_reconciliation_failed",
+        result: {
+          reconciliationId: "recon-5w-cli-2",
+          runId: "run-5w-cli-2",
+          planId: "plan-5w-cli-2",
+          status: "inconsistent",
+          checkedAt: Date.now(),
+          expectedFiles: ["src/broken.ts"],
+          modifiedFiles: [],
+          unexpectedFiles: [],
+          missingFiles: ["src/broken.ts"],
+          changedFiles: [],
+          branchChanged: false,
+          workspaceChanged: false,
+          verificationPassed: false,
+          consistent: false,
+          failureReason: "Missing expected file: src/broken.ts"
+        },
+        timestamp: Date.now()
+      };
+    };
+
+    const { lastFrame, stdin } = render(
+      <App agent={mockAgent} cwd="/test/dir" />
+    );
+    await delay(50);
+
+    await typeAndSubmit(stdin, "Fix app");
+    await delay(200);
+
+    // Choose [r] to recover
+    await typeAndSubmit(stdin, "r");
+    await delay(150);
+
+    // Confirm recovery with "y"
+    await typeAndSubmit(stdin, "y");
+    await delay(150);
+
+    const frame = lastFrame();
+    expect(frame).toContain("Recovery outcome: STILL BLOCKED");
+    expect(frame).toContain("Type check failed: 2 errors");
+    expect(frame).toContain("[r] Replan");
+    expect(frame).toContain("[c] Re-check");
+    expect(frame).toContain("[x] Cancel");
+  });
 });
 
 

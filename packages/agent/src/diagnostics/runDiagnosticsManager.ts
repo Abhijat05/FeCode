@@ -296,8 +296,16 @@ export class DefaultRunDiagnosticsManager implements RunDiagnosticsManager {
     runId: string,
     assessment: import("../planning/types.js").ExecutionRecoveryAssessment
   ): void {
-    const summary = this.runSummaries.get(runId);
-    if (!summary) return;
+    let summary = this.runSummaries.get(runId);
+    if (!summary) {
+      this.startRun({
+        runId,
+        cwd: process.cwd(),
+        userRequest: "Execution recovery"
+      });
+      summary = this.runSummaries.get(runId);
+      if (!summary) return;
+    }
 
     summary.lastRecoveryStrategy = assessment.strategy;
     if (assessment.reason) {
@@ -309,14 +317,42 @@ export class DefaultRunDiagnosticsManager implements RunDiagnosticsManager {
     runId: string,
     result: import("../planning/types.js").ExecutionRecoveryResult
   ): void {
-    const summary = this.runSummaries.get(runId);
-    if (!summary) return;
+    let summary = this.runSummaries.get(runId);
+    if (!summary) {
+      this.startRun({
+        runId,
+        cwd: process.cwd(),
+        userRequest: "Execution recovery"
+      });
+      summary = this.runSummaries.get(runId);
+      if (!summary) return;
+    }
 
     summary.executionRecoveryCount = (summary.executionRecoveryCount || 0) + 1;
     summary.lastRecoveryStrategy = result.strategy;
     summary.lastRecoveryStatus = result.status;
+    summary.lastRecoveryOutcome = result.outcome;
     summary.lastRecoveryDurationMs = result.durationMs;
     summary.repairedFiles = result.repairedFiles ? [...result.repairedFiles] : [];
+    summary.lastRecoveryWorkspaceConsistent = result.workspaceConsistent;
+    summary.lastRecoveryFinalPlanStatus = result.finalPlanStatus;
+
+    if (result.completedRecoveryActions) {
+      summary.lastRecoveryCompletedActions = result.completedRecoveryActions.map(
+        (a) => ({ ...a })
+      );
+    }
+    if (result.failedRecoveryActions) {
+      summary.lastRecoveryFailedActions = result.failedRecoveryActions.map((f) => ({
+        action: { ...f.action },
+        error: sanitizeString(f.error)
+      }));
+    }
+    if (result.blockingReasons) {
+      summary.lastRecoveryBlockingReasons = result.blockingReasons.map((r) =>
+        sanitizeString(r)
+      );
+    }
 
     if (result.failureReason) {
       summary.recoveryFailureReason = sanitizeString(result.failureReason);

@@ -330,6 +330,36 @@ export type AgentEvent =
       timestamp: number;
     }
   | {
+      type: "recovery_outcome_determined";
+      recoveryId: string;
+      runId: string;
+      planId: string;
+      outcome: import("./planning/types.js").RecoveryOutcomeStatus;
+      result: import("./planning/types.js").ExecutionRecoveryResult;
+      timestamp: number;
+    }
+  | {
+      type: "recovery_continuation_started";
+      recoveryId: string;
+      planId: string;
+      nextStepId: string;
+      timestamp: number;
+    }
+  | {
+      type: "recovery_continuation_completed";
+      recoveryId: string;
+      planId: string;
+      timestamp: number;
+    }
+  | {
+      type: "recovery_still_blocked";
+      recoveryId: string;
+      planId: string;
+      result: import("./planning/types.js").ExecutionRecoveryResult;
+      blockingReasons: string[];
+      timestamp: number;
+    }
+  | {
       type: "recovery_completed";
       result: import("./planning/types.js").ExecutionRecoveryResult;
       timestamp: number;

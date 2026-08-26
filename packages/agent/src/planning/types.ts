@@ -143,10 +143,13 @@ export interface PlanVerificationResult {
   stepId: string;
   command: string;
   succeeded: boolean;
+  success?: boolean;
   exitCode?: number | null;
   output?: string;
   durationMs?: number;
   timedOut?: boolean;
+  failureReason?: string;
+  planId?: string;
 }
 
 export interface PlanStepExecutionResult {
@@ -549,20 +552,39 @@ export interface ExecutionRecoveryAssessment {
   reconciliationResult?: FinalReconciliationResult;
 }
 
+export type RecoveryOutcomeStatus =
+  | "recovered"
+  | "recovered_with_changes"
+  | "still_blocked"
+  | "failed"
+  | "cancelled";
+
+export interface FailedRecoveryAction {
+  action: RepairAction;
+  error: string;
+}
+
 export interface ExecutionRecoveryResult {
   recoveryId: string;
   runId: string;
   planId: string;
   strategy: RecoveryStrategy;
-  status: "completed" | "blocked" | "failed" | "cancelled";
+  status: RecoveryOutcomeStatus | "completed" | "blocked";
+  outcome?: RecoveryOutcomeStatus;
   startedAt: number;
   completedAt: number;
   durationMs: number;
   affectedSteps: string[];
+  completedRecoveryActions?: RepairAction[];
+  failedRecoveryActions?: FailedRecoveryAction[];
   repairedFiles: string[];
   verificationResult?: PlanVerificationResult;
   reconciliationResult?: FinalReconciliationResult;
+  workspaceConsistent?: boolean;
+  finalPlanStatus?: PlanStatus;
   failureReason?: string;
+  blockingReasons?: string[];
+  cancellationReason?: string;
   replanResult?: ReplanResult;
   parentRecoveryId?: string;
   rootRecoveryId?: string;
@@ -584,10 +606,10 @@ export interface ExecutionRecoveryOptions {
 
 export interface ExecutionRecoveryManagerOptions {
   executionPolicy: import("../policy/types.js").ExecutionPolicy;
-  permissionManager: import("@fecode/models").PermissionManager;
+  permissionManager?: import("@fecode/models").PermissionManager;
   approvalResolver?: import("@fecode/models").ApprovalResolver;
   reconciler: FinalWorkspaceReconciler;
-  replanManager: ReplanManager;
+  replanManager?: ReplanManager;
   checkpointManager?: import("../checkpoints/types.js").CheckpointManager;
   checkpointRecoveryManager?: import("../recovery/types.js").RecoveryManager;
   commandExecutor?: import("../commands/types.js").CommandExecutor;

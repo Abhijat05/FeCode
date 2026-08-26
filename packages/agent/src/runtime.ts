@@ -508,25 +508,43 @@ export class AgentRuntime implements Agent {
           "recovering",
           `Execution recovery started: ${ev.strategy}`
         );
-      } else if (ev.type === "recovery_completed" && "result" in ev) {
+      } else if (ev.type === "recovery_outcome_determined") {
         this.diagnosticsManager.recordRecoveryResult(targetPlan.runId, ev.result);
-        if (ev.result.status === "completed") {
+        if (
+          ev.outcome === "recovered" ||
+          ev.outcome === "recovered_with_changes"
+        ) {
+          if (ev.result.finalPlanStatus === "completed") {
+            this.currentRunStateMachine?.transition(
+              "completed",
+              "Execution recovery completed and workspace reconciled"
+            );
+          } else {
+            this.currentRunStateMachine?.transition(
+              "idle",
+              "Execution recovery succeeded; plan ready for continuation"
+            );
+          }
+        } else if (ev.outcome === "still_blocked") {
           this.currentRunStateMachine?.transition(
-            "completed",
-            "Execution recovery completed successfully"
+            "idle",
+            `Execution recovery still blocked: ${ev.result.blockingReasons?.join("; ") || "inconsistent workspace"}`
+          );
+        } else if (ev.outcome === "failed") {
+          this.currentRunStateMachine?.transition(
+            "failed",
+            `Execution recovery failed: ${ev.result.failureReason || "unknown error"}`
+          );
+        } else if (ev.outcome === "cancelled") {
+          this.currentRunStateMachine?.transition(
+            "cancelled",
+            `Execution recovery cancelled: ${ev.result.cancellationReason || "user request"}`
           );
         }
+      } else if (ev.type === "recovery_completed" && "result" in ev) {
+        this.diagnosticsManager.recordRecoveryResult(targetPlan.runId, ev.result);
       } else if (ev.type === "recovery_failed") {
         this.diagnosticsManager.recordRecoveryResult(targetPlan.runId, ev.result);
-        this.currentRunStateMachine?.transition(
-          "failed",
-          `Execution recovery failed: ${ev.reason}`
-        );
-      } else if (ev.type === "recovery_cancelled") {
-        this.currentRunStateMachine?.transition(
-          "cancelled",
-          `Execution recovery cancelled: ${ev.reason}`
-        );
       }
     }
   }

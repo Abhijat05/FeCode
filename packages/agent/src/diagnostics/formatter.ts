@@ -185,8 +185,13 @@ export function formatRunDiagnostics(summary: RunSummary): string {
     if (summary.lastRecoveryStrategy) {
       lines.push(`  strategy:   ${summary.lastRecoveryStrategy}`);
     }
-    if (summary.lastRecoveryStatus) {
+    if (summary.lastRecoveryOutcome) {
+      lines.push(`  outcome:    ${summary.lastRecoveryOutcome.toUpperCase()}`);
+    } else if (summary.lastRecoveryStatus) {
       lines.push(`  status:     ${summary.lastRecoveryStatus}`);
+    }
+    if (summary.lastRecoveryWorkspaceConsistent !== undefined) {
+      lines.push(`  consistent: ${summary.lastRecoveryWorkspaceConsistent ? "yes" : "no"}`);
     }
     if (summary.lastRecoveryDurationMs !== undefined) {
       lines.push(`  duration:   ${summary.lastRecoveryDurationMs}ms`);
@@ -194,7 +199,13 @@ export function formatRunDiagnostics(summary: RunSummary): string {
     if (summary.repairedFiles && summary.repairedFiles.length > 0) {
       lines.push(`  repaired:   ${summary.repairedFiles.join(", ")}`);
     }
-    if (summary.recoveryFailureReason) {
+    if (
+      summary.lastRecoveryBlockingReasons &&
+      summary.lastRecoveryBlockingReasons.length > 0
+    ) {
+      lines.push("  blockers:");
+      summary.lastRecoveryBlockingReasons.forEach((b) => lines.push(`    • ${b}`));
+    } else if (summary.recoveryFailureReason) {
       lines.push(`  reason:     ${summary.recoveryFailureReason}`);
     }
   }

@@ -112,9 +112,20 @@ export interface RunSummary {
   reconciliationFailureReason?: string;
   executionRecoveryCount?: number;
   lastRecoveryStrategy?: import("../planning/types.js").RecoveryStrategy;
-  lastRecoveryStatus?: "completed" | "blocked" | "failed" | "cancelled";
+  lastRecoveryStatus?:
+    | "completed"
+    | "blocked"
+    | "failed"
+    | "cancelled"
+    | import("../planning/types.js").RecoveryOutcomeStatus;
+  lastRecoveryOutcome?: import("../planning/types.js").RecoveryOutcomeStatus;
   lastRecoveryDurationMs?: number;
   repairedFiles?: string[];
+  lastRecoveryCompletedActions?: import("../planning/types.js").RepairAction[];
+  lastRecoveryFailedActions?: import("../planning/types.js").FailedRecoveryAction[];
+  lastRecoveryWorkspaceConsistent?: boolean;
+  lastRecoveryFinalPlanStatus?: import("../planning/types.js").PlanStatus;
+  lastRecoveryBlockingReasons?: string[];
   recoveryFailureReason?: string;
   recoveryLineage?: {
     recoveryId: string;

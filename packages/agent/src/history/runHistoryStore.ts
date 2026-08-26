@@ -138,8 +138,23 @@ export class DefaultRunHistoryStore implements RunHistoryStore {
         executionRecoveryCount: summary.executionRecoveryCount,
         lastRecoveryStrategy: summary.lastRecoveryStrategy,
         lastRecoveryStatus: summary.lastRecoveryStatus,
+        lastRecoveryOutcome: summary.lastRecoveryOutcome,
         lastRecoveryDurationMs: summary.lastRecoveryDurationMs,
         repairedFiles: summary.repairedFiles ? [...summary.repairedFiles] : undefined,
+        lastRecoveryCompletedActions: summary.lastRecoveryCompletedActions
+          ? summary.lastRecoveryCompletedActions.map((a) => ({ ...a }))
+          : undefined,
+        lastRecoveryFailedActions: summary.lastRecoveryFailedActions
+          ? summary.lastRecoveryFailedActions.map((f) => ({
+              action: { ...f.action },
+              error: f.error
+            }))
+          : undefined,
+        lastRecoveryWorkspaceConsistent: summary.lastRecoveryWorkspaceConsistent,
+        lastRecoveryFinalPlanStatus: summary.lastRecoveryFinalPlanStatus,
+        lastRecoveryBlockingReasons: summary.lastRecoveryBlockingReasons
+          ? [...summary.lastRecoveryBlockingReasons]
+          : undefined,
         recoveryFailureReason: summary.recoveryFailureReason,
         recoveryLineage: summary.recoveryLineage ? [...summary.recoveryLineage] : undefined
       };

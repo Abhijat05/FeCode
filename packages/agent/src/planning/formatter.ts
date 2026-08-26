@@ -304,4 +304,83 @@ export class PlanFormatter {
     ];
     return lines.join("\n");
   }
+
+  public static formatRecoveryOutcome(
+    result: import("./types.js").ExecutionRecoveryResult
+  ): string {
+    const lines: string[] = [];
+
+    if (result.outcome === "recovered") {
+      lines.push("Recovery completed");
+      lines.push("");
+      lines.push(`Strategy: ${result.strategy}`);
+      lines.push(`Files repaired: ${result.repairedFiles.length}`);
+      lines.push("");
+      lines.push("Verification");
+      lines.push("✓ passed");
+      lines.push("");
+      lines.push("Workspace reconciliation");
+      lines.push("✓ Workspace consistent");
+      lines.push("");
+      lines.push("Recovery outcome: RECOVERED");
+    } else if (result.outcome === "recovered_with_changes") {
+      lines.push("Recovery completed with changes");
+      lines.push("");
+      lines.push(`Strategy: ${result.strategy}`);
+      lines.push(`Files repaired: ${result.repairedFiles.length}`);
+      lines.push("");
+      lines.push("Verification");
+      lines.push("✓ passed");
+      lines.push("");
+      lines.push("Workspace reconciliation");
+      lines.push("✓ consistent with accepted recovery state");
+      lines.push("");
+      lines.push("Recovery outcome: RECOVERED_WITH_CHANGES");
+    } else if (result.outcome === "still_blocked") {
+      lines.push("Recovery incomplete");
+      lines.push("");
+      lines.push(`Strategy: ${result.strategy}`);
+      lines.push(
+        `Completed repairs: ${result.completedRecoveryActions?.length || 0}`
+      );
+      lines.push(
+        `Failed repairs: ${result.failedRecoveryActions?.length || 0}`
+      );
+      lines.push("");
+      lines.push(
+        `Verification: ${result.verificationResult?.success ? "✓ passed" : "✗ failed"}`
+      );
+      lines.push(
+        `Workspace reconciliation: ${result.workspaceConsistent ? "✓ consistent" : "✗ inconsistent"}`
+      );
+      lines.push("");
+      lines.push("Recovery outcome: STILL BLOCKED");
+      if (result.blockingReasons && result.blockingReasons.length > 0) {
+        lines.push("");
+        lines.push("Remaining blockers:");
+        result.blockingReasons.forEach((b) => lines.push(`  • ${b}`));
+      }
+      lines.push("");
+      lines.push("What would you like to do?");
+      lines.push("");
+      lines.push("[r] Replan");
+      lines.push("[c] Re-check");
+      lines.push("[x] Cancel");
+      lines.push("");
+      lines.push("Choice [x]:");
+    } else if (result.outcome === "cancelled") {
+      lines.push("✓ Recovery cancelled");
+    } else {
+      lines.push(`✗ Recovery failed: ${result.failureReason || "unknown error"}`);
+    }
+
+    return lines.join("\n");
+  }
+
+  public static formatContinuationPrompt(
+    plan?: import("./types.js").TaskPlan
+  ): string {
+    const title = plan?.userRequestSummary ? ` (${plan.userRequestSummary})` : "";
+    return `Plan${title}: ready to continue\n\nContinue remaining plan steps? [y/N]:`;
+  }
 }
