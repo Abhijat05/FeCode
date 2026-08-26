@@ -23,7 +23,10 @@ describe("Phase 5AA — DefaultExecutionHandoffManager Unit Tests", () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "fecode-handoff-test-"));
     storeDir = await fs.mkdtemp(path.join(os.tmpdir(), "fecode-handoff-store-"));
     await fs.mkdir(path.join(tmpDir, "src"), { recursive: true });
+    await fs.mkdir(path.join(tmpDir, "db"), { recursive: true });
     await fs.writeFile(path.join(tmpDir, "src/index.ts"), "export const x = 1;\n");
+    await fs.writeFile(path.join(tmpDir, "src/auth.ts"), "export const auth = true;\n");
+    await fs.writeFile(path.join(tmpDir, "db/schema.sql"), "CREATE TABLE users (id INT);\n");
   });
 
   afterEach(async () => {
@@ -231,5 +234,178 @@ describe("Phase 5AA — DefaultExecutionHandoffManager Unit Tests", () => {
     expect(toolExecuted).toBe(false);
 
     expect(events.some((e) => e.type === "execution_handoff_rejected")).toBe(true);
+  });
+
+  it("rejects handoff immediately when run is already in terminal state", async () => {
+    const store = new DefaultCheckpointStore(storeDir);
+    const cpManager = new DefaultCheckpointManager(store);
+    const riskPolicy = new DefaultTaskRiskPolicy();
+    const registry = new DefaultToolRegistry();
+    const toolExecutor = new DefaultToolExecutor(registry);
+    const permissionManager = new DefaultPermissionManager();
+
+    const { DefaultRunDiagnosticsManager } = await import("../diagnostics/runDiagnosticsManager.js");
+    const diagnosticsManager = new DefaultRunDiagnosticsManager();
+    diagnosticsManager.startRun({
+      runId: "run-term-1",
+      cwd: tmpDir,
+      userRequest: "Test terminal run"
+    });
+    diagnosticsManager.completeRun("run-term-1", "completed");
+
+    const handoffManager = new DefaultExecutionHandoffManager({
+      registry,
+      executor: toolExecutor,
+      permissionManager,
+      executionPolicy: riskPolicy,
+      checkpointManager: cpManager,
+      diagnosticsManager
+    });
+
+    const events: AgentEvent[] = [];
+    const gen = handoffManager.executeHandoff({
+      runId: "run-term-1",
+      planId: "plan-term-1",
+      cwd: tmpDir,
+      step: {
+        stepId: "step-1",
+        order: 1,
+        title: "Post-terminal step",
+        objective: "Should not execute",
+        type: "modify",
+        dependencies: [],
+        riskLevel: "normal",
+        verificationRequired: false,
+        status: "pending",
+        expectedFiles: ["src/index.ts"]
+      }
+    });
+
+    let result = await gen.next();
+    while (!result.done) {
+      events.push(result.value);
+      result = await gen.next();
+    }
+
+    expect(result.value.success).toBe(false);
+    expect(result.value.status).toBe("cancelled");
+    expect(result.value.error).toContain("terminal status");
+    // Crucial: no misleading started event emitted
+    expect(events.length).toBe(0);
+  });
+
+  it("invalidates handoff when workspace drift is detected before mutation", async () => {
+    const store = new DefaultCheckpointStore(storeDir);
+    const cpManager = new DefaultCheckpointManager(store);
+    const riskPolicy = new DefaultTaskRiskPolicy();
+    const registry = new DefaultToolRegistry();
+    const toolExecutor = new DefaultToolExecutor(registry);
+    const permissionManager = new DefaultPermissionManager();
+
+    const handoffManager = new DefaultExecutionHandoffManager({
+      registry,
+      executor: toolExecutor,
+      permissionManager,
+      executionPolicy: riskPolicy,
+      checkpointManager: cpManager
+    });
+
+    const events: AgentEvent[] = [];
+    const gen = handoffManager.executeHandoff({
+      runId: "run-drift-1",
+      planId: "plan-drift-1",
+      cwd: tmpDir,
+      initialGitBranch: "main",
+      initialFingerprint: {
+        capturedAt: Date.now(),
+        gitBranch: "main",
+        isGitDirty: false
+      },
+      step: {
+        stepId: "step-1",
+        order: 1,
+        title: "Modify non-existent file",
+        objective: "Modify",
+        type: "modify",
+        dependencies: [],
+        riskLevel: "normal",
+        verificationRequired: false,
+        status: "pending",
+        expectedFiles: ["src/ghost-file.ts"],
+        intent: {
+          type: "modify_file",
+          target: "src/ghost-file.ts",
+          reason: "Modify ghost",
+          requiresApproval: false,
+          estimatedRisk: "normal"
+        }
+      }
+    });
+
+    let result = await gen.next();
+    while (!result.done) {
+      events.push(result.value);
+      result = await gen.next();
+    }
+
+    expect(result.value.success).toBe(false);
+    expect(result.value.status).toBe("invalidated");
+    expect(result.value.error).toContain("Workspace drifted");
+    expect(events.some((e) => e.type === "execution_handoff_invalidated")).toBe(true);
+  });
+
+  it("enforces tool permission pipeline and denies when permission denied", async () => {
+    const store = new DefaultCheckpointStore(storeDir);
+    const cpManager = new DefaultCheckpointManager(store);
+    const riskPolicy = new DefaultTaskRiskPolicy();
+    const registry = new DefaultToolRegistry();
+    registry.register({
+      name: "edit_file",
+      description: "Edit file",
+      permissionCategory: "write",
+      inputSchema: { type: "object" },
+      execute: async () => ({ success: true })
+    });
+    const toolExecutor = new DefaultToolExecutor(registry);
+    const permissionManager = new DefaultPermissionManager({
+      checkPermission: () => ({ type: "denied", reason: "Policy denied permission" })
+    });
+
+    const handoffManager = new DefaultExecutionHandoffManager({
+      registry,
+      executor: toolExecutor,
+      permissionManager,
+      executionPolicy: riskPolicy,
+      checkpointManager: cpManager
+    });
+
+    const events: AgentEvent[] = [];
+    const gen = handoffManager.executeHandoff({
+      runId: "run-perm-1",
+      planId: "plan-perm-1",
+      cwd: tmpDir,
+      step: {
+        stepId: "step-1",
+        order: 1,
+        title: "Edit index",
+        objective: "Edit",
+        type: "modify",
+        dependencies: [],
+        riskLevel: "normal",
+        verificationRequired: false,
+        status: "pending",
+        expectedFiles: ["src/index.ts"]
+      }
+    });
+
+    let result = await gen.next();
+    while (!result.done) {
+      events.push(result.value);
+      result = await gen.next();
+    }
+
+    expect(result.value.success).toBe(false);
+    expect(result.value.status).toBe("failed");
+    expect(result.value.error).toContain("denied");
   });
 });

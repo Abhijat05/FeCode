@@ -321,7 +321,7 @@ export class DefaultPlanExecutor implements PlanExecutor {
           break;
         }
 
-        // 5. Execution Handoff Boundary (Phase 5AA)
+        // 5. Execution Handoff Boundary (Phase 5AB)
         const handoffResult = yield* this.handoffManager.executeHandoff({
           runId: context.runId,
           planId: activePlan.planId,
@@ -331,7 +331,9 @@ export class DefaultPlanExecutor implements PlanExecutor {
           signal: context.signal,
           isResume,
           isContinuation: options?.isResume,
-          resumedFromStepId: options?.resumedFromStepId
+          resumedFromStepId: options?.resumedFromStepId,
+          initialFingerprint: context.initialFingerprint,
+          initialGitBranch: context.initialGitBranch
         });
 
         let attemptSuccess = handoffResult.success;
@@ -347,6 +349,12 @@ export class DefaultPlanExecutor implements PlanExecutor {
             stepErrorMsg = attemptErrorMsg;
             break;
           }
+        }
+
+        // Check cancellation before verification
+        if (context.signal?.aborted) {
+          isCancelled = true;
+          break;
         }
 
         // 8. Perform Verification if Required

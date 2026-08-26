@@ -15,6 +15,7 @@ import type {
   PlanStep
 } from "./types.js";
 import type { CheckpointRecord } from "../checkpoints/types.js";
+import { detectPlanStaleness } from "./staleness.js";
 
 const RISK_LEVEL_ORDER: Record<TaskRiskLevel, number> = {
   low: 1,
@@ -46,6 +47,7 @@ export class DefaultExecutionHandoffManager implements ExecutionHandoffManager {
       step.intent?.type ||
       (step.type === "modify" ? "modify_file" : "inspect_file");
 
+    // Dynamic risk assessment: cannot downgrade plan step risk
     const assessedRisk = this.options.executionPolicy.assess({
       userMessage: step.title,
       cwd: context.cwd,
@@ -61,7 +63,32 @@ export class DefaultExecutionHandoffManager implements ExecutionHandoffManager {
     const requiresExplicitApproval =
       requiresCheckpoint || assessedRisk.requiresExplicitApproval;
 
+    // Check workspace drift during preparation
+    const staleness = await detectPlanStaleness(
+      { steps: [step], planId: context.planId, runId: context.runId, createdAt: Date.now(), userRequestSummary: step.title, objective: step.objective, status: "executing", risks: [] },
+      step,
+      {
+        cwd: context.cwd,
+        gitRepository: context.gitRepository || this.options.gitRepository,
+        initialFingerprint: context.initialFingerprint,
+        initialGitBranch: context.initialGitBranch
+      }
+    );
+
     const toolCall = this.translateIntentToToolCall(step);
+
+    if (staleness.stale) {
+      const reason = staleness.reason || "Workspace state drifted before handoff";
+      return {
+        canExecute: false,
+        requiresCheckpoint,
+        requiresExplicitApproval,
+        effectiveRisk,
+        riskReasons: [...assessedRisk.reasons, reason],
+        blockers: [reason],
+        toolCall
+      };
+    }
 
     return {
       canExecute: true,
@@ -78,6 +105,7 @@ export class DefaultExecutionHandoffManager implements ExecutionHandoffManager {
   ): AsyncGenerator<AgentEvent, ExecutionHandoffResult, void> {
     const step = context.step;
 
+    // 1. Terminal / State Machine / Signal Check
     if (context.signal?.aborted) {
       return {
         success: false,
@@ -86,10 +114,69 @@ export class DefaultExecutionHandoffManager implements ExecutionHandoffManager {
       };
     }
 
+    if (this.options.diagnosticsManager) {
+      const summary = this.options.diagnosticsManager.getRunSummary(context.runId);
+      if (
+        summary &&
+        (summary.finalStatus === "completed" ||
+          summary.finalStatus === "failed" ||
+          summary.finalStatus === "cancelled")
+      ) {
+        return {
+          success: false,
+          status: "cancelled",
+          error: `Cannot initiate handoff: run '${context.runId}' is in terminal status '${summary.finalStatus}'.`
+        };
+      }
+    }
+
+    // 2. Step Intent & Target Resolution + Workspace Drift Check
+    const staleness = await detectPlanStaleness(
+      { steps: [step], planId: context.planId, runId: context.runId, createdAt: Date.now(), userRequestSummary: step.title, objective: step.objective, status: "executing", risks: [] },
+      step,
+      {
+        cwd: context.cwd,
+        gitRepository: context.gitRepository || this.options.gitRepository,
+        initialFingerprint: context.initialFingerprint,
+        initialGitBranch: context.initialGitBranch
+      }
+    );
+
+    if (staleness.stale) {
+      const driftErr = `Workspace drifted before handoff: ${staleness.reason || "state mismatch"}`;
+      yield {
+        type: "execution_handoff_invalidated",
+        runId: context.runId,
+        planId: context.planId,
+        stepId: step.stepId,
+        checkpointId: "none",
+        reason: driftErr,
+        timestamp: Date.now()
+      };
+
+      const invalidResult: ExecutionHandoffResult = {
+        success: false,
+        status: "invalidated",
+        error: driftErr,
+        requiresReplan: true
+      };
+
+      if (this.options.diagnosticsManager) {
+        this.options.diagnosticsManager.recordHandoffResult(
+          context.runId,
+          invalidResult
+        );
+      }
+
+      return invalidResult;
+    }
+
+    // 3. Dynamic Risk Revalidation & Non-Downgrade Invariant
     const prep = await this.prepareHandoff(context);
     const targetFiles =
       step.expectedFiles || (step.intent?.target ? [step.intent.target] : []);
 
+    // 4. Emit Authoritative Handoff Started Event
     yield {
       type: "execution_handoff_started",
       runId: context.runId,
@@ -124,12 +211,19 @@ export class DefaultExecutionHandoffManager implements ExecutionHandoffManager {
             blockers: [err],
             timestamp: Date.now()
           };
-          return {
+          const blockedRes: ExecutionHandoffResult = {
             success: false,
             status: "blocked",
             error: err,
             blockers: [err]
           };
+          if (this.options.diagnosticsManager) {
+            this.options.diagnosticsManager.recordHandoffResult(
+              context.runId,
+              blockedRes
+            );
+          }
+          return blockedRes;
         }
 
         if (this.options.checkpointManager.requestApproval) {
@@ -204,15 +298,22 @@ export class DefaultExecutionHandoffManager implements ExecutionHandoffManager {
           blockers: [blockerMsg],
           timestamp: Date.now()
         };
-        return {
+        const blockedRes: ExecutionHandoffResult = {
           success: false,
           status: "blocked",
           error: blockerMsg,
           blockers: [blockerMsg]
         };
+        if (this.options.diagnosticsManager) {
+          this.options.diagnosticsManager.recordHandoffResult(
+            context.runId,
+            blockedRes
+          );
+        }
+        return blockedRes;
       }
 
-      // 2. Explicit User Approval Boundary
+      // 6. Explicit User Approval Boundary
       if (prep.requiresExplicitApproval && this.options.approvalResolver) {
         const approvalRequest: ApprovalRequest = {
           id: `approval-${step.stepId}-${Date.now()}`,
@@ -268,7 +369,7 @@ export class DefaultExecutionHandoffManager implements ExecutionHandoffManager {
               timestamp: Date.now()
             };
 
-            // 3. Validate & Single-Use Checkpoint Consumption
+            // 7. Validate & Single-Use Checkpoint Consumption
             if (this.options.checkpointManager.consume) {
               const consumeRes = await this.options.checkpointManager.consume(
                 cpRecord.checkpointId,
@@ -278,7 +379,8 @@ export class DefaultExecutionHandoffManager implements ExecutionHandoffManager {
                   stepId: step.stepId,
                   riskLevel: prep.effectiveRisk,
                   cwd: context.cwd,
-                  gitRepository: this.options.gitRepository
+                  gitRepository: this.options.gitRepository,
+                  initialFingerprint: context.initialFingerprint
                 }
               );
 
@@ -307,12 +409,21 @@ export class DefaultExecutionHandoffManager implements ExecutionHandoffManager {
                   timestamp: Date.now()
                 };
 
-                return {
+                const invalidRes: ExecutionHandoffResult = {
                   success: false,
                   status: "invalidated",
                   checkpointId: cpRecord.checkpointId,
                   error: consumeRes.error
                 };
+
+                if (this.options.diagnosticsManager) {
+                  this.options.diagnosticsManager.recordHandoffResult(
+                    context.runId,
+                    invalidRes
+                  );
+                }
+
+                return invalidRes;
               }
 
               yield {
@@ -372,17 +483,43 @@ export class DefaultExecutionHandoffManager implements ExecutionHandoffManager {
             timestamp: Date.now()
           };
 
-          return {
+          const rejectRes: ExecutionHandoffResult = {
             success: false,
             status: "rejected",
             checkpointId: cpRecord?.checkpointId,
             error: decision.reason || "Approval rejected by user."
           };
+
+          if (this.options.diagnosticsManager) {
+            this.options.diagnosticsManager.recordHandoffResult(
+              context.runId,
+              rejectRes
+            );
+          }
+
+          return rejectRes;
         }
       }
     }
 
-    // 4. Translate and Execute Tool
+    // 8. Pre-Execution Abort Signal Check
+    if (context.signal?.aborted) {
+      const cancelRes: ExecutionHandoffResult = {
+        success: false,
+        status: "cancelled",
+        checkpointId: cpRecord?.checkpointId,
+        error: "Execution cancelled before tool execution."
+      };
+      if (this.options.diagnosticsManager) {
+        this.options.diagnosticsManager.recordHandoffResult(
+          context.runId,
+          cancelRes
+        );
+      }
+      return cancelRes;
+    }
+
+    // 9. Translate and Execute Tool
     const toolCall = prep.toolCall || this.translateIntentToToolCall(step);
     if (!toolCall) {
       // Non-tool step
@@ -394,11 +531,18 @@ export class DefaultExecutionHandoffManager implements ExecutionHandoffManager {
         status: "completed",
         timestamp: Date.now()
       };
-      return {
+      const okRes: ExecutionHandoffResult = {
         success: true,
         status: "completed",
         checkpointId: cpRecord?.checkpointId
       };
+      if (this.options.diagnosticsManager) {
+        this.options.diagnosticsManager.recordHandoffResult(
+          context.runId,
+          okRes
+        );
+      }
+      return okRes;
     }
 
     const tool = this.options.registry.get(toolCall.name);
@@ -412,11 +556,18 @@ export class DefaultExecutionHandoffManager implements ExecutionHandoffManager {
         status: "failed",
         timestamp: Date.now()
       };
-      return {
+      const failRes: ExecutionHandoffResult = {
         success: false,
         status: "failed",
         error: err
       };
+      if (this.options.diagnosticsManager) {
+        this.options.diagnosticsManager.recordHandoffResult(
+          context.runId,
+          failRes
+        );
+      }
+      return failRes;
     }
 
     const toolContext: ToolContext = {
@@ -424,6 +575,7 @@ export class DefaultExecutionHandoffManager implements ExecutionHandoffManager {
       signal: context.signal || new AbortController().signal
     };
 
+    // 10. Permission Boundary
     const permissionDecision = await this.options.permissionManager.check(
       tool,
       toolContext
@@ -439,11 +591,18 @@ export class DefaultExecutionHandoffManager implements ExecutionHandoffManager {
         status: "failed",
         timestamp: Date.now()
       };
-      return {
+      const deniedRes: ExecutionHandoffResult = {
         success: false,
         status: "failed",
         error: err
       };
+      if (this.options.diagnosticsManager) {
+        this.options.diagnosticsManager.recordHandoffResult(
+          context.runId,
+          deniedRes
+        );
+      }
+      return deniedRes;
     } else if (permissionDecision.type === "requires_approval") {
       const approvalRequest: ApprovalRequest = {
         id: `approval-${step.stepId}-${Date.now()}`,
@@ -497,12 +656,45 @@ export class DefaultExecutionHandoffManager implements ExecutionHandoffManager {
           status: "failed",
           timestamp: Date.now()
         };
-        return {
+        const permFailRes: ExecutionHandoffResult = {
           success: false,
           status: "failed",
           error: attemptErrorMsg
         };
+        if (this.options.diagnosticsManager) {
+          this.options.diagnosticsManager.recordHandoffResult(
+            context.runId,
+            permFailRes
+          );
+        }
+        return permFailRes;
       }
+    }
+
+    if (context.signal?.aborted) {
+      const abortRes: ExecutionHandoffResult = {
+        success: false,
+        status: "cancelled",
+        checkpointId: cpRecord?.checkpointId,
+        error: "Execution cancelled before tool invocation."
+      };
+      if (this.options.diagnosticsManager) {
+        this.options.diagnosticsManager.recordHandoffResult(
+          context.runId,
+          abortRes
+        );
+      }
+      return abortRes;
+    }
+
+    // 11. Safe Tool Execution
+    if (this.options.diagnosticsManager) {
+      this.options.diagnosticsManager.recordToolStart(
+        context.runId,
+        tool.name,
+        toolCall.id,
+        targetFiles[0]
+      );
     }
 
     const toolExecResult: ToolResult = await this.options.executor.execute(
@@ -510,12 +702,23 @@ export class DefaultExecutionHandoffManager implements ExecutionHandoffManager {
       toolContext
     );
 
+    if (this.options.diagnosticsManager) {
+      this.options.diagnosticsManager.recordToolComplete(
+        context.runId,
+        toolCall.id,
+        toolExecResult.success,
+        toolExecResult.error?.message,
+        permissionDecision.type
+      );
+    }
+
     yield {
       type: "tool_result",
       result: toolExecResult,
       callId: toolCall.id
     };
 
+    // 12. Final Handoff Completion & Diagnostics Recording
     const finalStatus = toolExecResult.success ? "completed" : "failed";
     yield {
       type: "execution_handoff_completed",
@@ -526,7 +729,7 @@ export class DefaultExecutionHandoffManager implements ExecutionHandoffManager {
       timestamp: Date.now()
     };
 
-    return {
+    const finalHandoffResult: ExecutionHandoffResult = {
       success: toolExecResult.success,
       status: finalStatus,
       checkpointId: cpRecord?.checkpointId,
@@ -535,6 +738,15 @@ export class DefaultExecutionHandoffManager implements ExecutionHandoffManager {
         ? undefined
         : toolExecResult.error?.message || "Tool execution failed"
     };
+
+    if (this.options.diagnosticsManager) {
+      this.options.diagnosticsManager.recordHandoffResult(
+        context.runId,
+        finalHandoffResult
+      );
+    }
+
+    return finalHandoffResult;
   }
 
   private translateIntentToToolCall(step: PlanStep): ToolCall | undefined {

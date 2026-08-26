@@ -375,5 +375,67 @@ describe("DefaultCheckpointManager — Phase 5G", () => {
       expect(val.valid).toBe(false);
       expect(val.status).toBe("expired");
     });
+
+    it("strictly rejects when planId or stepId is missing in validation context", async () => {
+      const store = new DefaultCheckpointStore(storeDir);
+      const manager = new DefaultCheckpointManager(store);
+
+      const record = await manager.requestApproval({
+        runId: "run-5y-strict",
+        planId: "plan-5y-strict",
+        stepId: "step-1",
+        riskLevel: "elevated",
+        reason: "Strict binding test",
+        affectedTargets: ["src/app.ts"],
+        cwd: tmpDir
+      });
+
+      await manager.approve(record.checkpointId, {
+        approved: true,
+        approvedBy: "user",
+        decision: "approved",
+        timestamp: Date.now()
+      });
+
+      // Context missing planId
+      const valMissingPlan = await manager.validateApproval(record.checkpointId, {
+        runId: "run-5y-strict",
+        stepId: "step-1",
+        riskLevel: "elevated",
+        cwd: tmpDir
+      });
+      expect(valMissingPlan.valid).toBe(false);
+      expect(valMissingPlan.status).toBe("invalidated");
+      expect(valMissingPlan.reason).toContain("Plan ID mismatch");
+
+      const recordStep = await manager.requestApproval({
+        runId: "run-5y-strict-2",
+        planId: "plan-5y-strict-2",
+        stepId: "step-1",
+        riskLevel: "elevated",
+        reason: "Strict step binding test",
+        affectedTargets: ["src/app.ts"],
+        cwd: tmpDir
+      });
+
+      await manager.approve(recordStep.checkpointId, {
+        approved: true,
+        approvedBy: "user",
+        decision: "approved",
+        timestamp: Date.now()
+      });
+
+      // Context missing stepId
+      const valMissingStep = await manager.validateApproval(recordStep.checkpointId, {
+        runId: "run-5y-strict-2",
+        planId: "plan-5y-strict-2",
+        riskLevel: "elevated",
+        cwd: tmpDir
+      });
+      expect(valMissingStep.valid).toBe(false);
+      expect(valMissingStep.status).toBe("invalidated");
+      expect(valMissingStep.reason).toContain("Step ID mismatch");
+    });
   });
 });
+

@@ -752,6 +752,8 @@ export interface ExecutionHandoffContext {
   isContinuation?: boolean;
   isReplan?: boolean;
   resumedFromStepId?: string;
+  initialFingerprint?: import("../history/types.js").WorkspaceFingerprint;
+  initialGitBranch?: string;
 }
 
 export interface ExecutionHandoffPreparation {

@@ -56,6 +56,7 @@ export interface CheckpointValidationContext {
   cwd: string;
   affectedTargets?: string[];
   gitRepository?: import("../git/types.js").GitRepository;
+  initialFingerprint?: import("../history/types.js").WorkspaceFingerprint;
 }
 
 export interface CheckpointValidationResult {

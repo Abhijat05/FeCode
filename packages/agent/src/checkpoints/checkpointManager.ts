@@ -381,9 +381,9 @@ export class DefaultCheckpointManager implements CheckpointManager {
     }
 
     // Check Plan ID binding
-    if (record.planId && context.planId && record.planId !== context.planId) {
+    if ((record.planId || context.planId) && record.planId !== context.planId) {
       record.status = "invalidated";
-      record.invalidationReason = `Plan ID mismatch: checkpoint belongs to plan '${record.planId}', but validation attempted for plan '${context.planId}'`;
+      record.invalidationReason = `Plan ID mismatch: checkpoint belongs to plan '${record.planId || "none"}', but validation attempted for plan '${context.planId || "none"}'`;
       return {
         valid: false,
         status: "invalidated",
@@ -394,9 +394,9 @@ export class DefaultCheckpointManager implements CheckpointManager {
     }
 
     // Check Step ID binding
-    if (record.stepId && context.stepId && record.stepId !== context.stepId) {
+    if ((record.stepId || context.stepId) && record.stepId !== context.stepId) {
       record.status = "invalidated";
-      record.invalidationReason = `Step ID mismatch: checkpoint belongs to step '${record.stepId}', but validation attempted for step '${context.stepId}'`;
+      record.invalidationReason = `Step ID mismatch: checkpoint belongs to step '${record.stepId || "none"}', but validation attempted for step '${context.stepId || "none"}'`;
       return {
         valid: false,
         status: "invalidated",
@@ -422,10 +422,10 @@ export class DefaultCheckpointManager implements CheckpointManager {
     }
 
     // Check Git branch change
-    if (record.branch && context.gitRepository) {
+    if (context.gitRepository) {
       try {
         const currentBranch = await context.gitRepository.getBranch(context.cwd);
-        if (currentBranch && currentBranch !== record.branch) {
+        if (record.branch && currentBranch && currentBranch !== record.branch) {
           record.status = "invalidated";
           record.invalidationReason = `Git branch changed from '${record.branch}' to '${currentBranch}'. Workspace state has drifted.`;
           return {

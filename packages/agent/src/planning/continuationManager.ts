@@ -642,6 +642,16 @@ export class DefaultRecoveryContinuationManager
         executorOptions
       )) {
         yield ev;
+
+        if (ev.type === "plan_execution_completed") {
+          plan.status = "completed";
+        } else if (ev.type === "plan_execution_failed") {
+          plan.status = "failed";
+        } else if (ev.type === "plan_execution_cancelled") {
+          plan.status = "cancelled";
+        } else if (ev.type === "plan_blocked") {
+          plan.status = "blocked";
+        }
       }
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
