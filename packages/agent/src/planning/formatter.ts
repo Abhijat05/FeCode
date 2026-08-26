@@ -278,12 +278,30 @@ export class PlanFormatter {
 
     lines.push("What would you like to do?");
     lines.push("");
+    lines.push("[r] Recover");
+    lines.push("[p] Replan");
     lines.push("[c] Re-check workspace");
-    lines.push("[r] Replan");
     lines.push("[x] Cancel");
     lines.push("");
     lines.push("Choice [x]:");
 
+    return lines.join("\n");
+  }
+
+  public static formatRecoveryAssessment(
+    assessment: import("./types.js").ExecutionRecoveryAssessment
+  ): string {
+    const lines: string[] = [
+      "Recovery assessment",
+      "",
+      `Strategy: ${assessment.strategy}`,
+      `Risk: ${assessment.riskLevel}`,
+      `Affected files: ${assessment.affectedFiles.length > 0 ? assessment.affectedFiles.join(", ") : "none"}`,
+      `Affected steps: ${assessment.affectedSteps.length}`,
+      `Fresh approval required: ${assessment.requiresExplicitApproval ? "yes" : "no"}`,
+      "",
+      "Proceed with recovery? [y/N]:"
+    ];
     return lines.join("\n");
   }
 }

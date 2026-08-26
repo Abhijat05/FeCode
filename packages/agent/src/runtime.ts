@@ -109,7 +109,10 @@ import type {
   ExecutionDecisionResult,
   ExecutionDecisionManager,
   FinalWorkspaceReconciler,
-  FinalReconciliationPolicy
+  FinalReconciliationPolicy,
+  ExecutionRecoveryManager,
+  ExecutionRecoveryAssessment,
+  ExecutionRecoveryOptions
 } from "./planning/types.js";
 import { DefaultTaskPlanner } from "./planning/planner.js";
 import { DefaultPlanExecutor } from "./planning/executor.js";
@@ -118,6 +121,7 @@ import { DefaultExecutionFeedbackManager } from "./planning/executionFeedback.js
 import { DefaultStepRetryPolicy } from "./planning/retryPolicy.js";
 import { DefaultExecutionDecisionManager } from "./planning/decisionManager.js";
 import { DefaultFinalWorkspaceReconciler } from "./planning/reconciliation.js";
+import { DefaultExecutionRecoveryManager } from "./planning/executionRecoveryManager.js";
 import {
   transitionPlanStatus,
   completePlanStep,
@@ -157,6 +161,8 @@ export interface AgentRuntimeOptions {
   decisionManager?: ExecutionDecisionManager;
   reconciler?: FinalWorkspaceReconciler;
   reconciliationPolicy?: FinalReconciliationPolicy;
+  executionRecoveryManager?: ExecutionRecoveryManager;
+  maxRecoveryDepth?: number;
   maxReplanDepth?: number;
   maxRetainedRuns?: number;
   emitRunEvents?: boolean;
@@ -198,6 +204,7 @@ export class AgentRuntime implements Agent {
   private readonly decisionManager: ExecutionDecisionManager;
   private readonly reconciler: FinalWorkspaceReconciler;
   private readonly reconciliationPolicy: FinalReconciliationPolicy;
+  private readonly executionRecoveryManager: ExecutionRecoveryManager;
   private readonly maxReplanDepth: number;
   private readonly completionTracker: TaskCompletionTracker = new TaskCompletionTracker();
   private readonly safeEditValidator: SafeEditValidator = new SafeEditValidator();
@@ -302,6 +309,21 @@ export class AgentRuntime implements Agent {
         skillRegistry: this.skillRegistry,
         activationPolicy: this.activationPolicy,
         projectContext: this.projectContext
+      });
+    this.executionRecoveryManager =
+      options.executionRecoveryManager ||
+      new DefaultExecutionRecoveryManager({
+        executionPolicy: this.executionPolicy,
+        permissionManager: this.permissionManager,
+        approvalResolver: this.approvalResolver,
+        reconciler: this.reconciler,
+        replanManager: this.replanManager,
+        checkpointManager: this.checkpointManager,
+        checkpointRecoveryManager: this.recoveryManager,
+        diagnosticsManager: this.diagnosticsManager,
+        historyStore: this.historyStore,
+        gitRepository: this.gitRepository,
+        maxRecoveryDepth: options.maxRecoveryDepth
       });
 
     this.state = {
@@ -444,6 +466,69 @@ export class AgentRuntime implements Agent {
 
   public getReconciler(): FinalWorkspaceReconciler {
     return this.reconciler;
+  }
+
+  public getExecutionRecoveryManager(): ExecutionRecoveryManager {
+    return this.executionRecoveryManager;
+  }
+
+  public async assessExecutionRecovery(
+    planIdOrRunId?: string,
+    options: ExecutionRecoveryOptions = { cwd: process.cwd() }
+  ): Promise<ExecutionRecoveryAssessment> {
+    const targetPlan = planIdOrRunId
+      ? await this.replanManager.getPlan(planIdOrRunId)
+      : this.currentPlan;
+    if (!targetPlan) {
+      throw new Error(
+        "No active or historical plan specified for recovery assessment."
+      );
+    }
+    return this.executionRecoveryManager.assessRecovery(targetPlan, options);
+  }
+
+  public async *executeExecutionRecovery(
+    assessment: ExecutionRecoveryAssessment,
+    options: ExecutionRecoveryOptions = { cwd: process.cwd() }
+  ): AsyncIterable<AgentEvent> {
+    const targetPlan = this.currentPlan;
+    if (!targetPlan) {
+      throw new Error("No plan available for recovery execution.");
+    }
+
+    for await (const ev of this.executionRecoveryManager.executeRecovery(
+      targetPlan,
+      assessment,
+      options
+    )) {
+      yield ev;
+
+      if (ev.type === "recovery_started" && "strategy" in ev) {
+        this.currentRunStateMachine?.transition(
+          "recovering",
+          `Execution recovery started: ${ev.strategy}`
+        );
+      } else if (ev.type === "recovery_completed" && "result" in ev) {
+        this.diagnosticsManager.recordRecoveryResult(targetPlan.runId, ev.result);
+        if (ev.result.status === "completed") {
+          this.currentRunStateMachine?.transition(
+            "completed",
+            "Execution recovery completed successfully"
+          );
+        }
+      } else if (ev.type === "recovery_failed") {
+        this.diagnosticsManager.recordRecoveryResult(targetPlan.runId, ev.result);
+        this.currentRunStateMachine?.transition(
+          "failed",
+          `Execution recovery failed: ${ev.reason}`
+        );
+      } else if (ev.type === "recovery_cancelled") {
+        this.currentRunStateMachine?.transition(
+          "cancelled",
+          `Execution recovery cancelled: ${ev.reason}`
+        );
+      }
+    }
   }
 
   public async *executeApprovedPlan(

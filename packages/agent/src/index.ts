@@ -263,6 +263,97 @@ export type AgentEvent =
       result: import("./planning/types.js").FinalReconciliationResult;
       timestamp: number;
     }
+  | {
+      type: "recovery_assessment_started";
+      runId: string;
+      planId: string;
+      timestamp: number;
+    }
+  | {
+      type: "recovery_assessment_completed";
+      assessment: import("./planning/types.js").ExecutionRecoveryAssessment;
+      timestamp: number;
+    }
+  | {
+      type: "recovery_waiting_approval";
+      request: import("./planning/types.js").ExecutionRecoveryRequest;
+      assessment: import("./planning/types.js").ExecutionRecoveryAssessment;
+      timestamp: number;
+    }
+  | {
+      type: "recovery_started";
+      recoveryId: string;
+      runId: string;
+      planId: string;
+      strategy: import("./planning/types.js").RecoveryStrategy;
+      timestamp: number;
+    }
+  | {
+      type: "recovery_step_started";
+      recoveryId: string;
+      stepIndex: number;
+      totalSteps: number;
+      title: string;
+      timestamp: number;
+    }
+  | {
+      type: "recovery_step_completed";
+      recoveryId: string;
+      stepIndex: number;
+      totalSteps: number;
+      title: string;
+      success: boolean;
+      timestamp: number;
+    }
+  | {
+      type: "recovery_verification_started";
+      recoveryId: string;
+      command: string;
+      timestamp: number;
+    }
+  | {
+      type: "recovery_verification_completed";
+      recoveryId: string;
+      command: string;
+      success: boolean;
+      timestamp: number;
+    }
+  | {
+      type: "recovery_reconciliation_started";
+      recoveryId: string;
+      timestamp: number;
+    }
+  | {
+      type: "recovery_reconciliation_completed";
+      recoveryId: string;
+      result: import("./planning/types.js").FinalReconciliationResult;
+      timestamp: number;
+    }
+  | {
+      type: "recovery_completed";
+      result: import("./planning/types.js").ExecutionRecoveryResult;
+      timestamp: number;
+    }
+  | {
+      type: "recovery_blocked";
+      result: import("./planning/types.js").ExecutionRecoveryResult;
+      reason: string;
+      timestamp: number;
+    }
+  | {
+      type: "recovery_failed";
+      result: import("./planning/types.js").ExecutionRecoveryResult;
+      reason: string;
+      timestamp: number;
+    }
+  | {
+      type: "recovery_cancelled";
+      recoveryId: string;
+      runId: string;
+      planId: string;
+      reason: string;
+      timestamp: number;
+    }
   | { type: "task_summary"; summary: TaskCompletionSummary }
   | { type: "run_started"; runId: string }
   | {

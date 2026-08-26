@@ -500,3 +500,115 @@ export interface FinalWorkspaceReconciler {
     policy?: FinalReconciliationPolicy;
   }): Promise<FinalReconciliationResult>;
 }
+
+export type RecoveryStrategy =
+  | "recheck"
+  | "repair"
+  | "rollback"
+  | "replan"
+  | "cancel";
+
+export interface RepairAction {
+  target: string;
+  operation: "create_file" | "modify_file" | "restore_file";
+  reason: string;
+  content?: string;
+}
+
+export interface ExecutionRecoveryRequest {
+  recoveryId: string;
+  runId: string;
+  planId: string;
+  requestedBy: "user";
+  strategy: RecoveryStrategy;
+  reason: string;
+  affectedSteps: string[];
+  affectedFiles: string[];
+  workspaceFingerprint?: import("../history/types.js").WorkspaceFingerprint;
+  requestedAt: number;
+  parentRecoveryId?: string;
+  rootRecoveryId?: string;
+  recoveryDepth?: number;
+}
+
+export interface ExecutionRecoveryAssessment {
+  eligible: boolean;
+  strategy: RecoveryStrategy;
+  riskLevel: import("../policy/types.js").TaskRiskLevel;
+  riskReasons: string[];
+  workspaceDrift: boolean;
+  affectedSteps: string[];
+  affectedFiles: string[];
+  requiresExplicitApproval: boolean;
+  reason: string;
+  recoveryDepth: number;
+  maxRecoveryDepth: number;
+  isLimitReached: boolean;
+  checkpointId?: string;
+  repairActions?: RepairAction[];
+  reconciliationResult?: FinalReconciliationResult;
+}
+
+export interface ExecutionRecoveryResult {
+  recoveryId: string;
+  runId: string;
+  planId: string;
+  strategy: RecoveryStrategy;
+  status: "completed" | "blocked" | "failed" | "cancelled";
+  startedAt: number;
+  completedAt: number;
+  durationMs: number;
+  affectedSteps: string[];
+  repairedFiles: string[];
+  verificationResult?: PlanVerificationResult;
+  reconciliationResult?: FinalReconciliationResult;
+  failureReason?: string;
+  replanResult?: ReplanResult;
+  parentRecoveryId?: string;
+  rootRecoveryId?: string;
+  recoveryDepth: number;
+}
+
+export interface ExecutionRecoveryOptions {
+  cwd: string;
+  userRequest?: string;
+  strategy?: RecoveryStrategy;
+  reason?: string;
+  affectedSteps?: string[];
+  affectedFiles?: string[];
+  parentRecoveryId?: string;
+  approved?: boolean;
+  signal?: AbortSignal;
+  reconciliationResult?: FinalReconciliationResult;
+}
+
+export interface ExecutionRecoveryManagerOptions {
+  executionPolicy: import("../policy/types.js").ExecutionPolicy;
+  permissionManager: import("@fecode/models").PermissionManager;
+  approvalResolver?: import("@fecode/models").ApprovalResolver;
+  reconciler: FinalWorkspaceReconciler;
+  replanManager: ReplanManager;
+  checkpointManager?: import("../checkpoints/types.js").CheckpointManager;
+  checkpointRecoveryManager?: import("../recovery/types.js").RecoveryManager;
+  commandExecutor?: import("../commands/types.js").CommandExecutor;
+  diagnosticsManager?: import("../diagnostics/types.js").RunDiagnosticsManager;
+  historyStore?: import("../history/types.js").RunHistoryStore;
+  gitRepository?: import("../git/types.js").GitRepository;
+  maxRecoveryDepth?: number;
+}
+
+export interface ExecutionRecoveryManager {
+  assessRecovery(
+    plan: TaskPlan,
+    options: ExecutionRecoveryOptions
+  ): Promise<ExecutionRecoveryAssessment>;
+
+  executeRecovery(
+    plan: TaskPlan,
+    assessment: ExecutionRecoveryAssessment,
+    options: ExecutionRecoveryOptions
+  ): AsyncIterable<import("../index.js").AgentEvent>;
+
+  getRecoveryHistory(planId: string): ExecutionRecoveryResult[];
+  getRecoveryLineage(recoveryId: string): ExecutionRecoveryResult[];
+}

@@ -178,5 +178,26 @@ export function formatRunDiagnostics(summary: RunSummary): string {
     }
   }
 
+  if (summary.executionRecoveryCount !== undefined && summary.executionRecoveryCount > 0) {
+    lines.push("");
+    lines.push("Execution Recovery:");
+    lines.push(`  attempts:   ${summary.executionRecoveryCount}`);
+    if (summary.lastRecoveryStrategy) {
+      lines.push(`  strategy:   ${summary.lastRecoveryStrategy}`);
+    }
+    if (summary.lastRecoveryStatus) {
+      lines.push(`  status:     ${summary.lastRecoveryStatus}`);
+    }
+    if (summary.lastRecoveryDurationMs !== undefined) {
+      lines.push(`  duration:   ${summary.lastRecoveryDurationMs}ms`);
+    }
+    if (summary.repairedFiles && summary.repairedFiles.length > 0) {
+      lines.push(`  repaired:   ${summary.repairedFiles.join(", ")}`);
+    }
+    if (summary.recoveryFailureReason) {
+      lines.push(`  reason:     ${summary.recoveryFailureReason}`);
+    }
+  }
+
   return lines.join("\n");
 }

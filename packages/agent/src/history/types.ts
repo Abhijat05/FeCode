@@ -88,6 +88,20 @@ export interface DurableRunRecord {
   missingFileCount?: number;
   reconciliationConsistent?: boolean;
   reconciliationFailureReason?: string;
+  executionRecoveryCount?: number;
+  lastRecoveryStrategy?: import("../planning/types.js").RecoveryStrategy;
+  lastRecoveryStatus?: "completed" | "blocked" | "failed" | "cancelled";
+  lastRecoveryDurationMs?: number;
+  repairedFiles?: string[];
+  recoveryFailureReason?: string;
+  recoveryLineage?: {
+    recoveryId: string;
+    parentRecoveryId?: string;
+    strategy: import("../planning/types.js").RecoveryStrategy;
+    depth: number;
+    status: string;
+    timestamp: number;
+  }[];
 }
 
 export interface RunHistoryStoreOptions {

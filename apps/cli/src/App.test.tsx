@@ -1648,8 +1648,9 @@ describe("CLI App Component", () => {
     expect(frame).toContain("• src/auth.ts");
     expect(frame).toContain("Unexpected changes:");
     expect(frame).toContain("• unexpected.log");
+    expect(frame).toContain("[r] Recover");
+    expect(frame).toContain("[p] Replan");
     expect(frame).toContain("[c] Re-check workspace");
-    expect(frame).toContain("[r] Replan");
     expect(frame).toContain("[x] Cancel");
 
     // Choose [c] to re-check
@@ -1659,5 +1660,231 @@ describe("CLI App Component", () => {
     frame = lastFrame();
     expect(frame).toContain("↻ Resuming plan plan-recon-cli");
   });
+
+  it("handles [r] Recover selection, presents assessment, and executes recovery upon approval", async () => {
+    const mockAgent = new MockAgent();
+    mockAgent.getTaskPlan = () => ({
+      planId: "plan-recon-rec",
+      runId: "run-recon-rec",
+      createdAt: Date.now(),
+      userRequestSummary: "Create auth files",
+      objective: "Auth files",
+      status: "blocked",
+      steps: [],
+      risks: []
+    });
+
+    (mockAgent as unknown as { assessExecutionRecovery: () => Promise<unknown> }).assessExecutionRecovery = async () => ({
+      eligible: true,
+      strategy: "repair",
+      riskLevel: "elevated",
+      riskReasons: ["File modification required"],
+      workspaceDrift: false,
+      affectedSteps: ["step-1"],
+      affectedFiles: ["src/auth.ts"],
+      requiresExplicitApproval: true,
+      reason: "Missing expected file: src/auth.ts",
+      recoveryDepth: 0,
+      maxRecoveryDepth: 5,
+      isLimitReached: false
+    });
+
+    (mockAgent as unknown as { executeExecutionRecovery: () => AsyncIterable<unknown> }).executeExecutionRecovery = async function* () {
+      yield {
+        type: "recovery_started",
+        recoveryId: "rec-1",
+        runId: "run-recon-rec",
+        planId: "plan-recon-rec",
+        strategy: "repair",
+        timestamp: Date.now()
+      };
+      yield {
+        type: "recovery_step_started",
+        recoveryId: "rec-1",
+        stepIndex: 1,
+        totalSteps: 1,
+        title: "Repair src/auth.ts",
+        timestamp: Date.now()
+      };
+      yield {
+        type: "recovery_step_completed",
+        recoveryId: "rec-1",
+        stepIndex: 1,
+        totalSteps: 1,
+        title: "Repair src/auth.ts",
+        success: true,
+        timestamp: Date.now()
+      };
+      yield {
+        type: "recovery_reconciliation_completed",
+        recoveryId: "rec-1",
+        result: {
+          reconciliationId: "rec-recon-1",
+          runId: "run-recon-rec",
+          planId: "plan-recon-rec",
+          status: "consistent",
+          checkedAt: Date.now(),
+          expectedFiles: ["src/auth.ts"],
+          modifiedFiles: ["src/auth.ts"],
+          unexpectedFiles: [],
+          missingFiles: [],
+          changedFiles: ["src/auth.ts"],
+          branchChanged: false,
+          workspaceChanged: true,
+          verificationPassed: true,
+          consistent: true
+        },
+        timestamp: Date.now()
+      };
+      yield {
+        type: "recovery_completed",
+        result: {
+          recoveryId: "rec-1",
+          runId: "run-recon-rec",
+          planId: "plan-recon-rec",
+          strategy: "repair",
+          status: "completed",
+          startedAt: Date.now() - 100,
+          completedAt: Date.now(),
+          durationMs: 100,
+          affectedSteps: ["step-1"],
+          repairedFiles: ["src/auth.ts"],
+          recoveryDepth: 0
+        },
+        timestamp: Date.now()
+      };
+    };
+
+    mockAgent.runFn = async function* () {
+      yield {
+        type: "final_reconciliation_failed",
+        result: {
+          reconciliationId: "recon-1",
+          runId: "run-recon-rec",
+          planId: "plan-recon-rec",
+          status: "inconsistent",
+          checkedAt: Date.now(),
+          expectedFiles: ["src/auth.ts"],
+          modifiedFiles: [],
+          unexpectedFiles: [],
+          missingFiles: ["src/auth.ts"],
+          changedFiles: [],
+          branchChanged: false,
+          workspaceChanged: false,
+          verificationPassed: true,
+          consistent: false,
+          failureReason: "Missing expected file: src/auth.ts"
+        },
+        timestamp: Date.now()
+      };
+    };
+
+    const { lastFrame, stdin } = render(
+      <App agent={mockAgent} cwd="/test/dir" />
+    );
+    await delay(50);
+
+    await typeAndSubmit(stdin, "Run auth");
+    await delay(200);
+
+    let frame = lastFrame();
+    expect(frame).toContain("⚠ Final workspace reconciliation failed");
+    expect(frame).toContain("[r] Recover");
+
+    // Choose [r] to recover
+    await typeAndSubmit(stdin, "r");
+    await delay(150);
+
+    frame = lastFrame();
+    expect(frame).toContain("Recovery assessment");
+    expect(frame).toContain("Strategy: repair");
+    expect(frame).toContain("Proceed with recovery? [y/N]:");
+
+    // Approve with "y"
+    await typeAndSubmit(stdin, "y");
+    await delay(150);
+
+    frame = lastFrame();
+    expect(frame).toContain("Recovery started");
+    expect(frame).toContain("Repair src/auth.ts ... ✓");
+    expect(frame).toContain("✓ Workspace consistent");
+    expect(frame).toContain("✓ Recovery completed");
+  });
+
+  it("cancels recovery cleanly when user declines approval", async () => {
+    const mockAgent = new MockAgent();
+    mockAgent.getTaskPlan = () => ({
+      planId: "plan-recon-rec-no",
+      runId: "run-recon-rec-no",
+      createdAt: Date.now(),
+      userRequestSummary: "Create auth files",
+      objective: "Auth files",
+      status: "blocked",
+      steps: [],
+      risks: []
+    });
+
+    (mockAgent as unknown as { assessExecutionRecovery: () => Promise<unknown> }).assessExecutionRecovery = async () => ({
+      eligible: true,
+      strategy: "repair",
+      riskLevel: "elevated",
+      riskReasons: ["File modification required"],
+      workspaceDrift: false,
+      affectedSteps: ["step-1"],
+      affectedFiles: ["src/auth.ts"],
+      requiresExplicitApproval: true,
+      reason: "Missing expected file: src/auth.ts",
+      recoveryDepth: 0,
+      maxRecoveryDepth: 5,
+      isLimitReached: false
+    });
+
+    mockAgent.runFn = async function* () {
+      yield {
+        type: "final_reconciliation_failed",
+        result: {
+          reconciliationId: "recon-1",
+          runId: "run-recon-rec-no",
+          planId: "plan-recon-rec-no",
+          status: "inconsistent",
+          checkedAt: Date.now(),
+          expectedFiles: ["src/auth.ts"],
+          modifiedFiles: [],
+          unexpectedFiles: [],
+          missingFiles: ["src/auth.ts"],
+          changedFiles: [],
+          branchChanged: false,
+          workspaceChanged: false,
+          verificationPassed: true,
+          consistent: false,
+          failureReason: "Missing expected file: src/auth.ts"
+        },
+        timestamp: Date.now()
+      };
+    };
+
+    const { lastFrame, stdin } = render(
+      <App agent={mockAgent} cwd="/test/dir" />
+    );
+    await delay(50);
+
+    await typeAndSubmit(stdin, "Run auth");
+    await delay(200);
+
+    // Choose [r] to recover
+    await typeAndSubmit(stdin, "r");
+    await delay(150);
+
+    let frame = lastFrame();
+    expect(frame).toContain("Proceed with recovery? [y/N]:");
+
+    // Decline with "n"
+    await typeAndSubmit(stdin, "n");
+    await delay(150);
+
+    frame = lastFrame();
+    expect(frame).toContain("✓ Recovery cancelled");
+  });
 });
+
 

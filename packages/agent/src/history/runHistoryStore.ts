@@ -134,7 +134,14 @@ export class DefaultRunHistoryStore implements RunHistoryStore {
         unexpectedFileCount: summary.unexpectedFileCount,
         missingFileCount: summary.missingFileCount,
         reconciliationConsistent: summary.reconciliationConsistent,
-        reconciliationFailureReason: summary.reconciliationFailureReason
+        reconciliationFailureReason: summary.reconciliationFailureReason,
+        executionRecoveryCount: summary.executionRecoveryCount,
+        lastRecoveryStrategy: summary.lastRecoveryStrategy,
+        lastRecoveryStatus: summary.lastRecoveryStatus,
+        lastRecoveryDurationMs: summary.lastRecoveryDurationMs,
+        repairedFiles: summary.repairedFiles ? [...summary.repairedFiles] : undefined,
+        recoveryFailureReason: summary.recoveryFailureReason,
+        recoveryLineage: summary.recoveryLineage ? [...summary.recoveryLineage] : undefined
       };
     }
 

@@ -154,6 +154,11 @@ export const App: React.FC<AppProps> = ({
   const [pendingPlanBlocked, setPendingPlanBlocked] = useState<{
     plan: import("@fecode/agent").TaskPlan;
     assessment: import("@fecode/agent").PlanAdaptationAssessment;
+    reconciliationResult?: import("@fecode/agent").FinalReconciliationResult;
+  } | null>(null);
+  const [pendingRecovery, setPendingRecovery] = useState<{
+    plan: import("@fecode/agent").TaskPlan;
+    assessment: import("@fecode/agent").ExecutionRecoveryAssessment;
   } | null>(null);
 
   const persistState = useCallback(
@@ -274,54 +279,238 @@ export const App: React.FC<AppProps> = ({
     const trimmed = value.trim();
     if (!trimmed || isGenerating) return;
 
+    if (pendingRecovery) {
+      setQuery("");
+      const pr = pendingRecovery;
+      setPendingRecovery(null);
+
+      const choice = trimmed.toLowerCase();
+      if (choice === "y" || choice === "yes") {
+        const recTurnId = `turn-${Date.now()}`;
+        setTurns((prev) => [
+          ...prev,
+          {
+            id: recTurnId,
+            prompt: trimmed,
+            response: "Recovery started\n",
+            status: "streaming"
+          }
+        ]);
+
+        try {
+          if (agent && "executeExecutionRecovery" in agent) {
+            for await (const ev of (
+              agent as {
+                executeExecutionRecovery: (
+                  assessment: import("@fecode/agent").ExecutionRecoveryAssessment,
+                  opts: { cwd: string; approved: boolean }
+                ) => AsyncIterable<import("@fecode/agent").AgentEvent>;
+              }
+            ).executeExecutionRecovery(pr.assessment, { cwd, approved: true })) {
+              if (ev.type === "recovery_step_started") {
+                setTurns((prev) =>
+                  prev.map((t) =>
+                    t.id === recTurnId
+                      ? {
+                          ...t,
+                          response:
+                            t.response +
+                            `[${ev.stepIndex}/${ev.totalSteps}] ${ev.title} ... `
+                        }
+                      : t
+                  )
+                );
+              } else if (ev.type === "recovery_step_completed") {
+                setTurns((prev) =>
+                  prev.map((t) =>
+                    t.id === recTurnId
+                      ? {
+                          ...t,
+                          response: t.response + `${ev.success ? "✓" : "✗"}\n`
+                        }
+                      : t
+                  )
+                );
+              } else if (ev.type === "recovery_verification_started") {
+                setTurns((prev) =>
+                  prev.map((t) =>
+                    t.id === recTurnId
+                      ? {
+                          ...t,
+                          response: t.response + `\nVerification\n`
+                        }
+                      : t
+                  )
+                );
+              } else if (ev.type === "recovery_verification_completed") {
+                setTurns((prev) =>
+                  prev.map((t) =>
+                    t.id === recTurnId
+                      ? {
+                          ...t,
+                          response:
+                            t.response +
+                            `${ev.success ? "✓" : "✗"} ${ev.command}\n\n`
+                        }
+                      : t
+                  )
+                );
+              } else if (ev.type === "recovery_reconciliation_started") {
+                setTurns((prev) =>
+                  prev.map((t) =>
+                    t.id === recTurnId
+                      ? {
+                          ...t,
+                          response: t.response + `Workspace reconciliation\n`
+                        }
+                      : t
+                  )
+                );
+              } else if (ev.type === "recovery_reconciliation_completed") {
+                setTurns((prev) =>
+                  prev.map((t) =>
+                    t.id === recTurnId
+                      ? {
+                          ...t,
+                          response:
+                            t.response +
+                            `${ev.result.consistent ? "✓ Workspace consistent" : "⚠ Inconsistent"}\n\n`
+                        }
+                      : t
+                  )
+                );
+              } else if (ev.type === "recovery_completed") {
+                setTurns((prev) =>
+                  prev.map((t) =>
+                    t.id === recTurnId
+                      ? {
+                          ...t,
+                          status: "done",
+                          response: t.response + `✓ Recovery completed\n`
+                        }
+                      : t
+                  )
+                );
+              } else if (
+                ev.type === "recovery_blocked" ||
+                ev.type === "recovery_failed"
+              ) {
+                setTurns((prev) =>
+                  prev.map((t) =>
+                    t.id === recTurnId
+                      ? {
+                          ...t,
+                          status: "done",
+                          response:
+                            t.response +
+                            `✗ Recovery ${ev.type === "recovery_blocked" ? "blocked" : "failed"}: ${ev.reason}\n`
+                        }
+                      : t
+                  )
+                );
+              } else if (ev.type === "recovery_cancelled") {
+                setTurns((prev) =>
+                  prev.map((t) =>
+                    t.id === recTurnId
+                      ? {
+                          ...t,
+                          status: "done",
+                          response:
+                            t.response +
+                            `✓ Recovery cancelled: ${ev.reason}\n`
+                        }
+                      : t
+                  )
+                );
+              }
+            }
+          }
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === recTurnId
+                ? {
+                    ...t,
+                    status: "error",
+                    response: t.response + `✗ Recovery error: ${msg}\n`
+                  }
+                : t
+            )
+          );
+        }
+      } else {
+        setTurns((prev) => [
+          ...prev,
+          {
+            id: `cmd-${Date.now()}`,
+            prompt: trimmed,
+            response: "✓ Recovery cancelled\n",
+            status: "done"
+          }
+        ]);
+      }
+      return;
+    }
+
     if (pendingPlanBlocked) {
       setQuery("");
       const pb = pendingPlanBlocked;
       setPendingPlanBlocked(null);
 
       const choice = trimmed.toLowerCase();
-      if (choice === "c" || choice === "continue") {
-        let resumeNotice = `↻ Resuming plan ${pb.plan.planId}...\n`;
-        try {
-          if (agent && "resolveExecutionDecision" in agent) {
-            const decisionResult = await (
-              agent as {
-                resolveExecutionDecision: (
-                  id: string,
-                  d: string,
-                  opts?: { cwd: string }
-                ) => Promise<import("@fecode/agent").ExecutionDecisionResult>;
-              }
-            ).resolveExecutionDecision(pb.plan.planId, "continue", { cwd });
+      const isRecon = !!pb.reconciliationResult;
 
-            const incompleteStep =
-              pb.plan.steps.find((s) => s.stepId === decisionResult.resumedStepId) ||
-              pb.plan.steps[0];
-            if (incompleteStep) {
-              resumeNotice = `${PlanFormatter.formatResumeNotice(
-                pb.plan.planId,
-                incompleteStep.order,
-                pb.plan.steps.length,
-                incompleteStep.title
-              )}\n`;
+      if (isRecon && (choice === "r" || choice === "recover" || choice === "recovery")) {
+        try {
+          if (agent && "assessExecutionRecovery" in agent) {
+            const assessment = await (
+              agent as {
+                assessExecutionRecovery: (
+                  planId?: string,
+                  opts?: {
+                    cwd: string;
+                    reconciliationResult?: import("@fecode/agent").FinalReconciliationResult;
+                  }
+                ) => Promise<import("@fecode/agent").ExecutionRecoveryAssessment>;
+              }
+            ).assessExecutionRecovery(pb.plan.planId, {
+              cwd,
+              reconciliationResult: pb.reconciliationResult
+            });
+
+            setPendingRecovery({ assessment, plan: pb.plan });
+            const promptText = PlanFormatter.formatRecoveryAssessment(assessment);
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: `${promptText}\n`,
+                status: "done"
+              }
+            ]);
+            return;
+          }
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: `✗ Recovery assessment error: ${msg}\n`,
+              status: "done"
             }
-          }
-          if (agent && "getTaskPlan" in agent) {
-            transitionPlanStatus(pb.plan, "executing");
-          }
-        } catch {
-          // ignore
+          ]);
+          return;
         }
-        setTurns((prev) => [
-          ...prev,
-          {
-            id: `cmd-${Date.now()}`,
-            prompt: trimmed,
-            response: resumeNotice,
-            status: "done"
-          }
-        ]);
-      } else if (choice === "r" || choice === "replan") {
+      }
+
+      if (
+        (!isRecon && (choice === "r" || choice === "replan")) ||
+        (isRecon && (choice === "p" || choice === "replan"))
+      ) {
         try {
           if (agent && "resolveExecutionDecision" in agent) {
             await (
@@ -382,6 +571,52 @@ export const App: React.FC<AppProps> = ({
             }
           ]);
         }
+      } else if (
+        choice === "c" ||
+        choice === "continue" ||
+        choice === "re-check" ||
+        choice === "recheck"
+      ) {
+        let resumeNotice = `↻ Resuming plan ${pb.plan.planId}...\n`;
+        try {
+          if (agent && "resolveExecutionDecision" in agent) {
+            const decisionResult = await (
+              agent as {
+                resolveExecutionDecision: (
+                  id: string,
+                  d: string,
+                  opts?: { cwd: string }
+                ) => Promise<import("@fecode/agent").ExecutionDecisionResult>;
+              }
+            ).resolveExecutionDecision(pb.plan.planId, "continue", { cwd });
+
+            const incompleteStep =
+              pb.plan.steps.find((s) => s.stepId === decisionResult.resumedStepId) ||
+              pb.plan.steps[0];
+            if (incompleteStep) {
+              resumeNotice = `${PlanFormatter.formatResumeNotice(
+                pb.plan.planId,
+                incompleteStep.order,
+                pb.plan.steps.length,
+                incompleteStep.title
+              )}\n`;
+            }
+          }
+          if (agent && "getTaskPlan" in agent) {
+            transitionPlanStatus(pb.plan, "executing");
+          }
+        } catch {
+          // ignore
+        }
+        setTurns((prev) => [
+          ...prev,
+          {
+            id: `cmd-${Date.now()}`,
+            prompt: trimmed,
+            response: resumeNotice,
+            status: "done"
+          }
+        ]);
       } else {
         // default / 'x' / 'cancel'
         try {
@@ -2098,7 +2333,11 @@ export const App: React.FC<AppProps> = ({
               recommendedAction: "replan"
             };
 
-          setPendingPlanBlocked({ plan: currentPlan, assessment });
+          setPendingPlanBlocked({
+            plan: currentPlan,
+            assessment,
+            reconciliationResult: event.result
+          });
           const blockedPromptText = PlanFormatter.formatReconciliationBlockedPrompt(
             currentPlan,
             event.result

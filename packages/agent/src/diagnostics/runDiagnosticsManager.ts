@@ -292,6 +292,50 @@ export class DefaultRunDiagnosticsManager implements RunDiagnosticsManager {
     }
   }
 
+  public recordRecoveryAssessment(
+    runId: string,
+    assessment: import("../planning/types.js").ExecutionRecoveryAssessment
+  ): void {
+    const summary = this.runSummaries.get(runId);
+    if (!summary) return;
+
+    summary.lastRecoveryStrategy = assessment.strategy;
+    if (assessment.reason) {
+      summary.recoveryFailureReason = sanitizeString(assessment.reason);
+    }
+  }
+
+  public recordRecoveryResult(
+    runId: string,
+    result: import("../planning/types.js").ExecutionRecoveryResult
+  ): void {
+    const summary = this.runSummaries.get(runId);
+    if (!summary) return;
+
+    summary.executionRecoveryCount = (summary.executionRecoveryCount || 0) + 1;
+    summary.lastRecoveryStrategy = result.strategy;
+    summary.lastRecoveryStatus = result.status;
+    summary.lastRecoveryDurationMs = result.durationMs;
+    summary.repairedFiles = result.repairedFiles ? [...result.repairedFiles] : [];
+
+    if (result.failureReason) {
+      summary.recoveryFailureReason = sanitizeString(result.failureReason);
+    }
+
+    if (!summary.recoveryLineage) {
+      summary.recoveryLineage = [];
+    }
+
+    summary.recoveryLineage.push({
+      recoveryId: result.recoveryId,
+      parentRecoveryId: result.parentRecoveryId,
+      strategy: result.strategy,
+      depth: result.recoveryDepth,
+      status: result.status,
+      timestamp: result.completedAt
+    });
+  }
+
   public recordToolStart(
     runId: string,
     toolName: string,

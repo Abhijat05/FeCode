@@ -110,6 +110,20 @@ export interface RunSummary {
   missingFileCount?: number;
   reconciliationConsistent?: boolean;
   reconciliationFailureReason?: string;
+  executionRecoveryCount?: number;
+  lastRecoveryStrategy?: import("../planning/types.js").RecoveryStrategy;
+  lastRecoveryStatus?: "completed" | "blocked" | "failed" | "cancelled";
+  lastRecoveryDurationMs?: number;
+  repairedFiles?: string[];
+  recoveryFailureReason?: string;
+  recoveryLineage?: {
+    recoveryId: string;
+    parentRecoveryId?: string;
+    strategy: import("../planning/types.js").RecoveryStrategy;
+    depth: number;
+    status: string;
+    timestamp: number;
+  }[];
 }
 
 export interface RunDiagnosticsManagerOptions {
@@ -166,10 +180,18 @@ export interface RunDiagnosticsManager {
     stepId: string,
     stepOrder: number
   ): void;
-  recordReconciliationStart?(runId: string, planId: string): void;
-  recordReconciliationResult?(
+  recordReconciliationStart(runId: string, reconciliationId: string): void;
+  recordReconciliationResult(
     runId: string,
     result: import("../planning/types.js").FinalReconciliationResult
+  ): void;
+  recordRecoveryAssessment(
+    runId: string,
+    assessment: import("../planning/types.js").ExecutionRecoveryAssessment
+  ): void;
+  recordRecoveryResult(
+    runId: string,
+    result: import("../planning/types.js").ExecutionRecoveryResult
   ): void;
   recordToolStart(runId: string, toolName: string, callId: string, targetPath?: string): void;
   recordToolComplete(
