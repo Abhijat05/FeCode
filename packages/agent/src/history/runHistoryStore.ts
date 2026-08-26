@@ -179,7 +179,23 @@ export class DefaultRunHistoryStore implements RunHistoryStore {
               affectedTargets: [...r.affectedTargets],
               approval: r.approval ? { ...r.approval } : undefined
             }))
-          : undefined
+          : undefined,
+        checkpointsCreated: summary.checkpointsCreated,
+        checkpointsConsumed: summary.checkpointsConsumed,
+        checkpointsExpired: summary.checkpointsExpired,
+        checkpointsInvalidated: summary.checkpointsInvalidated,
+        handoffCount: summary.handoffCount,
+        handoffAttempts: summary.handoffAttempts || summary.handoffCount,
+        handoffApprovals: summary.handoffApprovals,
+        handoffRejections: summary.handoffRejections,
+        handoffInvalidations: summary.handoffInvalidations,
+        handoffBlockedCount: summary.handoffBlockedCount,
+        handoffBlocks: summary.handoffBlocks || summary.handoffBlockedCount,
+        approvalWaitDurationMs: summary.approvalWaitDurationMs,
+        lastHandoffStatus: summary.lastHandoffStatus,
+        lastHandoffReason: summary.lastHandoffReason,
+        lastHandoffDurationMs: summary.lastHandoffDurationMs,
+        lastHandoffCheckpointId: summary.lastHandoffCheckpointId
       };
     }
 

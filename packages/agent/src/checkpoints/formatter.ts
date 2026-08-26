@@ -103,6 +103,7 @@ export class CheckpointFormatter {
     stepTitle?: string;
     riskLevel: import("../policy/types.js").TaskRiskLevel;
     reason: string;
+    checkpointId?: string;
     affectedTargets: string[];
   }): string {
     const lines: string[] = ["⚠ Approval required", ""];
@@ -122,6 +123,11 @@ export class CheckpointFormatter {
     lines.push("Reason:");
     lines.push(sanitizeText(params.reason));
 
+    if (params.checkpointId) {
+      lines.push("");
+      lines.push(`Checkpoint: ${params.checkpointId}`);
+    }
+
     if (params.affectedTargets && params.affectedTargets.length > 0) {
       lines.push("");
       lines.push("Affected targets:");
@@ -139,14 +145,47 @@ export class CheckpointFormatter {
   }
 
   public static formatApprovalGranted(): string {
-    return "✓ Approval granted\nRe-validating workspace...\n✓ Checkpoint validated\nExecuting...\n";
+    return "✓ Approval granted\n✓ Workspace validated\n✓ Risk validated\n✓ Checkpoint consumed\nExecuting...\n";
   }
 
   public static formatApprovalRejected(): string {
     return "Approval rejected.\nStep cancelled.\n";
   }
 
-  public static formatApprovalInvalidated(reason: string): string {
-    return `⚠ Approval invalidated\n\nReason:\n${sanitizeText(reason)}\n\nA new approval is required.\n`;
+  public static formatApprovalInvalidated(reason: string, checkpointId?: string): string {
+    const lines: string[] = ["⚠ Approval invalidated", ""];
+    if (checkpointId) {
+      lines.push(`Checkpoint: ${checkpointId}`, "");
+    }
+    lines.push("Reason:");
+    lines.push(sanitizeText(reason));
+    lines.push("");
+    lines.push("A new approval is required.");
+    lines.push("");
+    lines.push("Create a new approval? [y/N]:");
+    return lines.join("\n") + "\n";
+  }
+
+  public static formatBlockedContinuation(params: {
+    stepOrder: number;
+    totalSteps: number;
+    stepTitle: string;
+    reason: string;
+  }): string {
+    const lines: string[] = [
+      "⚠ Execution remains blocked",
+      "",
+      `Step: ${params.stepOrder}/${params.totalSteps} — ${params.stepTitle}`,
+      "",
+      "Reason:",
+      sanitizeText(params.reason),
+      "",
+      "[c] Continue after re-validation",
+      "[r] Create replacement plan",
+      "[x] Cancel",
+      "",
+      "Choice [x]:"
+    ];
+    return lines.join("\n");
   }
 }

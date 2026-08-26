@@ -11,3 +11,5 @@ export * from "./decisionManager.js";
 export * from "./reconciliation.js";
 export * from "./executionRecoveryManager.js";
 export * from "./continuationManager.js";
+export * from "./handoffManager.js";
+

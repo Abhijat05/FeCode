@@ -117,7 +117,8 @@ import type {
   RecoveryOutcomeStatus,
   RecoveryContinuationManager,
   RecoveryContinuationPreparation,
-  RecoveryContinuationRequest
+  RecoveryContinuationRequest,
+  ExecutionHandoffManager
 } from "./planning/types.js";
 import { DefaultTaskPlanner } from "./planning/planner.js";
 import { DefaultPlanExecutor } from "./planning/executor.js";
@@ -128,6 +129,7 @@ import { DefaultExecutionDecisionManager } from "./planning/decisionManager.js";
 import { DefaultFinalWorkspaceReconciler } from "./planning/reconciliation.js";
 import { DefaultExecutionRecoveryManager } from "./planning/executionRecoveryManager.js";
 import { DefaultRecoveryContinuationManager } from "./planning/continuationManager.js";
+import { DefaultExecutionHandoffManager } from "./planning/handoffManager.js";
 import {
   transitionPlanStatus,
   completePlanStep,
@@ -169,6 +171,7 @@ export interface AgentRuntimeOptions {
   reconciliationPolicy?: FinalReconciliationPolicy;
   executionRecoveryManager?: ExecutionRecoveryManager;
   recoveryContinuationManager?: RecoveryContinuationManager;
+  handoffManager?: ExecutionHandoffManager;
   maxRecoveryDepth?: number;
   maxReplanDepth?: number;
   maxRetainedRuns?: number;
@@ -213,6 +216,7 @@ export class AgentRuntime implements Agent {
   private readonly reconciliationPolicy: FinalReconciliationPolicy;
   private readonly executionRecoveryManager: ExecutionRecoveryManager;
   private readonly recoveryContinuationManager: RecoveryContinuationManager;
+  private readonly handoffManager: ExecutionHandoffManager;
   private readonly maxReplanDepth: number;
   private readonly completionTracker: TaskCompletionTracker = new TaskCompletionTracker();
   private readonly safeEditValidator: SafeEditValidator = new SafeEditValidator();
@@ -276,6 +280,18 @@ export class AgentRuntime implements Agent {
     this.reconciliationPolicy = options.reconciliationPolicy || {
       required: true
     };
+    this.handoffManager =
+      options.handoffManager ||
+      new DefaultExecutionHandoffManager({
+        registry: this.registry,
+        executor: this.executor,
+        permissionManager: this.permissionManager,
+        approvalResolver: this.approvalResolver,
+        executionPolicy: this.executionPolicy,
+        checkpointManager: this.checkpointManager,
+        diagnosticsManager: this.diagnosticsManager,
+        gitRepository: this.gitRepository
+      });
     this.planExecutor =
       options.planExecutor ||
       new DefaultPlanExecutor({
@@ -292,7 +308,8 @@ export class AgentRuntime implements Agent {
         feedbackManager: this.feedbackManager,
         retryPolicy: this.retryPolicy,
         reconciler: this.reconciler,
-        reconciliationPolicy: this.reconciliationPolicy
+        reconciliationPolicy: this.reconciliationPolicy,
+        handoffManager: this.handoffManager
       });
     this.maxReplanDepth = options.maxReplanDepth ?? 5;
     this.replanManager =
@@ -410,6 +427,10 @@ export class AgentRuntime implements Agent {
 
   public getExecutionDecisionManager(): ExecutionDecisionManager {
     return this.decisionManager;
+  }
+
+  public getHandoffManager(): ExecutionHandoffManager {
+    return this.handoffManager;
   }
 
   public async resolveExecutionDecision(

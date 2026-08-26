@@ -218,6 +218,7 @@ export interface PlanExecutorOptions {
   retryPolicy?: StepRetryPolicy;
   reconciler?: FinalWorkspaceReconciler;
   reconciliationPolicy?: FinalReconciliationPolicy;
+  handoffManager?: ExecutionHandoffManager;
 }
 
 export interface PlanExecutor {
@@ -727,3 +728,68 @@ export interface RecoveryContinuationManager {
 
   getContinuationHistory(planId: string): RecoveryContinuationResult[];
 }
+
+export type ExecutionHandoffStatus =
+  | "ready"
+  | "waiting_approval"
+  | "approved"
+  | "rejected"
+  | "invalidated"
+  | "consumed"
+  | "blocked"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export interface ExecutionHandoffContext {
+  runId: string;
+  planId: string;
+  step: PlanStep;
+  cwd: string;
+  gitRepository?: import("../git/types.js").GitRepository;
+  signal?: AbortSignal;
+  isResume?: boolean;
+  isContinuation?: boolean;
+  isReplan?: boolean;
+  resumedFromStepId?: string;
+}
+
+export interface ExecutionHandoffPreparation {
+  canExecute: boolean;
+  requiresCheckpoint: boolean;
+  requiresExplicitApproval: boolean;
+  effectiveRisk: import("../policy/types.js").TaskRiskLevel;
+  riskReasons: string[];
+  checkpointRecord?: import("../checkpoints/types.js").CheckpointRecord;
+  blockers?: string[];
+  toolCall?: import("@fecode/models").ToolCall;
+}
+
+export interface ExecutionHandoffResult {
+  success: boolean;
+  status: ExecutionHandoffStatus;
+  checkpointId?: string;
+  error?: string;
+  blockers?: string[];
+  checkpointRecord?: import("../checkpoints/types.js").CheckpointRecord;
+  consumedAt?: number;
+  requiresReplan?: boolean;
+  toolResult?: import("@fecode/models").ToolResult;
+}
+
+export interface ExecutionHandoffManagerOptions {
+  registry: import("@fecode/models").ToolRegistry;
+  executor: import("@fecode/models").ToolExecutor;
+  permissionManager: import("@fecode/models").PermissionManager;
+  approvalResolver?: import("@fecode/models").ApprovalResolver;
+  executionPolicy: import("../policy/types.js").ExecutionPolicy;
+  checkpointManager?: import("../checkpoints/types.js").CheckpointManager;
+  diagnosticsManager?: import("../diagnostics/types.js").RunDiagnosticsManager;
+  gitRepository?: import("../git/types.js").GitRepository;
+}
+
+export interface ExecutionHandoffManager {
+  prepareHandoff(context: ExecutionHandoffContext): Promise<ExecutionHandoffPreparation>;
+  executeHandoff(context: ExecutionHandoffContext): AsyncGenerator<import("../index.js").AgentEvent, ExecutionHandoffResult, void>;
+}
+

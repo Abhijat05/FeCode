@@ -1,10 +1,4 @@
-import type {
-  ApprovalRequest,
-  ToolCall,
-  ToolContext,
-  ToolResult
-} from "@fecode/models";
-import type { TaskRiskLevel } from "../policy/types.js";
+import type { ToolCall } from "@fecode/models";
 import type { AgentEvent } from "../index.js";
 import type {
   ExecutionFeedbackKind,
@@ -33,20 +27,8 @@ import { detectPlanStaleness } from "./staleness.js";
 import { DefaultExecutionFeedbackManager } from "./executionFeedback.js";
 import { DefaultStepRetryPolicy } from "./retryPolicy.js";
 import { DefaultFinalWorkspaceReconciler } from "./reconciliation.js";
+import { DefaultExecutionHandoffManager } from "./handoffManager.js";
 import type { CommandResult } from "../commands/types.js";
-
-const RISK_LEVEL_ORDER: Record<TaskRiskLevel, number> = {
-  low: 1,
-  normal: 2,
-  elevated: 3,
-  critical: 4
-};
-
-function getHigherRisk(a: TaskRiskLevel, b: TaskRiskLevel): TaskRiskLevel {
-  const orderA = RISK_LEVEL_ORDER[a] ?? 2;
-  const orderB = RISK_LEVEL_ORDER[b] ?? 2;
-  return orderA >= orderB ? a : b;
-}
 
 export class DefaultPlanExecutor implements PlanExecutor {
   private readonly options: PlanExecutorOptions;
@@ -54,6 +36,7 @@ export class DefaultPlanExecutor implements PlanExecutor {
   private readonly retryPolicy: StepRetryPolicy;
   private readonly reconciler: FinalWorkspaceReconciler;
   private readonly reconciliationPolicy: FinalReconciliationPolicy;
+  private readonly handoffManager: import("./types.js").ExecutionHandoffManager;
 
   constructor(options: PlanExecutorOptions) {
     this.options = options;
@@ -65,6 +48,18 @@ export class DefaultPlanExecutor implements PlanExecutor {
     this.reconciliationPolicy = options.reconciliationPolicy || {
       required: true
     };
+    this.handoffManager =
+      options.handoffManager ||
+      new DefaultExecutionHandoffManager({
+        registry: options.registry,
+        executor: options.executor,
+        permissionManager: options.permissionManager,
+        approvalResolver: options.approvalResolver,
+        executionPolicy: options.executionPolicy,
+        checkpointManager: options.checkpointManager,
+        diagnosticsManager: options.diagnosticsManager,
+        gitRepository: options.gitRepository
+      });
   }
 
   public async *executePlan(
@@ -314,9 +309,6 @@ export class DefaultPlanExecutor implements PlanExecutor {
         timestamp: stepStartTime
       };
 
-      const targetFiles = step.expectedFiles || (step.intent?.target ? [step.intent.target] : []);
-      const opName = step.intent?.type || (step.type === "modify" ? "modify_file" : "inspect_file");
-
       let stepSuccess = false;
       let stepErrorMsg: string | undefined;
       let verificationResult: PlanVerificationResult | undefined;
@@ -329,306 +321,31 @@ export class DefaultPlanExecutor implements PlanExecutor {
           break;
         }
 
-        // 5. Safety & Authoritative Risk Re-Evaluation (fresh before each attempt)
-        const assessedRisk = this.options.executionPolicy.assess({
-          userMessage: step.title,
+        // 5. Execution Handoff Boundary (Phase 5AA)
+        const handoffResult = yield* this.handoffManager.executeHandoff({
+          runId: context.runId,
+          planId: activePlan.planId,
+          step,
           cwd: context.cwd,
-          affectedFiles: targetFiles,
-          operations: [opName]
+          gitRepository: this.options.gitRepository,
+          signal: context.signal,
+          isResume,
+          isContinuation: options?.isResume,
+          resumedFromStepId: options?.resumedFromStepId
         });
 
-        const effectiveRisk = getHigherRisk(step.riskLevel, assessedRisk.level);
+        let attemptSuccess = handoffResult.success;
+        let attemptErrorMsg: string | undefined = handoffResult.error;
 
-        // 6. Checkpoint Enforcement & Approval Lifecycle
-        if (
-          (effectiveRisk === "elevated" ||
-            effectiveRisk === "critical" ||
-            assessedRisk.requiresCheckpoint) &&
-          this.options.checkpointManager
-        ) {
-          let cpRecord: import("../checkpoints/types.js").CheckpointRecord | undefined;
-          try {
-            const cpRes = await this.options.checkpointManager.create({
-              cwd: context.cwd,
-              taskId: context.runId,
-              reason:
-                assessedRisk.reasons.join("; ") ||
-                `Step ${step.stepId} mutation checkpoint (attempt ${attempt})`,
-              affectedFiles: targetFiles,
-              signal: context.signal
-            });
-            if (!cpRes.success) {
-              stepErrorMsg = `Checkpoint creation failed: ${cpRes.error || "Unknown error"}. Mutation blocked for safety.`;
-              break;
-            }
-
-            if (this.options.checkpointManager.requestApproval) {
-              cpRecord = await this.options.checkpointManager.requestApproval({
-                runId: context.runId,
-                planId: activePlan.planId,
-                stepId: step.stepId,
-                stepOrder: step.order,
-                riskLevel: effectiveRisk,
-                reason:
-                  assessedRisk.reasons.join("; ") ||
-                  `Step ${step.stepId} mutation checkpoint (attempt ${attempt})`,
-                affectedTargets: targetFiles,
-                requiredAction: step.title,
-                cwd: context.cwd
-              });
-
-              yield {
-                type: "checkpoint_created",
-                checkpointId: cpRecord.checkpointId,
-                runId: context.runId,
-                planId: activePlan.planId,
-                stepId: step.stepId,
-                riskLevel: effectiveRisk,
-                reason: cpRecord.reason,
-                affectedTargets: targetFiles,
-                timestamp: Date.now()
-              };
-
-              yield {
-                type: "checkpoint_approval_requested",
-                checkpointId: cpRecord.checkpointId,
-                runId: context.runId,
-                planId: activePlan.planId,
-                stepId: step.stepId,
-                stepOrder: step.order,
-                riskLevel: effectiveRisk,
-                reason: cpRecord.reason,
-                affectedTargets: targetFiles,
-                requiredAction: step.title,
-                expiresAt: cpRecord.expiresAt,
-                timestamp: Date.now()
-              };
-
-              if (this.options.diagnosticsManager) {
-                this.options.diagnosticsManager.recordCheckpointRecord(
-                  context.runId,
-                  cpRecord
-                );
-              }
-            }
-          } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : String(err);
-            stepErrorMsg = `Checkpoint creation failed: ${msg}. Mutation blocked for safety.`;
-            break;
-          }
-
-          // Checkpoint approval boundary for elevated/critical mutating steps
+        if (!attemptSuccess) {
           if (
-            cpRecord &&
-            (assessedRisk.requiresExplicitApproval ||
-              effectiveRisk === "elevated" ||
-              effectiveRisk === "critical") &&
-            this.options.approvalResolver
+            handoffResult.status === "blocked" ||
+            handoffResult.status === "rejected" ||
+            handoffResult.status === "invalidated" ||
+            handoffResult.status === "cancelled"
           ) {
-            const approvalRequest: ApprovalRequest = {
-              id: `approval-${step.stepId}-${attempt}-${Date.now()}`,
-              toolName: step.type,
-              category: "write",
-              arguments: { stepId: step.stepId, targetFiles },
-              reason:
-                assessedRisk.reasons.join("; ") ||
-                `Approval required for step ${step.stepId} (${step.title})`
-            };
-
-            const decision = await this.options.approvalResolver.resolve(
-              approvalRequest
-            );
-
-            if (decision.approved) {
-              if (this.options.checkpointManager.approve) {
-                const approvedRecord =
-                  await this.options.checkpointManager.approve(
-                    cpRecord.checkpointId,
-                    {
-                      approved: true,
-                      approvedBy: "user",
-                      decision: "approved",
-                      timestamp: Date.now()
-                    }
-                  );
-                if (this.options.diagnosticsManager) {
-                  this.options.diagnosticsManager.recordCheckpointRecord(
-                    context.runId,
-                    approvedRecord
-                  );
-                }
-              }
-
-              yield {
-                type: "checkpoint_approved",
-                checkpointId: cpRecord.checkpointId,
-                runId: context.runId,
-                planId: activePlan.planId,
-                stepId: step.stepId,
-                approvedBy: "user",
-                timestamp: Date.now()
-              };
-
-              // Validate and atomically consume checkpoint before execution
-              if (this.options.checkpointManager.consume) {
-                const consumeRes = await this.options.checkpointManager.consume(
-                  cpRecord.checkpointId,
-                  {
-                    runId: context.runId,
-                    planId: activePlan.planId,
-                    stepId: step.stepId,
-                    riskLevel: effectiveRisk,
-                    cwd: context.cwd,
-                    gitRepository: this.options.gitRepository
-                  }
-                );
-
-                if (!consumeRes.success) {
-                  yield {
-                    type: "checkpoint_invalidated",
-                    checkpointId: cpRecord.checkpointId,
-                    runId: context.runId,
-                    planId: activePlan.planId,
-                    stepId: step.stepId,
-                    reason:
-                      consumeRes.error ||
-                      "Checkpoint approval invalidated before consumption",
-                    timestamp: Date.now()
-                  };
-                  stepErrorMsg = `Checkpoint validation failed: ${consumeRes.error}. Protected execution blocked.`;
-                  break;
-                }
-
-                yield {
-                  type: "checkpoint_consumed",
-                  checkpointId: cpRecord.checkpointId,
-                  runId: context.runId,
-                  planId: activePlan.planId,
-                  stepId: step.stepId,
-                  consumedAt: consumeRes.consumedAt || Date.now(),
-                  timestamp: Date.now()
-                };
-              }
-            } else {
-              if (this.options.checkpointManager.reject) {
-                const rejectedRecord =
-                  await this.options.checkpointManager.reject(
-                    cpRecord.checkpointId,
-                    decision.reason
-                  );
-                if (this.options.diagnosticsManager) {
-                  this.options.diagnosticsManager.recordCheckpointRecord(
-                    context.runId,
-                    rejectedRecord
-                  );
-                }
-              }
-
-              yield {
-                type: "checkpoint_rejected",
-                checkpointId: cpRecord.checkpointId,
-                runId: context.runId,
-                planId: activePlan.planId,
-                stepId: step.stepId,
-                reason: decision.reason,
-                timestamp: Date.now()
-              };
-
-              stepErrorMsg = decision.reason || "Step cancelled by user.";
-              break;
-            }
-          }
-        }
-
-        // 7. Translate ExecutionIntent into Tool Calls & Execute (FRESH checks on every attempt)
-        const toolCall = this.translateIntentToToolCall(step);
-        let attemptSuccess = true;
-        let attemptErrorMsg: string | undefined;
-
-        if (toolCall) {
-          const tool = this.options.registry.get(toolCall.name);
-          if (!tool) {
-            attemptSuccess = false;
-            attemptErrorMsg = `Tool not found in registry: ${toolCall.name}`;
-          } else {
-            const toolContext: ToolContext = {
-              cwd: context.cwd,
-              signal: context.signal || new AbortController().signal
-            };
-
-            const permissionDecision = await this.options.permissionManager.check(
-              tool,
-              toolContext
-            );
-
-            if (permissionDecision.type === "denied") {
-              attemptSuccess = false;
-              attemptErrorMsg = permissionDecision.reason || "Permission denied";
-            } else if (permissionDecision.type === "requires_approval") {
-              const approvalRequest: ApprovalRequest = {
-                id: `approval-${step.stepId}-${attempt}-${Date.now()}`,
-                toolName: tool.name,
-                category: tool.permissionCategory || "write",
-                arguments: toolCall.arguments,
-                reason:
-                  permissionDecision.reason ||
-                  `Approval required for step ${step.stepId} attempt ${attempt} (${step.title})`
-              };
-
-              yield {
-                type: "plan_step_waiting_approval",
-                runId: context.runId,
-                planId: activePlan.planId,
-                stepId: step.stepId,
-                request: approvalRequest,
-                timestamp: Date.now()
-              };
-
-              yield {
-                type: "approval_required",
-                request: approvalRequest
-              };
-
-              let approvalOutcome = false;
-              if (this.options.approvalResolver) {
-                const decision = await this.options.approvalResolver.resolve(
-                  approvalRequest
-                );
-                if (decision.approved) {
-                  approvalOutcome = true;
-                } else {
-                  approvalOutcome = false;
-                  attemptErrorMsg =
-                    decision.reason || "Tool execution was denied by user.";
-                }
-              } else {
-                attemptErrorMsg =
-                  "Approval required but no ApprovalResolver configured.";
-              }
-
-              if (!approvalOutcome) {
-                attemptSuccess = false;
-              }
-            }
-
-            if (attemptSuccess) {
-              const toolExecResult: ToolResult = await this.options.executor.execute(
-                toolCall,
-                toolContext
-              );
-              yield {
-                type: "tool_result",
-                result: toolExecResult,
-                callId: toolCall.id
-              };
-
-              if (!toolExecResult.success) {
-                attemptSuccess = false;
-                attemptErrorMsg =
-                  toolExecResult.error?.message ||
-                  "Tool execution failed without explicit error";
-              }
-            }
+            stepErrorMsg = attemptErrorMsg;
+            break;
           }
         }
 
@@ -719,6 +436,10 @@ export class DefaultPlanExecutor implements PlanExecutor {
           verificationResult && !verificationResult.succeeded
             ? "verification_failed"
             : "tool_failure";
+
+        const opName =
+          step.intent?.type ||
+          (step.type === "modify" ? "modify_file" : "inspect_file");
 
         const canRetryThisStep = this.retryPolicy.canRetry(
           step,

@@ -482,6 +482,16 @@ export class DefaultCheckpointManager implements CheckpointManager {
       };
     }
 
+    // Re-check status synchronously in case of concurrent consumption
+    if (record.status !== "approved") {
+      return {
+        success: false,
+        checkpointId,
+        status: record.status,
+        error: `Checkpoint ${checkpointId} has already been consumed or is no longer approved (status: ${record.status})`
+      };
+    }
+
     // Atomic consumption transition
     record.status = "consumed";
     record.consumedAt = Date.now();

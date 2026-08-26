@@ -463,6 +463,52 @@ export class DefaultRunDiagnosticsManager implements RunDiagnosticsManager {
       summary.checkpointRecords[existingIdx] = sanitizedRecord;
     } else {
       summary.checkpointRecords.push(sanitizedRecord);
+      summary.checkpointsCreated = (summary.checkpointsCreated || 0) + 1;
+    }
+
+    if (record.status === "consumed") {
+      summary.checkpointsConsumed = (summary.checkpointsConsumed || 0) + 1;
+    } else if (record.status === "expired") {
+      summary.checkpointsExpired = (summary.checkpointsExpired || 0) + 1;
+    } else if (record.status === "invalidated") {
+      summary.checkpointsInvalidated = (summary.checkpointsInvalidated || 0) + 1;
+    }
+  }
+
+  public recordHandoffResult(
+    runId: string,
+    result: import("../planning/types.js").ExecutionHandoffResult
+  ): void {
+    let summary = this.runSummaries.get(runId);
+    if (!summary) {
+      this.startRun({
+        runId,
+        cwd: process.cwd(),
+        userRequest: "Execution handoff"
+      });
+      summary = this.runSummaries.get(runId);
+      if (!summary) return;
+    }
+
+    summary.handoffCount = (summary.handoffCount || 0) + 1;
+    summary.handoffAttempts = summary.handoffCount;
+    summary.lastHandoffStatus = result.status;
+    if (result.checkpointId) {
+      summary.lastHandoffCheckpointId = result.checkpointId;
+    }
+    if (result.error) {
+      summary.lastHandoffReason = sanitizeString(result.error);
+    }
+
+    if (result.status === "approved" || result.status === "consumed" || result.status === "completed") {
+      summary.handoffApprovals = (summary.handoffApprovals || 0) + 1;
+    } else if (result.status === "rejected") {
+      summary.handoffRejections = (summary.handoffRejections || 0) + 1;
+    } else if (result.status === "invalidated") {
+      summary.handoffInvalidations = (summary.handoffInvalidations || 0) + 1;
+    } else if (result.status === "blocked") {
+      summary.handoffBlockedCount = (summary.handoffBlockedCount || 0) + 1;
+      summary.handoffBlocks = summary.handoffBlockedCount;
     }
   }
 

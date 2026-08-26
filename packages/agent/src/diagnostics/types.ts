@@ -148,6 +148,22 @@ export interface RunSummary {
   lastCheckpointRiskLevel?: import("../policy/types.js").TaskRiskLevel;
   lastCheckpointReason?: string;
   checkpointRecords?: import("../checkpoints/types.js").CheckpointRecord[];
+  checkpointsCreated?: number;
+  checkpointsConsumed?: number;
+  checkpointsExpired?: number;
+  checkpointsInvalidated?: number;
+  handoffCount?: number;
+  handoffAttempts?: number;
+  handoffApprovals?: number;
+  handoffRejections?: number;
+  handoffInvalidations?: number;
+  handoffBlockedCount?: number;
+  handoffBlocks?: number;
+  approvalWaitDurationMs?: number;
+  lastHandoffStatus?: import("../planning/types.js").ExecutionHandoffStatus;
+  lastHandoffReason?: string;
+  lastHandoffDurationMs?: number;
+  lastHandoffCheckpointId?: string;
 }
 
 export interface RunDiagnosticsManagerOptions {
@@ -224,6 +240,10 @@ export interface RunDiagnosticsManager {
   recordCheckpointRecord(
     runId: string,
     record: import("../checkpoints/types.js").CheckpointRecord
+  ): void;
+  recordHandoffResult(
+    runId: string,
+    result: import("../planning/types.js").ExecutionHandoffResult
   ): void;
   recordToolStart(runId: string, toolName: string, callId: string, targetPath?: string): void;
   recordToolComplete(

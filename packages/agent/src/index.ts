@@ -517,6 +517,77 @@ export type AgentEvent =
       stepId?: string;
       consumedAt: number;
       timestamp: number;
+    }
+  | {
+      type: "execution_handoff_started";
+      runId: string;
+      planId: string;
+      stepId: string;
+      riskLevel: import("./policy/types.js").TaskRiskLevel;
+      timestamp: number;
+    }
+  | {
+      type: "execution_handoff_waiting_approval";
+      runId: string;
+      planId: string;
+      stepId: string;
+      checkpointId: string;
+      riskLevel: import("./policy/types.js").TaskRiskLevel;
+      reason: string;
+      affectedTargets: string[];
+      timestamp: number;
+    }
+  | {
+      type: "execution_handoff_approved";
+      runId: string;
+      planId: string;
+      stepId: string;
+      checkpointId: string;
+      approvedBy: "user" | "policy";
+      timestamp: number;
+    }
+  | {
+      type: "execution_handoff_rejected";
+      runId: string;
+      planId: string;
+      stepId: string;
+      checkpointId: string;
+      reason?: string;
+      timestamp: number;
+    }
+  | {
+      type: "execution_handoff_invalidated";
+      runId: string;
+      planId: string;
+      stepId: string;
+      checkpointId?: string;
+      reason: string;
+      timestamp: number;
+    }
+  | {
+      type: "execution_handoff_consumed";
+      runId: string;
+      planId: string;
+      stepId: string;
+      checkpointId: string;
+      consumedAt: number;
+      timestamp: number;
+    }
+  | {
+      type: "execution_handoff_blocked";
+      runId: string;
+      planId: string;
+      stepId: string;
+      blockers: string[];
+      timestamp: number;
+    }
+  | {
+      type: "execution_handoff_completed";
+      runId: string;
+      planId: string;
+      stepId: string;
+      status: import("./planning/types.js").ExecutionHandoffStatus;
+      timestamp: number;
     };
 
 export * from "./runtime.js";
