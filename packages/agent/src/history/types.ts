@@ -113,6 +113,13 @@ export interface DurableRunRecord {
     status: string;
     timestamp: number;
   }[];
+  continuationCount?: number;
+  lastContinuationDecision?: import("../planning/types.js").RecoveryContinuationDecision;
+  lastContinuationStatus?: import("../planning/types.js").ContinuationStatus;
+  lastContinuationResumedSteps?: string[];
+  lastContinuationDurationMs?: number;
+  lastContinuationBlockingReasons?: string[];
+  continuationFailureReason?: string;
 }
 
 export interface RunHistoryStoreOptions {

@@ -372,6 +372,39 @@ export class DefaultRunDiagnosticsManager implements RunDiagnosticsManager {
     });
   }
 
+  public recordContinuationResult(
+    runId: string,
+    result: import("../planning/types.js").RecoveryContinuationResult
+  ): void {
+    let summary = this.runSummaries.get(runId);
+    if (!summary) {
+      this.startRun({
+        runId,
+        cwd: process.cwd(),
+        userRequest: "Recovery continuation"
+      });
+      summary = this.runSummaries.get(runId);
+      if (!summary) return;
+    }
+
+    summary.continuationCount = (summary.continuationCount || 0) + 1;
+    summary.lastContinuationDecision = result.decision;
+    summary.lastContinuationStatus = result.status;
+    summary.lastContinuationDurationMs = result.durationMs;
+    summary.lastContinuationResumedSteps = result.resumedStepIds
+      ? [...result.resumedStepIds]
+      : [];
+
+    if (result.blockingReasons) {
+      summary.lastContinuationBlockingReasons = result.blockingReasons.map((r) =>
+        sanitizeString(r)
+      );
+    }
+    if (result.failureReason) {
+      summary.continuationFailureReason = sanitizeString(result.failureReason);
+    }
+  }
+
   public recordToolStart(
     runId: string,
     toolName: string,

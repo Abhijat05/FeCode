@@ -11,7 +11,7 @@ const VALID_TRANSITIONS: Record<PlanStatus, PlanStatus[]> = {
   ready: ["approved", "executing", "completed", "failed", "cancelled", "superseded", "blocked"],
   approved: ["executing", "completed", "failed", "cancelled", "superseded", "blocked"],
   executing: ["completed", "failed", "cancelled", "superseded", "blocked"],
-  blocked: ["executing", "failed", "cancelled", "superseded"],
+  blocked: ["executing", "completed", "failed", "cancelled", "superseded"],
   completed: [],
   failed: ["superseded", "blocked"],
   cancelled: ["superseded"],

@@ -156,7 +156,18 @@ export class DefaultRunHistoryStore implements RunHistoryStore {
           ? [...summary.lastRecoveryBlockingReasons]
           : undefined,
         recoveryFailureReason: summary.recoveryFailureReason,
-        recoveryLineage: summary.recoveryLineage ? [...summary.recoveryLineage] : undefined
+        recoveryLineage: summary.recoveryLineage ? [...summary.recoveryLineage] : undefined,
+        continuationCount: summary.continuationCount,
+        lastContinuationDecision: summary.lastContinuationDecision,
+        lastContinuationStatus: summary.lastContinuationStatus,
+        lastContinuationResumedSteps: summary.lastContinuationResumedSteps
+          ? [...summary.lastContinuationResumedSteps]
+          : undefined,
+        lastContinuationDurationMs: summary.lastContinuationDurationMs,
+        lastContinuationBlockingReasons: summary.lastContinuationBlockingReasons
+          ? [...summary.lastContinuationBlockingReasons]
+          : undefined,
+        continuationFailureReason: summary.continuationFailureReason
       };
     }
 

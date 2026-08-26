@@ -339,16 +339,62 @@ export type AgentEvent =
       timestamp: number;
     }
   | {
-      type: "recovery_continuation_started";
-      recoveryId: string;
+      type: "recovery_continuation_requested";
+      runId: string;
       planId: string;
-      nextStepId: string;
+      timestamp: number;
+    }
+  | {
+      type: "recovery_continuation_prepared";
+      runId: string;
+      planId: string;
+      preparation: import("./planning/types.js").RecoveryContinuationPreparation;
+      timestamp: number;
+    }
+  | {
+      type: "recovery_continuation_started";
+      continuationId: string;
+      runId: string;
+      planId: string;
+      resumedStepIds: string[];
+      recoveryId?: string;
+      nextStepId?: string;
       timestamp: number;
     }
   | {
       type: "recovery_continuation_completed";
-      recoveryId: string;
+      continuationId: string;
+      runId: string;
       planId: string;
+      result: import("./planning/types.js").RecoveryContinuationResult;
+      recoveryId?: string;
+      timestamp: number;
+    }
+  | {
+      type: "recovery_continuation_blocked";
+      continuationId: string;
+      runId: string;
+      planId: string;
+      result: import("./planning/types.js").RecoveryContinuationResult;
+      blockingReasons: string[];
+      timestamp: number;
+    }
+  | {
+      type: "recovery_continuation_failed";
+      continuationId: string;
+      runId: string;
+      planId: string;
+      result: import("./planning/types.js").RecoveryContinuationResult;
+      reason: string;
+      timestamp: number;
+    }
+  | {
+      type: "recovery_continuation_cancelled";
+      continuationId: string;
+      runId: string;
+      planId: string;
+      result: import("./planning/types.js").RecoveryContinuationResult;
+      reason: string;
       timestamp: number;
     }
   | {

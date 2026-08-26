@@ -162,6 +162,7 @@ export const App: React.FC<AppProps> = ({
   } | null>(null);
   const [pendingRecoveryContinuation, setPendingRecoveryContinuation] = useState<{
     plan: import("@fecode/agent").TaskPlan;
+    preparation: import("@fecode/agent").RecoveryContinuationPreparation;
   } | null>(null);
 
   const persistState = useCallback(
@@ -295,21 +296,27 @@ export const App: React.FC<AppProps> = ({
           {
             id: contTurnId,
             prompt: trimmed,
-            response: `↻ Continuing plan ${prc.plan.planId}...\n`,
+            response: "Starting continuation...\n",
             status: "streaming"
           }
         ]);
 
-        if (agent && "executeApprovedPlan" in agent) {
+        if (agent && "continueRecoveredPlan" in agent) {
           try {
             for await (const ev of (
               agent as {
-                executeApprovedPlan: (
-                  plan: import("@fecode/agent").TaskPlan,
-                  opts: { cwd: string }
+                continueRecoveredPlan: (
+                  preparation: import("@fecode/agent").RecoveryContinuationPreparation,
+                  request: import("@fecode/agent").RecoveryContinuationRequest
                 ) => AsyncIterable<import("@fecode/agent").AgentEvent>;
               }
-            ).executeApprovedPlan(prc.plan, { cwd })) {
+            ).continueRecoveredPlan(prc.preparation, {
+              runId: prc.plan.runId,
+              planId: prc.plan.planId,
+              decision: "continue",
+              approved: true,
+              cwd
+            })) {
               if (ev.type === "plan_step_started") {
                 setTurns((prev) =>
                   prev.map((t) =>
@@ -318,7 +325,7 @@ export const App: React.FC<AppProps> = ({
                           ...t,
                           response:
                             t.response +
-                            `[${ev.stepIndex + 1}/${prc.plan.steps.length}] ${ev.title || "Step"} ... `
+                            `[${ev.stepIndex + 1}/${prc.plan.steps.length}] ${ev.title || "Step"} ...\nEXECUTING\n`
                         }
                       : t
                   )
@@ -329,19 +336,50 @@ export const App: React.FC<AppProps> = ({
                     t.id === contTurnId
                       ? {
                           ...t,
-                          response: t.response + "✓\n"
+                          response: t.response + "✓ COMPLETED\n\n"
                         }
                       : t
                   )
                 );
-              } else if (ev.type === "plan_execution_completed") {
+              } else if (
+                ev.type === "recovery_continuation_completed" ||
+                ev.type === "plan_execution_completed"
+              ) {
                 setTurns((prev) =>
                   prev.map((t) =>
                     t.id === contTurnId
                       ? {
                           ...t,
                           status: "done",
-                          response: t.response + `✓ Plan completed\n`
+                          response: t.response.includes("✓ Plan completed")
+                            ? t.response
+                            : t.response + "✓ Plan completed\n"
+                        }
+                      : t
+                  )
+                );
+              } else if (ev.type === "recovery_continuation_blocked") {
+                setTurns((prev) =>
+                  prev.map((t) =>
+                    t.id === contTurnId
+                      ? {
+                          ...t,
+                          status: "done",
+                          response:
+                            t.response +
+                            `⚠ Continuation blocked: ${ev.blockingReasons.join("; ")}\n`
+                        }
+                      : t
+                  )
+                );
+              } else if (ev.type === "recovery_continuation_cancelled") {
+                setTurns((prev) =>
+                  prev.map((t) =>
+                    t.id === contTurnId
+                      ? {
+                          ...t,
+                          status: "done",
+                          response: t.response + "Continuation cancelled.\n"
                         }
                       : t
                   )
@@ -369,7 +407,7 @@ export const App: React.FC<AppProps> = ({
           {
             id: `cmd-${Date.now()}`,
             prompt: trimmed,
-            response: "✓ Continuation declined\n",
+            response: "Continuation cancelled.\n",
             status: "done"
           }
         ]);
@@ -483,13 +521,34 @@ export const App: React.FC<AppProps> = ({
                   ev.outcome === "recovered" ||
                   ev.outcome === "recovered_with_changes"
                 ) {
-                  const incompleteSteps = pr.plan.steps.filter(
-                    (s) => s.status !== "completed" && s.status !== "skipped"
-                  );
-                  if (incompleteSteps.length > 0) {
-                    setPendingRecoveryContinuation({ plan: pr.plan });
-                    const contText = PlanFormatter.formatContinuationPrompt(
-                      pr.plan
+                  let prep: import("@fecode/agent").RecoveryContinuationPreparation | undefined;
+                  if (agent && "prepareRecoveryContinuation" in agent) {
+                    try {
+                      prep = await (
+                        agent as {
+                          prepareRecoveryContinuation: (opts: {
+                            cwd: string;
+                            recoveryResult: import("@fecode/agent").ExecutionRecoveryResult;
+                            recoveryOutcome: import("@fecode/agent").RecoveryOutcomeStatus;
+                          }) => Promise<import("@fecode/agent").RecoveryContinuationPreparation>;
+                        }
+                      ).prepareRecoveryContinuation({
+                        cwd,
+                        recoveryResult: ev.result,
+                        recoveryOutcome: ev.outcome
+                      });
+                    } catch {
+                      // ignore
+                    }
+                  }
+
+                  if (prep && prep.canContinue) {
+                    setPendingRecoveryContinuation({
+                      plan: pr.plan,
+                      preparation: prep
+                    });
+                    const contText = PlanFormatter.formatRecoveryContinuationPrompt(
+                      prep
                     );
                     setTurns((prev) =>
                       prev.map((t) =>
@@ -503,17 +562,53 @@ export const App: React.FC<AppProps> = ({
                       )
                     );
                   } else {
-                    setTurns((prev) =>
-                      prev.map((t) =>
-                        t.id === recTurnId
-                          ? {
-                              ...t,
-                              status: "done",
-                              response: `${outcomeText}\n`
-                            }
-                          : t
-                      )
+                    const incompleteSteps = pr.plan.steps.filter(
+                      (s) => s.status !== "completed" && s.status !== "skipped"
                     );
+                    if (incompleteSteps.length > 0 && !prep) {
+                      const fallbackPrep: import("@fecode/agent").RecoveryContinuationPreparation = {
+                        eligible: true,
+                        canContinue: true,
+                        planId: pr.plan.planId,
+                        runId: pr.plan.runId,
+                        recoveryOutcome: ev.outcome,
+                        remainingSteps: incompleteSteps,
+                        completedSteps: pr.plan.steps.filter((s) => s.status === "completed"),
+                        skippedSteps: pr.plan.steps.filter((s) => s.status === "skipped"),
+                        reconciliationConsistent: true,
+                        requiresExplicitApproval: true
+                      };
+                      setPendingRecoveryContinuation({
+                        plan: pr.plan,
+                        preparation: fallbackPrep
+                      });
+                      const contText = PlanFormatter.formatRecoveryContinuationPrompt(
+                        fallbackPrep
+                      );
+                      setTurns((prev) =>
+                        prev.map((t) =>
+                          t.id === recTurnId
+                            ? {
+                                ...t,
+                                status: "done",
+                                response: `${outcomeText}\n\n${contText}\n`
+                              }
+                            : t
+                        )
+                      );
+                    } else {
+                      setTurns((prev) =>
+                        prev.map((t) =>
+                          t.id === recTurnId
+                            ? {
+                                ...t,
+                                status: "done",
+                                response: `${outcomeText}\n\n✓ Plan completed\n`
+                              }
+                            : t
+                        )
+                      );
+                    }
                   }
                 } else if (ev.outcome === "still_blocked") {
                   const defaultAdaptation: import("@fecode/agent").PlanAdaptationAssessment = {

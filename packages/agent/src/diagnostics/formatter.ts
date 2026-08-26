@@ -210,5 +210,39 @@ export function formatRunDiagnostics(summary: RunSummary): string {
     }
   }
 
+  if (summary.continuationCount !== undefined && summary.continuationCount > 0) {
+    lines.push("");
+    lines.push("Recovery Continuation:");
+    lines.push(`  attempts:   ${summary.continuationCount}`);
+    if (summary.lastContinuationDecision) {
+      lines.push(`  decision:   ${summary.lastContinuationDecision}`);
+    }
+    if (summary.lastContinuationStatus) {
+      lines.push(`  status:     ${summary.lastContinuationStatus}`);
+    }
+    if (summary.lastContinuationDurationMs !== undefined) {
+      lines.push(`  duration:   ${summary.lastContinuationDurationMs}ms`);
+    }
+    if (
+      summary.lastContinuationResumedSteps &&
+      summary.lastContinuationResumedSteps.length > 0
+    ) {
+      lines.push(
+        `  resumed:    ${summary.lastContinuationResumedSteps.join(", ")}`
+      );
+    }
+    if (
+      summary.lastContinuationBlockingReasons &&
+      summary.lastContinuationBlockingReasons.length > 0
+    ) {
+      lines.push("  blockers:");
+      summary.lastContinuationBlockingReasons.forEach((b) =>
+        lines.push(`    • ${b}`)
+      );
+    } else if (summary.continuationFailureReason) {
+      lines.push(`  reason:     ${summary.continuationFailureReason}`);
+    }
+  }
+
   return lines.join("\n");
 }

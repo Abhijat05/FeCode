@@ -10,3 +10,4 @@ export * from "./retryPolicy.js";
 export * from "./decisionManager.js";
 export * from "./reconciliation.js";
 export * from "./executionRecoveryManager.js";
+export * from "./continuationManager.js";

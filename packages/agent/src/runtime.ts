@@ -112,7 +112,12 @@ import type {
   FinalReconciliationPolicy,
   ExecutionRecoveryManager,
   ExecutionRecoveryAssessment,
-  ExecutionRecoveryOptions
+  ExecutionRecoveryOptions,
+  ExecutionRecoveryResult,
+  RecoveryOutcomeStatus,
+  RecoveryContinuationManager,
+  RecoveryContinuationPreparation,
+  RecoveryContinuationRequest
 } from "./planning/types.js";
 import { DefaultTaskPlanner } from "./planning/planner.js";
 import { DefaultPlanExecutor } from "./planning/executor.js";
@@ -122,6 +127,7 @@ import { DefaultStepRetryPolicy } from "./planning/retryPolicy.js";
 import { DefaultExecutionDecisionManager } from "./planning/decisionManager.js";
 import { DefaultFinalWorkspaceReconciler } from "./planning/reconciliation.js";
 import { DefaultExecutionRecoveryManager } from "./planning/executionRecoveryManager.js";
+import { DefaultRecoveryContinuationManager } from "./planning/continuationManager.js";
 import {
   transitionPlanStatus,
   completePlanStep,
@@ -162,6 +168,7 @@ export interface AgentRuntimeOptions {
   reconciler?: FinalWorkspaceReconciler;
   reconciliationPolicy?: FinalReconciliationPolicy;
   executionRecoveryManager?: ExecutionRecoveryManager;
+  recoveryContinuationManager?: RecoveryContinuationManager;
   maxRecoveryDepth?: number;
   maxReplanDepth?: number;
   maxRetainedRuns?: number;
@@ -205,6 +212,7 @@ export class AgentRuntime implements Agent {
   private readonly reconciler: FinalWorkspaceReconciler;
   private readonly reconciliationPolicy: FinalReconciliationPolicy;
   private readonly executionRecoveryManager: ExecutionRecoveryManager;
+  private readonly recoveryContinuationManager: RecoveryContinuationManager;
   private readonly maxReplanDepth: number;
   private readonly completionTracker: TaskCompletionTracker = new TaskCompletionTracker();
   private readonly safeEditValidator: SafeEditValidator = new SafeEditValidator();
@@ -324,6 +332,22 @@ export class AgentRuntime implements Agent {
         historyStore: this.historyStore,
         gitRepository: this.gitRepository,
         maxRecoveryDepth: options.maxRecoveryDepth
+      });
+    this.recoveryContinuationManager =
+      options.recoveryContinuationManager ||
+      new DefaultRecoveryContinuationManager({
+        planExecutor: this.planExecutor,
+        reconciler: this.reconciler,
+        executionPolicy: this.executionPolicy,
+        replanManager: this.replanManager,
+        skillRegistry: this.skillRegistry,
+        activationPolicy: this.activationPolicy,
+        permissionManager: this.permissionManager,
+        approvalResolver: this.approvalResolver,
+        checkpointManager: this.checkpointManager,
+        diagnosticsManager: this.diagnosticsManager,
+        historyStore: this.historyStore,
+        gitRepository: this.gitRepository
       });
 
     this.state = {
@@ -545,6 +569,99 @@ export class AgentRuntime implements Agent {
         this.diagnosticsManager.recordRecoveryResult(targetPlan.runId, ev.result);
       } else if (ev.type === "recovery_failed") {
         this.diagnosticsManager.recordRecoveryResult(targetPlan.runId, ev.result);
+      }
+    }
+  }
+
+  public getRecoveryContinuationManager(): RecoveryContinuationManager {
+    return this.recoveryContinuationManager;
+  }
+
+  public async prepareRecoveryContinuation(
+    options: {
+      cwd?: string;
+      recoveryResult?: ExecutionRecoveryResult;
+      recoveryOutcome?: RecoveryOutcomeStatus;
+      userRequest?: string;
+    } = {}
+  ): Promise<RecoveryContinuationPreparation> {
+    const targetPlan = this.currentPlan;
+    if (!targetPlan) {
+      throw new Error("No plan available for recovery continuation.");
+    }
+    const targetCwd = options.cwd || process.cwd();
+    return this.recoveryContinuationManager.prepareContinuation(targetPlan, {
+      cwd: targetCwd,
+      recoveryResult: options.recoveryResult,
+      recoveryOutcome: options.recoveryOutcome,
+      userRequest: options.userRequest
+    });
+  }
+
+  public async *continueRecoveredPlan(
+    preparation: RecoveryContinuationPreparation,
+    request: RecoveryContinuationRequest
+  ): AsyncIterable<AgentEvent> {
+    const targetPlan = this.currentPlan;
+    if (!targetPlan) {
+      throw new Error("No plan available for recovery continuation.");
+    }
+
+    for await (const ev of this.recoveryContinuationManager.executeContinuation(
+      targetPlan,
+      preparation,
+      request
+    )) {
+      yield ev;
+
+      if (ev.type === "recovery_continuation_started") {
+        this.currentRunStateMachine?.transition(
+          "executing",
+          `Recovery continuation started for plan ${ev.planId}`
+        );
+      } else if (ev.type === "recovery_continuation_completed") {
+        this.diagnosticsManager.recordContinuationResult(
+          targetPlan.runId,
+          ev.result
+        );
+        if (ev.result.finalPlanStatus === "completed") {
+          this.currentRunStateMachine?.transition(
+            "completed",
+            "Recovery continuation completed all plan steps"
+          );
+        } else {
+          this.currentRunStateMachine?.transition(
+            "idle",
+            `Recovery continuation finished with plan status ${ev.result.finalPlanStatus}`
+          );
+        }
+      } else if (ev.type === "recovery_continuation_blocked") {
+        this.diagnosticsManager.recordContinuationResult(
+          targetPlan.runId,
+          ev.result
+        );
+        this.currentRunStateMachine?.transition(
+          "idle",
+          `Recovery continuation blocked: ${ev.blockingReasons?.join("; ")}`
+        );
+      } else if (ev.type === "recovery_continuation_failed") {
+        this.diagnosticsManager.recordContinuationResult(
+          targetPlan.runId,
+          ev.result
+        );
+        this.currentRunStateMachine?.transition(
+          "failed",
+          `Recovery continuation failed: ${ev.reason}`
+        );
+      } else if (ev.type === "recovery_continuation_cancelled") {
+        this.diagnosticsManager.recordContinuationResult(
+          targetPlan.runId,
+          ev.result
+        );
+        this.currentRunStateMachine?.transition(
+          "cancelled",
+          `Recovery continuation cancelled: ${ev.reason}`
+        );
       }
     }
   }

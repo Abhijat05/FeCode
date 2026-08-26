@@ -634,3 +634,96 @@ export interface ExecutionRecoveryManager {
   getRecoveryHistory(planId: string): ExecutionRecoveryResult[];
   getRecoveryLineage(recoveryId: string): ExecutionRecoveryResult[];
 }
+
+export type RecoveryContinuationDecision = "continue" | "replan" | "cancel";
+
+export type ContinuationStatus =
+  | "completed"
+  | "blocked"
+  | "failed"
+  | "cancelled"
+  | "rejected";
+
+export interface RecoveryContinuationPreparation {
+  eligible: boolean;
+  canContinue: boolean;
+  planId: string;
+  runId: string;
+  recoveryOutcome: RecoveryOutcomeStatus;
+  remainingSteps: PlanStep[];
+  completedSteps: PlanStep[];
+  skippedSteps: PlanStep[];
+  reassessedRisk?: import("../policy/types.js").TaskRiskAssessment;
+  reassessedSkills?: string[];
+  reconciliationConsistent: boolean;
+  reconciliationFailureReason?: string;
+  staleness?: PlanStalenessResult;
+  reason?: string;
+  requiresExplicitApproval: boolean;
+}
+
+export interface RecoveryContinuationRequest {
+  runId: string;
+  planId: string;
+  decision: RecoveryContinuationDecision;
+  cwd: string;
+  reason?: string;
+  approved?: boolean;
+  signal?: AbortSignal;
+}
+
+export interface RecoveryContinuationResult {
+  continuationId: string;
+  runId: string;
+  planId: string;
+  recoveryOutcome: RecoveryOutcomeStatus;
+  decision: RecoveryContinuationDecision;
+  status: ContinuationStatus;
+  startingPlanStatus: PlanStatus;
+  finalPlanStatus: PlanStatus;
+  resumedStepIds: string[];
+  completedStepIds: string[];
+  skippedStepIds: string[];
+  failureReason?: string;
+  blockingReasons?: string[];
+  cancellationReason?: string;
+  startedAt: number;
+  completedAt: number;
+  durationMs: number;
+  replanResult?: ReplanResult;
+}
+
+export interface RecoveryContinuationManagerOptions {
+  planExecutor: PlanExecutor;
+  reconciler: FinalWorkspaceReconciler;
+  executionPolicy: import("../policy/types.js").ExecutionPolicy;
+  replanManager?: ReplanManager;
+  skillRegistry?: import("../skills/types.js").SkillRegistry;
+  activationPolicy?: import("../skills/activation.js").SkillActivationPolicy;
+  permissionManager?: import("@fecode/models").PermissionManager;
+  approvalResolver?: import("@fecode/models").ApprovalResolver;
+  checkpointManager?: import("../checkpoints/types.js").CheckpointManager;
+  diagnosticsManager?: import("../diagnostics/types.js").RunDiagnosticsManager;
+  historyStore?: import("../history/types.js").RunHistoryStore;
+  gitRepository?: import("../git/types.js").GitRepository;
+}
+
+export interface RecoveryContinuationManager {
+  prepareContinuation(
+    plan: TaskPlan,
+    options: {
+      cwd: string;
+      recoveryResult?: ExecutionRecoveryResult;
+      recoveryOutcome?: RecoveryOutcomeStatus;
+      userRequest?: string;
+    }
+  ): Promise<RecoveryContinuationPreparation>;
+
+  executeContinuation(
+    plan: TaskPlan,
+    preparation: RecoveryContinuationPreparation,
+    request: RecoveryContinuationRequest
+  ): AsyncIterable<import("../index.js").AgentEvent>;
+
+  getContinuationHistory(planId: string): RecoveryContinuationResult[];
+}

@@ -135,6 +135,13 @@ export interface RunSummary {
     status: string;
     timestamp: number;
   }[];
+  continuationCount?: number;
+  lastContinuationDecision?: import("../planning/types.js").RecoveryContinuationDecision;
+  lastContinuationStatus?: import("../planning/types.js").ContinuationStatus;
+  lastContinuationResumedSteps?: string[];
+  lastContinuationDurationMs?: number;
+  lastContinuationBlockingReasons?: string[];
+  continuationFailureReason?: string;
 }
 
 export interface RunDiagnosticsManagerOptions {
@@ -203,6 +210,10 @@ export interface RunDiagnosticsManager {
   recordRecoveryResult(
     runId: string,
     result: import("../planning/types.js").ExecutionRecoveryResult
+  ): void;
+  recordContinuationResult(
+    runId: string,
+    result: import("../planning/types.js").RecoveryContinuationResult
   ): void;
   recordToolStart(runId: string, toolName: string, callId: string, targetPath?: string): void;
   recordToolComplete(

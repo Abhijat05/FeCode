@@ -378,9 +378,41 @@ export class PlanFormatter {
   }
 
   public static formatContinuationPrompt(
-    plan?: import("./types.js").TaskPlan
+    plan?: import("./types.js").TaskPlan,
+    preparation?: import("./types.js").RecoveryContinuationPreparation
   ): string {
+    if (preparation) {
+      return PlanFormatter.formatRecoveryContinuationPrompt(preparation);
+    }
     const title = plan?.userRequestSummary ? ` (${plan.userRequestSummary})` : "";
     return `Plan${title}: ready to continue\n\nContinue remaining plan steps? [y/N]:`;
+  }
+
+  public static formatRecoveryContinuationPrompt(
+    preparation: import("./types.js").RecoveryContinuationPreparation
+  ): string {
+    const lines: string[] = [];
+
+    if (preparation.recoveryOutcome === "recovered_with_changes") {
+      lines.push(
+        "✓ Recovery completed with changes (bounded workspace modifications accepted)"
+      );
+      lines.push("Workspace: consistent with accepted recovery state");
+    } else {
+      lines.push("✓ Recovery successful");
+      lines.push("Workspace: consistent");
+    }
+
+    if (preparation.remainingSteps && preparation.remainingSteps.length > 0) {
+      lines.push("");
+      lines.push("Remaining plan steps:");
+      for (const s of preparation.remainingSteps) {
+        lines.push(`  • Step ${s.order} — ${s.title}`);
+      }
+    }
+
+    lines.push("");
+    lines.push("Continue remaining plan steps? [y/N]:");
+    return lines.join("\n");
   }
 }

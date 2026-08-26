@@ -1969,7 +1969,28 @@ describe("CLI App Component", () => {
       };
     };
 
-    (mockAgent as unknown as { executeApprovedPlan: () => AsyncIterable<unknown> }).executeApprovedPlan = async function* () {
+    (mockAgent as unknown as { prepareRecoveryContinuation: () => Promise<unknown> }).prepareRecoveryContinuation = async () => ({
+      eligible: true,
+      canContinue: true,
+      planId: "plan-5w-cli-1",
+      runId: "run-5w-cli-1",
+      recoveryOutcome: "recovered",
+      remainingSteps: [plan.steps[1]],
+      completedSteps: [plan.steps[0]],
+      skippedSteps: [],
+      reconciliationConsistent: true,
+      requiresExplicitApproval: true
+    });
+
+    (mockAgent as unknown as { continueRecoveredPlan: () => AsyncIterable<unknown> }).continueRecoveredPlan = async function* () {
+      yield {
+        type: "recovery_continuation_started",
+        continuationId: "cont-1",
+        runId: "run-5w-cli-1",
+        planId: "plan-5w-cli-1",
+        resumedStepIds: ["step-2"],
+        timestamp: Date.now()
+      };
       yield {
         type: "plan_step_started",
         planId: "plan-5w-cli-1",
@@ -1987,11 +2008,26 @@ describe("CLI App Component", () => {
         timestamp: Date.now()
       };
       yield {
-        type: "plan_execution_completed",
+        type: "recovery_continuation_completed",
+        continuationId: "cont-1",
+        runId: "run-5w-cli-1",
         planId: "plan-5w-cli-1",
-        completedSteps: 2,
-        totalSteps: 2,
-        durationMs: 50,
+        result: {
+          continuationId: "cont-1",
+          runId: "run-5w-cli-1",
+          planId: "plan-5w-cli-1",
+          recoveryOutcome: "recovered",
+          decision: "continue",
+          status: "completed",
+          startingPlanStatus: "blocked",
+          finalPlanStatus: "completed",
+          resumedStepIds: ["step-2"],
+          completedStepIds: ["step-1", "step-2"],
+          skippedStepIds: [],
+          startedAt: Date.now() - 50,
+          completedAt: Date.now(),
+          durationMs: 50
+        },
         timestamp: Date.now()
       };
     };
@@ -2045,8 +2081,9 @@ describe("CLI App Component", () => {
     await delay(150);
 
     frame = lastFrame();
-    expect(frame).toContain("Continuing plan plan-5w-cli-1");
-    expect(frame).toContain("[2/2] Step 2 Next ... ✓");
+    expect(frame).toContain("Starting continuation...");
+    expect(frame).toContain("[2/2] Step 2 Next ...");
+    expect(frame).toContain("✓ COMPLETED");
     expect(frame).toContain("✓ Plan completed");
   });
 
