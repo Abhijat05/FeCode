@@ -18,11 +18,16 @@ export const TaskInput: React.FC<TaskInputProps> = ({
   onSubmit,
   isDisabled = false,
   placeholder = "Describe task or type /help...",
-  label = "Task",
+  label,
   pendingQuery
 }) => {
   return (
     <Box flexDirection="column" marginY={0}>
+      {!label && (
+        <Box marginBottom={0}>
+          <Text color="gray" dimColor>{"─".repeat(48)}</Text>
+        </Box>
+      )}
       {label && (
         <Box marginBottom={0}>
           <Text bold color="white">{label}</Text>

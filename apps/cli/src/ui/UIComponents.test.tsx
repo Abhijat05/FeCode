@@ -226,6 +226,20 @@ describe("Phase 5AD: Modular UI Components", () => {
     expect(frame).toContain("Ctrl+C to cancel");
   });
 
+  it("renders input separator when label is not shown in follow-up mode", () => {
+    const { lastFrame } = render(
+      <TaskInput
+        value=""
+        onChange={() => {}}
+        onSubmit={() => {}}
+        label={undefined}
+      />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("›");
+    expect(frame).toMatch(/─{3,}/);
+  });
+
   it("renders PlanStep with accessible symbols, dependencies, and risk badges", () => {
     const { lastFrame: completedFrame } = render(
       <PlanStep
