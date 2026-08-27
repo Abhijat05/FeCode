@@ -22,8 +22,46 @@ import {
   HelpView,
   ThinkingIndicator,
   MessageBubble,
-  TurnView
+  TurnView,
+  CommandPalette
 } from "./index.js";
+import type { CommandDef } from "../commands.js";
+
+describe("CommandPalette", () => {
+  it("renders matching command suggestions", () => {
+    const suggestions: CommandDef[] = [
+      { command: "/help", description: "Show help" },
+      { command: "/history", description: "Show history" }
+    ];
+    const { lastFrame } = render(
+      <CommandPalette suggestions={suggestions} selectedIndex={0} />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("/help");
+    expect(frame).toContain("/history");
+    expect(frame).toContain("Show help");
+  });
+
+  it("renders nothing when suggestions is empty", () => {
+    const { lastFrame } = render(
+      <CommandPalette suggestions={[]} selectedIndex={0} />
+    );
+    expect(lastFrame()).toBe("");
+  });
+
+  it("highlights the selected suggestion", () => {
+    const suggestions: CommandDef[] = [
+      { command: "/help", description: "Show help" },
+      { command: "/history", description: "Show history" }
+    ];
+    const { lastFrame } = render(
+      <CommandPalette suggestions={suggestions} selectedIndex={1} />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("›");
+    expect(frame).toContain("/history");
+  });
+});
 
 describe("TurnView", () => {
   it("renders user prompt and agent response with separator", () => {
