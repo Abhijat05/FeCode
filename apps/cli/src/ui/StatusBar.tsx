@@ -1,0 +1,94 @@
+import React from "react";
+import { Box, Text } from "ink";
+
+export interface StatusBarProps {
+  status?: string;
+  activeStep?: number;
+  totalSteps?: number;
+  activeStepTitle?: string;
+  isGenerating?: boolean;
+  customMessage?: string;
+}
+
+export const StatusBar: React.FC<StatusBarProps> = ({
+  status = "idle",
+  activeStep,
+  totalSteps,
+  activeStepTitle,
+  isGenerating = false,
+  customMessage
+}) => {
+  const renderStatusText = () => {
+    if (customMessage) {
+      return <Text color="yellow">{customMessage}</Text>;
+    }
+
+    if (activeStep !== undefined && totalSteps !== undefined && totalSteps > 0) {
+      const stepText = `Step ${activeStep}/${totalSteps}${activeStepTitle ? `: ${activeStepTitle}` : ""}`;
+      if (status === "executing" || isGenerating) {
+        return <Text color="green">● Executing {stepText}</Text>;
+      }
+      if (status === "awaiting_step_approval") {
+        return <Text color="yellow">⚠ Waiting for Approval ({stepText})</Text>;
+      }
+      if (status === "verifying") {
+        return <Text color="cyan">◌ Verifying ({stepText})</Text>;
+      }
+      if (status === "blocked") {
+        return <Text color="red">! Blocked at {stepText}</Text>;
+      }
+    }
+
+    switch (status) {
+      case "executing":
+        return <Text color="green">● Executing task...</Text>;
+      case "planning":
+        return <Text color="cyan">◌ Generating task plan...</Text>;
+      case "awaiting_plan_approval":
+        return <Text color="yellow">⚠ Plan approval required</Text>;
+      case "awaiting_step_approval":
+        return <Text color="yellow">⚠ Step approval required</Text>;
+      case "verifying":
+        return <Text color="cyan">◌ Verifying changes...</Text>;
+      case "recovering":
+        return <Text color="yellow">◌ Performing recovery...</Text>;
+      case "blocked":
+        return <Text color="red">! Plan execution blocked</Text>;
+      case "completed":
+        return <Text color="green">✓ Task completed</Text>;
+      case "failed":
+        return <Text color="red">✗ Task failed</Text>;
+      case "cancelled":
+        return <Text color="gray">⊘ Task cancelled</Text>;
+      case "idle":
+      default:
+        return <Text color="gray">○ Ready for task</Text>;
+    }
+  };
+
+  return (
+    <Box
+      flexDirection="column"
+      borderStyle="single"
+      borderColor="gray"
+      paddingX={1}
+      marginTop={1}
+    >
+      <Box justifyContent="space-between">
+        <Box>{renderStatusText()}</Box>
+        <Box>
+          <Text color="cyan">[c]</Text>
+          <Text color="gray"> Cancel </Text>
+          <Text color="cyan">[p]</Text>
+          <Text color="gray"> Plan </Text>
+          <Text color="cyan">[r]</Text>
+          <Text color="gray"> Runs </Text>
+          <Text color="cyan">[d]</Text>
+          <Text color="gray"> Diagnostics </Text>
+          <Text color="cyan">[?]</Text>
+          <Text color="gray"> Help</Text>
+        </Box>
+      </Box>
+    </Box>
+  );
+};

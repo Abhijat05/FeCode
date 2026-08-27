@@ -1,7 +1,5 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import { Box, Text, useApp, useInput } from "ink";
-import TextInput from "ink-text-input";
-import * as fs from "fs/promises";
 import {
   DefaultSessionStore,
   SessionHistoryFormatter,
@@ -12,12 +10,15 @@ import {
   DefaultRecoveryManager,
   RecoveryFormatter,
   DefaultTaskRiskPolicy,
-  TaskRiskFormatter,
   formatRunDiagnostics,
   RunHistoryFormatter,
   PlanFormatter,
   transitionPlanStatus,
+  DefaultProductRuntime,
+  type ProductRuntime,
+  type UIState,
   type Agent,
+  type AgentRuntime,
   type ProjectContext,
   type SessionStore,
   type PersistedSessionData,
@@ -26,15 +27,25 @@ import {
   type CheckpointManager,
   type RecoveryManager,
   type ExecutionPolicy,
-  type RunHistoryStore,
-  type DurableRunRecord
+  type RunHistoryStore
 } from "@fecode/agent";
 import type { ApprovalRequest, ModelMessage } from "@fecode/models";
+import { InteractiveApprovalResolver } from "./approvalResolver.js";
 import {
-  InteractiveApprovalResolver,
-  formatApprovalArguments,
-  formatApprovalRequest
-} from "./approvalResolver.js";
+  AppShell,
+  Header,
+  StatusBar,
+  TaskInput,
+  PlanView,
+  ApprovalPrompt,
+  BlockedView,
+  RecoveryView,
+  ReplanView,
+  ResumeView,
+  DiagnosticsView,
+  RunHistoryView,
+  HelpView
+} from "./ui/index.js";
 
 export interface Turn {
   id: string;
@@ -46,6 +57,7 @@ export interface Turn {
 
 export interface AppProps {
   agent?: Agent;
+  productRuntime?: ProductRuntime;
   cwd?: string;
   providerName?: string;
   modelName?: string;
@@ -64,13 +76,14 @@ export interface AppProps {
 
 export const App: React.FC<AppProps> = ({
   agent,
+  productRuntime: runtimeProp,
   cwd = process.cwd(),
   providerName,
   modelName,
   approvalResolver,
   onExit,
   configError,
-  projectContext,
+  projectContext: _projectContext,
   sessionStore,
   initialSessionData,
   gitRepository: gitRepoProp,
@@ -89,17 +102,38 @@ export const App: React.FC<AppProps> = ({
     (agent && "getRecoveryManager" in agent && typeof (agent as unknown as { getRecoveryManager: () => RecoveryManager }).getRecoveryManager === "function"
       ? (agent as unknown as { getRecoveryManager: () => RecoveryManager }).getRecoveryManager()
       : new DefaultRecoveryManager(undefined, gitRepo));
-  const execPolicy =
+  const _execPolicy =
     executionPolicyProp ||
     (agent && "getExecutionPolicy" in agent && typeof (agent as unknown as { getExecutionPolicy: () => ExecutionPolicy }).getExecutionPolicy === "function"
       ? (agent as unknown as { getExecutionPolicy: () => ExecutionPolicy }).getExecutionPolicy()
       : new DefaultTaskRiskPolicy());
+  void _execPolicy;
+  void _projectContext;
+
+  // Instantiate or use ProductRuntime
+  const [runtime] = useState<ProductRuntime>(() => {
+    if (runtimeProp) return runtimeProp;
+    if (agent && "run" in agent && "assessTaskRisk" in agent) {
+      return new DefaultProductRuntime({
+        agentRuntime: agent as AgentRuntime,
+        gitRepository: gitRepo,
+        approvalResolver,
+        initialCwd: cwd,
+        initialSessionId: initialSessionData?.sessionId
+      });
+    }
+    return undefined as unknown as ProductRuntime;
+  });
+
   const { exit } = useApp();
   const [query, setQuery] = useState("");
+  const [activeView, setActiveView] = useState<
+    "main" | "plan" | "runs" | "diagnostics" | "help" | "git"
+  >("main");
   const [store] = useState<SessionStore>(
     () => sessionStore || new DefaultSessionStore()
   );
-  const [sessionId, setSessionId] = useState<string>(
+  const [sessionId] = useState<string>(
     () =>
       initialSessionData?.sessionId ||
       `session-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
@@ -116,7 +150,7 @@ export const App: React.FC<AppProps> = ({
   const [activeRequest, setActiveRequest] = useState<string | undefined>(
     undefined
   );
-  const startedAtRef = React.useRef<Date>(
+  const startedAtRef = useRef<Date>(
     initialSessionData?.startedAt
       ? new Date(initialSessionData.startedAt)
       : new Date()
@@ -143,6 +177,11 @@ export const App: React.FC<AppProps> = ({
     null
   );
   const [approvalInput, setApprovalInput] = useState("");
+  const [blockedInput, setBlockedInput] = useState("");
+  const [recoveryInput, setRecoveryInput] = useState("");
+  const [replanInput, setReplanInput] = useState("");
+  const [resumeInput, setResumeInput] = useState("");
+
   const [pendingResume, setPendingResume] = useState<{
     runId: string;
     prep: import("@fecode/agent").ResumePreparation;
@@ -164,6 +203,39 @@ export const App: React.FC<AppProps> = ({
     plan: import("@fecode/agent").TaskPlan;
     preparation: import("@fecode/agent").RecoveryContinuationPreparation;
   } | null>(null);
+
+  // Subscribe to ProductRuntime event stream
+  const [uiState, setUiState] = useState<UIState | undefined>(() =>
+    runtime?.getUIState?.()
+  );
+
+  useEffect(() => {
+    if (!runtime || !runtime.subscribe) return;
+    const unsubscribe = runtime.subscribe((state: UIState) => {
+      setUiState(state);
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, [runtime]);
+
+  // Hook into ApprovalResolver if present
+  useEffect(() => {
+    if (approvalResolver) {
+      approvalResolver.onRequest = (request: ApprovalRequest) => {
+        setPendingApproval((prev) => {
+          if (prev && prev.id === request.id) {
+            return {
+              ...request,
+              changeReview: request.changeReview || prev.changeReview,
+              reason: request.reason || prev.reason
+            };
+          }
+          return request;
+        });
+      };
+    }
+  }, [approvalResolver]);
 
   const persistState = useCallback(
     async (
@@ -221,8 +293,10 @@ export const App: React.FC<AppProps> = ({
     }
   }, [onExit, exit, persistState, lastTaskStatus]);
 
+  // Keyboard navigation & shortcuts
   useInput(
     (input, key) => {
+      // Ctrl+C cancellation
       if (key.ctrl && input === "c") {
         if (pendingApproval) {
           if (approvalResolver) {
@@ -265,6 +339,13 @@ export const App: React.FC<AppProps> = ({
         } else {
           handleExit();
         }
+        return;
+      }
+
+      // Escape returns to main view
+      if (key.escape) {
+        setActiveView("main");
+        return;
       }
     },
     { isActive: true }
@@ -283,8 +364,10 @@ export const App: React.FC<AppProps> = ({
     const trimmed = value.trim();
     if (!trimmed || isGenerating) return;
 
+    // Handle modal submissions first
     if (pendingRecoveryContinuation) {
       setQuery("");
+      setRecoveryInput("");
       const prc = pendingRecoveryContinuation;
       setPendingRecoveryContinuation(null);
 
@@ -325,7 +408,7 @@ export const App: React.FC<AppProps> = ({
                           ...t,
                           response:
                             t.response +
-                            `[${ev.stepIndex + 1}/${prc.plan.steps.length}] ${ev.title || "Step"} ...\nEXECUTING\n`
+                            `[${ev.stepIndex + 1}/${prc.plan.steps.length}] ${ev.title || "Step"} ...\n`
                         }
                       : t
                   )
@@ -417,6 +500,7 @@ export const App: React.FC<AppProps> = ({
 
     if (pendingRecovery) {
       setQuery("");
+      setRecoveryInput("");
       const pr = pendingRecovery;
       setPendingRecovery(null);
 
@@ -998,52 +1082,44 @@ export const App: React.FC<AppProps> = ({
             id: turnId,
             prompt: `Resume task: ${pr.prep.originalRun.userRequestSummary}`,
             response: "",
-            status: "thinking"
+            status: "streaming"
           };
           setTurns((prev) => [...prev, newTurn]);
 
           try {
-            const stream = (
+            for await (const event of (
               agent as {
                 resumeRun: (
                   id: string,
-                  opts: { cwd: string; approved: boolean }
+                  opts?: { cwd: string }
                 ) => AsyncIterable<import("@fecode/agent").AgentEvent>;
               }
-            ).resumeRun(pr.runId, { cwd, approved: true });
-
-            for await (const event of stream) {
+            ).resumeRun(pr.runId, { cwd })) {
               if (event.type === "text") {
                 setTurns((prev) =>
                   prev.map((t) =>
                     t.id === turnId
-                      ? {
-                          ...t,
-                          response: t.response + event.content,
-                          status: "streaming"
-                        }
+                      ? { ...t, response: t.response + event.content }
                       : t
                   )
                 );
-              } else if (event.type === "approval_required") {
-                setPendingApproval(event.request);
+              } else if (event.type === "done") {
+                setTurns((prev) =>
+                  prev.map((t) =>
+                    t.id === turnId ? { ...t, status: "done" } : t
+                  )
+                );
               }
             }
-
-            setTurns((prev) =>
-              prev.map((t) =>
-                t.id === turnId ? { ...t, status: "done" } : t
-              )
-            );
-            setLastTaskStatus("completed");
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
             setTurns((prev) =>
               prev.map((t) =>
-                t.id === turnId ? { ...t, status: "error", error: msg } : t
+                t.id === turnId
+                  ? { ...t, status: "error", error: `✗ ${msg}` }
+                  : t
               )
             );
-            setLastTaskStatus("blocked");
           } finally {
             setIsGenerating(false);
           }
@@ -1062,293 +1138,22 @@ export const App: React.FC<AppProps> = ({
       return;
     }
 
+    // Slash command processing
     if (trimmed.startsWith("/")) {
-      const parts = trimmed.split(/\s+/);
+      setQuery("");
+      const parts = trimmed.split(" ");
       const cmd = parts[0].toLowerCase();
+      const arg = parts.slice(1).join(" ").trim();
 
       if (cmd === "/help") {
-        setQuery("");
-        const helpText =
-          `Available commands:\n` +
-          `  /help                - Show available FeCode commands\n` +
-          `  /status              - Show current session information\n` +
-          `  /git                 - Show Git repository and change attribution status\n` +
-          `  /checkpoint          - Create a recovery checkpoint or inspect current checkpoint\n` +
-          `  /checkpoint <id>     - Inspect a specific checkpoint\n` +
-          `  /checkpoint diff <id>- Show changes compared to a checkpoint\n` +
-          `  /checkpoints         - List available checkpoints\n` +
-          `  /recover <id>        - Restore a recovery checkpoint\n` +
-          `  /recover preview <id>- Preview changes that will be restored by a checkpoint\n` +
-          `  /recover status      - Show last recovery operation status\n` +
-          `  /history             - Show recent session task history\n` +
-          `  /tasks               - List summary of session tasks\n` +
-          `  /task [number]       - Show current task or details of a specific task\n` +
-          `  /sessions            - List saved sessions\n` +
-          `  /runs                - List persisted run records for current project\n` +
-          `  /run <id>            - Inspect details of a specific persisted run\n` +
-          `  /plan                - Inspect the current task execution plan\n` +
-          `  /replan [runId]      - Prepare and adapt a replacement execution plan\n` +
-          `  /resume <sessionId|runId> - Resume a saved session or incomplete run\n` +
-          `  /delete-session <id> - Delete a saved session\n` +
-          `  /debug [runId]       - Display execution diagnostics for the latest or specified run\n` +
-          `  /clear               - Clear conversation context while preserving history\n` +
-          `  /exit                - Cleanly terminate the session\n`;
+        setActiveView("help");
         setTurns((prev) => [
           ...prev,
           {
             id: `cmd-${Date.now()}`,
             prompt: trimmed,
-            response: helpText,
-            status: "done"
-          }
-        ]);
-        return;
-      }
-
-      if (cmd === "/checkpoints") {
-        setQuery("");
-        const checkpoints = await cpManager.list();
-        const text = CheckpointFormatter.formatCheckpointsList(checkpoints);
-        setTurns((prev) => [
-          ...prev,
-          {
-            id: `cmd-${Date.now()}`,
-            prompt: trimmed,
-            response: text,
-            status: "done"
-          }
-        ]);
-        return;
-      }
-
-      if (cmd === "/checkpoint") {
-        setQuery("");
-        const subArg = parts[1];
-
-        if (subArg === "diff") {
-          const targetId = parts[2];
-          if (!targetId) {
-            setTurns((prev) => [
-              ...prev,
-              {
-                id: `cmd-${Date.now()}`,
-                prompt: trimmed,
-                response: "✗ Please specify a checkpoint ID: /checkpoint diff <id>\n",
-                status: "done"
-              }
-            ]);
-            return;
-          }
-
-          try {
-            const comparison = await cpManager.compare(targetId, cwd);
-            const text = CheckpointFormatter.formatCheckpointComparison(comparison);
-            setTurns((prev) => [
-              ...prev,
-              {
-                id: `cmd-${Date.now()}`,
-                prompt: trimmed,
-                response: text,
-                status: "done"
-              }
-            ]);
-          } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : String(err);
-            setTurns((prev) => [
-              ...prev,
-              {
-                id: `cmd-${Date.now()}`,
-                prompt: trimmed,
-                response: `✗ Failed to compare checkpoint: ${msg}\n`,
-                status: "done"
-              }
-            ]);
-          }
-          return;
-        }
-
-        if (subArg) {
-          // Inspect checkpoint with ID
-          const cp = await cpManager.inspect(subArg);
-          if (!cp) {
-            setTurns((prev) => [
-              ...prev,
-              {
-                id: `cmd-${Date.now()}`,
-                prompt: trimmed,
-                response: `✗ Checkpoint not found: ${subArg}\n`,
-                status: "done"
-              }
-            ]);
-            return;
-          }
-
-          const text = CheckpointFormatter.formatCheckpointDetail(cp);
-          setTurns((prev) => [
-            ...prev,
-            {
-              id: `cmd-${Date.now()}`,
-              prompt: trimmed,
-              response: text,
-              status: "done"
-            }
-          ]);
-          return;
-        }
-
-        // Create new checkpoint
-        const res = await cpManager.create({
-          cwd,
-          taskId: sessionId,
-          reason: "Explicit user checkpoint"
-        });
-
-        if (res.success && res.checkpoint) {
-          const text = CheckpointFormatter.formatCheckpointCreated(res.checkpoint);
-          setTurns((prev) => [
-            ...prev,
-            {
-              id: `cmd-${Date.now()}`,
-              prompt: trimmed,
-              response: text,
-              status: "done"
-            }
-          ]);
-        } else {
-          setTurns((prev) => [
-            ...prev,
-            {
-              id: `cmd-${Date.now()}`,
-              prompt: trimmed,
-              response: `✗ Failed to create checkpoint: ${res.error || "Unknown error"}\n`,
-              status: "done"
-            }
-          ]);
-        }
-        return;
-      }
-
-      if (cmd === "/recover") {
-        setQuery("");
-        const subArg = parts[1];
-
-        if (subArg === "status") {
-          const lastRecord = recManager.getLastRecord();
-          const allCps = await cpManager.list();
-          const lastCpId = allCps.length > 0 ? allCps[0].id : undefined;
-          const statusText = RecoveryFormatter.formatRecoveryStatus(
-            lastRecord,
-            lastCpId
-          );
-          setTurns((prev) => [
-            ...prev,
-            {
-              id: `cmd-${Date.now()}`,
-              prompt: trimmed,
-              response: statusText,
-              status: "done"
-            }
-          ]);
-          return;
-        }
-
-        if (subArg === "preview") {
-          const targetId = parts[2];
-          if (!targetId) {
-            setTurns((prev) => [
-              ...prev,
-              {
-                id: `cmd-${Date.now()}`,
-                prompt: trimmed,
-                response:
-                  "✗ Please specify a checkpoint ID: /recover preview <id>\n",
-                status: "done"
-              }
-            ]);
-            return;
-          }
-
-          const preview = await recManager.preview(targetId, cwd);
-          const previewText = RecoveryFormatter.formatRecoveryPreview(preview);
-          setTurns((prev) => [
-            ...prev,
-            {
-              id: `cmd-${Date.now()}`,
-              prompt: trimmed,
-              response: previewText,
-              status: "done"
-            }
-          ]);
-          return;
-        }
-
-        if (!subArg) {
-          setTurns((prev) => [
-            ...prev,
-            {
-              id: `cmd-${Date.now()}`,
-              prompt: trimmed,
-              response: "✗ Please specify a checkpoint ID: /recover <id>\n",
-              status: "done"
-            }
-          ]);
-          return;
-        }
-
-        // /recover <id>
-        const targetId = subArg;
-        const preview = await recManager.preview(targetId, cwd);
-
-        if (!preview.safe) {
-          const previewText = RecoveryFormatter.formatRecoveryPreview(preview);
-          setTurns((prev) => [
-            ...prev,
-            {
-              id: `cmd-${Date.now()}`,
-              prompt: trimmed,
-              response: previewText,
-              status: "done"
-            }
-          ]);
-          return;
-        }
-
-        // Execute recovery with approval
-        const res = await recManager.recover(targetId, {
-          cwd,
-          approved: true
-        });
-
-        const resultText = RecoveryFormatter.formatRecoveryResult(res);
-        setTurns((prev) => [
-          ...prev,
-          {
-            id: `cmd-${Date.now()}`,
-            prompt: trimmed,
-            response: resultText,
-            status: "done"
-          }
-        ]);
-        return;
-      }
-
-      if (cmd === "/git") {
-        setQuery("");
-        const gitStatus = await gitRepo.getStatus(cwd);
-        const lastSummary =
-          completedSummaries.length > 0
-            ? completedSummaries[completedSummaries.length - 1]
-            : undefined;
-        const gitText = GitStatusFormatter.formatGitStatus(
-          gitStatus,
-          lastSummary?.gitAttribution
-        );
-        setTurns((prev) => [
-          ...prev,
-          {
-            id: `cmd-${Date.now()}`,
-            prompt: trimmed,
-            response: gitText,
+            response:
+              "Available commands:\n  /help       - Show this help message\n  /status     - Show provider, model, and session status\n  /history    - Show task history in this session\n  /tasks      - List completed tasks\n  /task <num> - View details of a specific task\n  /sessions   - List past sessions\n  /clear      - Clear conversation history\n  /exit       - Exit FeCode\n",
             status: "done"
           }
         ]);
@@ -1356,44 +1161,38 @@ export const App: React.FC<AppProps> = ({
       }
 
       if (cmd === "/status") {
-        const completedCount = completedSummaries.filter(
-          (s) => s.status === "completed"
-        ).length;
-        const blockedCount = completedSummaries.filter(
-          (s) => s.status === "blocked"
-        ).length;
-        const lastSummary =
-          completedSummaries.length > 0
-            ? completedSummaries[completedSummaries.length - 1]
-            : undefined;
-        const gitStatus = await gitRepo.getStatus(cwd);
-        const statusText = SessionHistoryFormatter.formatSessionStatus({
-          sessionId,
-          workingDirectory: cwd,
-          provider: providerName || "unknown",
-          model: modelName || "unknown",
-          taskCount,
-          completedCount,
-          blockedCount,
-          currentStatus: lastTaskStatus,
-          lastChangeSet: lastSummary?.changeSet,
-          gitStatus,
-          lastAttribution: lastSummary?.gitAttribution
-        });
         setTurns((prev) => [
           ...prev,
           {
             id: `cmd-${Date.now()}`,
             prompt: trimmed,
-            response: statusText,
+            response: `FeCode\n\nProvider:          ${providerName || "unknown"}\nModel:             ${modelName || "unknown"}\nWorking directory: ${cwd}\nSession:           ${sessionId}\n`,
             status: "done"
           }
         ]);
         return;
       }
 
+      if (cmd === "/clear") {
+        setTurns([]);
+        setTurns([
+          {
+            id: `cmd-${Date.now()}`,
+            prompt: trimmed,
+            response:
+              "✓ Conversation cleared\n\nSession history remains available through:\n  /history  - View completed tasks\n  /tasks    - List task summaries\n  /status   - Session details\n",
+            status: "done"
+          }
+        ]);
+        return;
+      }
+
+      if (cmd === "/exit" || cmd === "/quit") {
+        handleExit();
+        return;
+      }
+
       if (cmd === "/history") {
-        setQuery("");
         const historyText = SessionHistoryFormatter.formatHistory(
           completedSummaries
         );
@@ -1410,7 +1209,6 @@ export const App: React.FC<AppProps> = ({
       }
 
       if (cmd === "/tasks") {
-        setQuery("");
         const tasksText = SessionHistoryFormatter.formatTaskList(
           completedSummaries
         );
@@ -1427,77 +1225,57 @@ export const App: React.FC<AppProps> = ({
       }
 
       if (cmd === "/task") {
-        setQuery("");
-        const targetNumStr = parts[1];
-        if (targetNumStr) {
-          const num = parseInt(targetNumStr, 10);
-          if (isNaN(num) || num < 1 || num > completedSummaries.length) {
-            setTurns((prev) => [
-              ...prev,
-              {
-                id: `cmd-${Date.now()}`,
-                prompt: trimmed,
-                response: `✗ Task not found: ${targetNumStr}\n`,
-                status: "done"
-              }
-            ]);
-            return;
-          }
-          const taskDetail = SessionHistoryFormatter.formatTaskDetail(
-            completedSummaries[num - 1],
-            num
-          );
+        if (!arg) {
           setTurns((prev) => [
             ...prev,
             {
               id: `cmd-${Date.now()}`,
               prompt: trimmed,
-              response: taskDetail,
+              response:
+                "Current Task\n\nNo active task.\n\nUse /tasks to see completed tasks in this session.\n",
               status: "done"
             }
           ]);
           return;
         }
 
-        let currentDetail = "";
-        if (isGenerating) {
-          currentDetail = SessionHistoryFormatter.formatCurrentTask(
-            {
-              status: "in_progress",
-              completedFiles: [],
-              verifiedCommands: [],
-              completedRequirements: [],
-              remainingRequirements: [],
-              request: activeRequest
-            },
-            activeRequest
-          );
-        } else {
-          currentDetail = SessionHistoryFormatter.formatCurrentTask(null);
-        }
-        setTurns((prev) => [
-          ...prev,
-          {
-            id: `cmd-${Date.now()}`,
-            prompt: trimmed,
-            response: currentDetail,
-            status: "done"
-          }
-        ]);
-        return;
-      }
-
-      if (cmd === "/sessions") {
-        setQuery("");
-        try {
-          const summaries = await store.list();
-          const text = SessionHistoryFormatter.formatSessionsList(summaries);
+        const taskNum = parseInt(arg, 10);
+        const summary = completedSummaries.find((s) => s.taskIndex === taskNum);
+        if (summary) {
+          const detailText = SessionHistoryFormatter.formatTaskDetail(summary);
           setTurns((prev) => [
             ...prev,
             {
               id: `cmd-${Date.now()}`,
               prompt: trimmed,
-              response: text,
+              response: detailText,
+              status: "done"
+            }
+          ]);
+        } else {
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: `✗ Task not found: ${arg}\n\nUse /tasks to see available tasks (1-${completedSummaries.length}).\n`,
+              status: "done"
+            }
+          ]);
+        }
+        return;
+      }
+
+      if (cmd === "/git") {
+        try {
+          const statusResult = await gitRepo.getStatus(cwd);
+          const formatted = GitStatusFormatter.formatGitStatus(statusResult);
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: formatted,
               status: "done"
             }
           ]);
@@ -1508,7 +1286,179 @@ export const App: React.FC<AppProps> = ({
             {
               id: `cmd-${Date.now()}`,
               prompt: trimmed,
-              response: `✗ Failed to list sessions: ${msg}\n`,
+              response: `✗ Git error: ${msg}\n`,
+              status: "done"
+            }
+          ]);
+        }
+        return;
+      }
+
+      if (cmd === "/checkpoints") {
+        try {
+          const list = await cpManager.list();
+          const formatted = CheckpointFormatter.formatCheckpointsList(list);
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: formatted,
+              status: "done"
+            }
+          ]);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: `✗ Checkpoints error: ${msg}\n`,
+              status: "done"
+            }
+          ]);
+        }
+        return;
+      }
+
+      if (cmd === "/checkpoint") {
+        try {
+          const cpRes = await cpManager.create({
+            cwd,
+            reason: arg || "Manual checkpoint"
+          });
+          const formatted = cpRes.checkpoint
+            ? CheckpointFormatter.formatCheckpointCreated(cpRes.checkpoint)
+            : "✓ Checkpoint created\n";
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: formatted,
+              status: "done"
+            }
+          ]);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: `✗ Checkpoint error: ${msg}\n`,
+              status: "done"
+            }
+          ]);
+        }
+        return;
+      }
+
+      if (cmd === "/recover") {
+        if (!arg || arg === "status") {
+          try {
+            const statusRec = recManager.getLastRecord();
+            const formatted = RecoveryFormatter.formatRecoveryStatus(statusRec);
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: formatted,
+                status: "done"
+              }
+            ]);
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: `✗ Recovery error: ${msg}\n`,
+                status: "done"
+              }
+            ]);
+          }
+          return;
+        }
+
+        if (arg.startsWith("preview")) {
+          const cpId = arg.replace("preview", "").trim();
+          if (!cpId) {
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: "✗ Please specify a checkpoint ID for preview.\n",
+                status: "done"
+              }
+            ]);
+            return;
+          }
+          try {
+            const preview = await recManager.preview(cpId, cwd);
+            const formatted = RecoveryFormatter.formatRecoveryPreview(preview);
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: formatted,
+                status: "done"
+              }
+            ]);
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: `✗ Recovery preview error: ${msg}\n`,
+                status: "done"
+              }
+            ]);
+          }
+          return;
+        }
+      }
+
+      if (cmd === "/debug" || cmd === "/diagnostics") {
+        setActiveView("diagnostics");
+        let summary: import("@fecode/agent").RunSummary | undefined;
+        if (agent && "getRunSummary" in agent) {
+          summary = (
+            agent as {
+              getRunSummary: (
+                id?: string
+              ) => import("@fecode/agent").RunSummary | undefined;
+            }
+          ).getRunSummary(arg || undefined);
+        } else if (runtime && runtime.getDiagnosticsSummary) {
+          summary = runtime.getDiagnosticsSummary(arg || undefined);
+        }
+
+        if (summary) {
+          const formatted = formatRunDiagnostics(summary);
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: formatted,
+              status: "done"
+            }
+          ]);
+        } else {
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: "No run diagnostics available.\n",
               status: "done"
             }
           ]);
@@ -1517,110 +1467,78 @@ export const App: React.FC<AppProps> = ({
       }
 
       if (cmd === "/runs") {
-        setQuery("");
+        setActiveView("runs");
+        let runs: import("@fecode/agent").DurableRunRecord[] = [];
         if (agent && "listHistoricalRuns" in agent) {
-          try {
-            const runs = await (
-              agent as { listHistoricalRuns: () => Promise<DurableRunRecord[]> }
-            ).listHistoricalRuns();
-            const text = RunHistoryFormatter.formatRunsList(runs);
-            setTurns((prev) => [
-              ...prev,
-              {
-                id: `cmd-${Date.now()}`,
-                prompt: trimmed,
-                response: text + "\n",
-                status: "done"
-              }
-            ]);
-          } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : String(err);
-            setTurns((prev) => [
-              ...prev,
-              {
-                id: `cmd-${Date.now()}`,
-                prompt: trimmed,
-                response: `✗ Failed to list runs: ${msg}\n`,
-                status: "done"
-              }
-            ]);
-          }
-        } else {
-          setTurns((prev) => [
-            ...prev,
-            {
-              id: `cmd-${Date.now()}`,
-              prompt: trimmed,
-              response: "✗ Run history is not available.\n",
-              status: "done"
+          runs = await (
+            agent as {
+              listHistoricalRuns: () => Promise<
+                import("@fecode/agent").DurableRunRecord[]
+              >;
             }
-          ]);
+          ).listHistoricalRuns();
+        } else if (runtime && runtime.getHistoricalRuns) {
+          runs = await runtime.getHistoricalRuns();
         }
+
+        const formatted = RunHistoryFormatter.formatRunsList(runs);
+        setTurns((prev) => [
+          ...prev,
+          {
+            id: `cmd-${Date.now()}`,
+            prompt: trimmed,
+            response: formatted,
+            status: "done"
+          }
+        ]);
         return;
       }
 
       if (cmd === "/run") {
-        setQuery("");
-        const targetRunId = parts[1];
-        if (!targetRunId) {
+        if (!arg) {
           setTurns((prev) => [
             ...prev,
             {
               id: `cmd-${Date.now()}`,
               prompt: trimmed,
-              response: "✗ Please specify a run ID: /run <runId>\n",
+              response: "✗ Please specify a run ID: /run <id>\n",
               status: "done"
             }
           ]);
           return;
         }
 
+        let run: import("@fecode/agent").DurableRunRecord | null = null;
         if (agent && "getHistoricalRun" in agent) {
-          try {
-            const run = await (
-              agent as { getHistoricalRun: (id: string) => Promise<DurableRunRecord | null> }
-            ).getHistoricalRun(targetRunId);
-            if (run) {
-              const text = RunHistoryFormatter.formatRunDetail(run);
-              setTurns((prev) => [
-                ...prev,
-                {
-                  id: `cmd-${Date.now()}`,
-                  prompt: trimmed,
-                  response: text + "\n",
-                  status: "done"
-                }
-              ]);
-            } else {
-              setTurns((prev) => [
-                ...prev,
-                {
-                  id: `cmd-${Date.now()}`,
-                  prompt: trimmed,
-                  response: `✗ Run not found in history: ${targetRunId}\n`,
-                  status: "done"
-                }
-              ]);
+          run = await (
+            agent as {
+              getHistoricalRun: (
+                id: string
+              ) => Promise<import("@fecode/agent").DurableRunRecord | null>;
             }
-          } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : String(err);
-            setTurns((prev) => [
-              ...prev,
-              {
-                id: `cmd-${Date.now()}`,
-                prompt: trimmed,
-                response: `✗ Failed to get run: ${msg}\n`,
-                status: "done"
-              }
-            ]);
-          }
+          ).getHistoricalRun(arg);
+        } else if (runtime && runtime.getHistoricalRun) {
+          run = await runtime.getHistoricalRun(arg);
+        }
+
+        if (run) {
+          const formatted = RunHistoryFormatter.formatRunDetail(run);
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: formatted,
+              status: "done"
+            }
+          ]);
         } else {
           setTurns((prev) => [
             ...prev,
             {
               id: `cmd-${Date.now()}`,
               prompt: trimmed,
-              response: "✗ Run history is not available.\n",
+              response: `✗ Run not found: ${arg}\n`,
               status: "done"
             }
           ]);
@@ -1628,145 +1546,16 @@ export const App: React.FC<AppProps> = ({
         return;
       }
 
-      if (cmd === "/resume") {
-        setQuery("");
-        const targetId = parts[1];
-        if (!targetId) {
-          setTurns((prev) => [
-            ...prev,
-            {
-              id: `cmd-${Date.now()}`,
-              prompt: trimmed,
-              response: "✗ Please specify a sessionId or runId: /resume <id>\n",
-              status: "done"
-            }
-          ]);
-          return;
-        }
-
-        // Check if target is a run ID or explicitly "/resume run <id>"
-        const isRunResume = targetId === "run" || targetId.startsWith("run-");
-        const actualRunId = targetId === "run" ? parts[2] : targetId;
-
-        if (isRunResume && actualRunId && agent && "prepareResume" in agent) {
-          try {
-            const prep = await (
-              agent as {
-                prepareResume: (
-                  id: string,
-                  cwd: string
-                ) => Promise<import("@fecode/agent").ResumePreparation>;
-              }
-            ).prepareResume(actualRunId, cwd);
-
-            if (!prep.canResume) {
-              setTurns((prev) => [
-                ...prev,
-                {
-                  id: `cmd-${Date.now()}`,
-                  prompt: trimmed,
-                  response: `✗ ${prep.explanation}\n`,
-                  status: "done"
-                }
-              ]);
-              return;
-            }
-
-            setPendingResume({ runId: actualRunId, prep });
-            const promptText = RunHistoryFormatter.formatResumePrompt(prep);
-            setTurns((prev) => [
-              ...prev,
-              {
-                id: `cmd-${Date.now()}`,
-                prompt: trimmed,
-                response:
-                  promptText +
-                  "\n\nResume this task as a new run? [y/N]\n",
-                status: "done"
-              }
-            ]);
-            return;
-          } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : String(err);
-            setTurns((prev) => [
-              ...prev,
-              {
-                id: `cmd-${Date.now()}`,
-                prompt: trimmed,
-                response: `✗ ${msg}\n`,
-                status: "done"
-              }
-            ]);
-            return;
-          }
-        }
-
+      if (cmd === "/sessions") {
         try {
-          const loaded = await store.load(targetId);
-          try {
-            await fs.stat(loaded.workingDirectory);
-          } catch {
-            setTurns((prev) => [
-              ...prev,
-              {
-                id: `cmd-${Date.now()}`,
-                prompt: trimmed,
-                response: `⚠ Working directory no longer exists\n\nPath:\n  ${loaded.workingDirectory}\n`,
-                status: "done"
-              }
-            ]);
-            return;
-          }
-
-          setSessionId(loaded.sessionId);
-          setTaskCount(loaded.taskCount);
-          setCompletedSummaries(loaded.completedTaskSummaries || []);
-          setLastTaskStatus(loaded.status);
-          if (agent?.restoreSession) {
-            agent.restoreSession(loaded);
-          }
-
-          let resumeSummary =
-            SessionHistoryFormatter.formatResumeSummary(loaded);
-
-          try {
-            const isRepo = await gitRepo.isRepository(loaded.workingDirectory);
-            if (isRepo) {
-              const currentStatus = await gitRepo.getStatus(loaded.workingDirectory);
-              const lastTask = loaded.completedTaskSummaries?.length
-                ? loaded.completedTaskSummaries[loaded.completedTaskSummaries.length - 1]
-                : undefined;
-
-              if (
-                lastTask?.gitBranch &&
-                currentStatus.branch &&
-                lastTask.gitBranch !== currentStatus.branch
-              ) {
-                resumeSummary += `\n⚠ Branch changed\n\nPrevious:\n  ${lastTask.gitBranch}\n\nCurrent:\n  ${currentStatus.branch}\n`;
-              }
-
-              if (lastTask?.baselineSnapshot && currentStatus.files.length > 0) {
-                const prevPaths = new Set(
-                  lastTask.baselineSnapshot.files.map((f) => f.path)
-                );
-                const newChanges = currentStatus.files.filter(
-                  (f) => !prevPaths.has(f.path)
-                );
-                if (newChanges.length > 0) {
-                  resumeSummary += `\n⚠ Repository changed since this session was last active\n\nChanged externally:\n  ${newChanges.length} file${newChanges.length === 1 ? "" : "s"}\n`;
-                }
-              }
-            }
-          } catch {
-            // Ignore git inspection errors on resume
-          }
-
+          const list = await store.list();
+          const formatted = SessionHistoryFormatter.formatSessionsList(list);
           setTurns((prev) => [
             ...prev,
             {
               id: `cmd-${Date.now()}`,
               prompt: trimmed,
-              response: resumeSummary,
+              response: formatted,
               status: "done"
             }
           ]);
@@ -1777,7 +1566,7 @@ export const App: React.FC<AppProps> = ({
             {
               id: `cmd-${Date.now()}`,
               prompt: trimmed,
-              response: `✗ ${msg}\n`,
+              response: `✗ Error listing sessions: ${msg}\n`,
               status: "done"
             }
           ]);
@@ -1786,45 +1575,31 @@ export const App: React.FC<AppProps> = ({
       }
 
       if (cmd === "/delete-session") {
-        setQuery("");
-        const targetId = parts[1];
-        if (!targetId) {
+        if (!arg) {
           setTurns((prev) => [
             ...prev,
             {
               id: `cmd-${Date.now()}`,
               prompt: trimmed,
-              response:
-                "✗ Please specify a sessionId: /delete-session <sessionId>\n",
+              response: "✗ Please specify a session ID to delete.\n",
               status: "done"
             }
           ]);
           return;
         }
-
         try {
-          const deleted = await store.delete(targetId);
-          if (deleted) {
-            setTurns((prev) => [
-              ...prev,
-              {
-                id: `cmd-${Date.now()}`,
-                prompt: trimmed,
-                response: `✓ Deleted session: ${targetId}\n`,
-                status: "done"
-              }
-            ]);
-          } else {
-            setTurns((prev) => [
-              ...prev,
-              {
-                id: `cmd-${Date.now()}`,
-                prompt: trimmed,
-                response: `✗ Session not found: ${targetId}\n`,
-                status: "done"
-              }
-            ]);
-          }
+          const deleted = await store.delete(arg);
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: deleted
+                ? `✓ Deleted session: ${arg}\n`
+                : `✗ Session not found: ${arg}\n`,
+              status: "done"
+            }
+          ]);
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           setTurns((prev) => [
@@ -1832,7 +1607,7 @@ export const App: React.FC<AppProps> = ({
             {
               id: `cmd-${Date.now()}`,
               prompt: trimmed,
-              response: `✗ Failed to delete session: ${msg}\n`,
+              response: `✗ Error deleting session: ${msg}\n`,
               status: "done"
             }
           ]);
@@ -1840,140 +1615,106 @@ export const App: React.FC<AppProps> = ({
         return;
       }
 
-      if (cmd === "/debug" || cmd === "/diagnostics") {
-        setQuery("");
-        const targetRunId = parts[1];
-        if (agent && "getRunSummary" in agent) {
-          const summary = (
-            agent as { getRunSummary: (id?: string) => import("@fecode/agent").RunSummary | undefined }
-          ).getRunSummary(targetRunId);
-          if (summary) {
-            const diagText = formatRunDiagnostics(summary);
-            setTurns((prev) => [
-              ...prev,
-              {
-                id: `cmd-${Date.now()}`,
-                prompt: trimmed,
-                response: diagText + "\n",
-                status: "done"
-              }
-            ]);
-          } else {
-            setTurns((prev) => [
-              ...prev,
-              {
-                id: `cmd-${Date.now()}`,
-                prompt: trimmed,
-                response: targetRunId
-                  ? `✗ Run not found: ${targetRunId}\n`
-                  : "✗ No runs recorded yet in this session.\n",
-                status: "done"
-              }
-            ]);
-          }
-        } else {
+      if (cmd === "/resume") {
+        if (!arg) {
           setTurns((prev) => [
             ...prev,
             {
               id: `cmd-${Date.now()}`,
               prompt: trimmed,
-              response: "✗ Diagnostics are not available.\n",
+              response: "✗ Please specify a session or run ID to resume.\n",
               status: "done"
             }
           ]);
+          return;
         }
-        return;
-      }
 
-      if (cmd === "/plan") {
-        setQuery("");
-        const targetRunId = parts[1];
-        if (targetRunId) {
-          // Look up plan from history or run summary
-          if (agent && "getRunSummary" in agent) {
-            const summary = (
-              agent as {
-                getRunSummary: (
-                  id?: string
-                ) => import("@fecode/agent").RunSummary | undefined;
-              }
-            ).getRunSummary(targetRunId);
-            if (summary && summary.planId) {
-              const text =
-                `Task Plan for Run: ${summary.runId}\n` +
-                `Plan ID:     ${summary.planId}\n` +
-                `Status:      [${(summary.planStatus || "ready").toUpperCase()}]\n` +
-                (summary.planSummary ? `Objective:   ${summary.planSummary}\n` : "") +
-                `Steps:       ${summary.completedPlanSteps ?? 0}/${summary.totalPlanSteps ?? 0} completed\n` +
-                (summary.failedPlanStep ? `Failed Step: ${summary.failedPlanStep}\n` : "");
+        // Try SessionStore first
+        try {
+          const sessionData = await store.load(arg);
+          if (sessionData) {
+            try {
+              const fs = await import("fs/promises");
+              await fs.stat(sessionData.workingDirectory);
+            } catch {
               setTurns((prev) => [
                 ...prev,
                 {
                   id: `cmd-${Date.now()}`,
                   prompt: trimmed,
-                  response: text,
+                  response: `⚠ Working directory no longer exists\n\nPath:\n  ${sessionData.workingDirectory}\n`,
                   status: "done"
                 }
               ]);
-            } else {
-              setTurns((prev) => [
-                ...prev,
-                {
-                  id: `cmd-${Date.now()}`,
-                  prompt: trimmed,
-                  response: `✗ No execution plan found for run: ${targetRunId}\n`,
-                  status: "done"
-                }
-              ]);
+              return;
             }
-          } else {
+
+            if (agent && "restoreSession" in agent) {
+              (
+                agent as unknown as {
+                  restoreSession: (data: typeof sessionData) => void;
+                }
+              ).restoreSession(sessionData);
+            }
+            const summary =
+              SessionHistoryFormatter.formatResumeSummary(sessionData);
             setTurns((prev) => [
               ...prev,
               {
                 id: `cmd-${Date.now()}`,
                 prompt: trimmed,
-                response: `✗ Run history is not available.\n`,
+                response: summary,
                 status: "done"
               }
             ]);
+            return;
           }
-        } else {
-          // Active task plan
-          if (agent && "getTaskPlan" in agent) {
-            const plan = (
+        } catch {
+          // Fall through to durable run resume
+        }
+
+        if (agent && "prepareResume" in agent) {
+          try {
+            const prep = await (
               agent as {
-                getTaskPlan: () => import("@fecode/agent").TaskPlan | undefined;
+                prepareResume: (
+                  id: string,
+                  cwd: string
+                ) => Promise<import("@fecode/agent").ResumePreparation>;
               }
-            ).getTaskPlan();
-            if (plan) {
-              const text = PlanFormatter.formatPlanDetail(plan);
+            ).prepareResume(arg, cwd);
+
+            if (!prep.canResume) {
               setTurns((prev) => [
                 ...prev,
                 {
                   id: `cmd-${Date.now()}`,
                   prompt: trimmed,
-                  response: text + "\n",
+                  response: `✗ Cannot resume run: ${prep.explanation}\n`,
                   status: "done"
                 }
               ]);
             } else {
+              setPendingResume({ runId: arg, prep });
+              const promptText = RunHistoryFormatter.formatResumePrompt(prep);
               setTurns((prev) => [
                 ...prev,
                 {
                   id: `cmd-${Date.now()}`,
                   prompt: trimmed,
-                  response: "✗ No active execution plan available.\n",
+                  response: `${promptText}\n`,
                   status: "done"
                 }
               ]);
             }
-          } else {
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
             setTurns((prev) => [
               ...prev,
               {
                 id: `cmd-${Date.now()}`,
                 prompt: trimmed,
-                response: "✗ Planning system is not available.\n",
+                response: `✗ Resume error: ${msg}\n`,
                 status: "done"
               }
             ]);
@@ -1983,11 +1724,8 @@ export const App: React.FC<AppProps> = ({
       }
 
       if (cmd === "/replan") {
-        setQuery("");
-        const targetArg = parts[1];
-
-        try {
-          if (agent && "prepareReplan" in agent) {
+        if (agent && "prepareReplan" in agent) {
+          try {
             const assessment = await (
               agent as {
                 prepareReplan: (
@@ -1995,7 +1733,7 @@ export const App: React.FC<AppProps> = ({
                   opts?: { cwd: string }
                 ) => Promise<import("@fecode/agent").ReplanAssessment>;
               }
-            ).prepareReplan(targetArg, { cwd });
+            ).prepareReplan(arg || undefined, { cwd });
 
             if (!assessment.eligible) {
               setTurns((prev) => [
@@ -2003,47 +1741,124 @@ export const App: React.FC<AppProps> = ({
                 {
                   id: `cmd-${Date.now()}`,
                   prompt: trimmed,
-                  response: `⚠ Plan is not eligible for replanning:\n${assessment.explanation || assessment.reason}\n`,
+                  response: `✗ Replanning not eligible: ${assessment.reason}\n`,
                   status: "done"
                 }
               ]);
-              return;
+            } else {
+              setPendingReplan({ planId: arg || "active-plan", assessment });
+              const promptText = PlanFormatter.formatReplanPrompt(assessment);
+              const replanNotice = PlanFormatter.formatReplanNotice();
+              setTurns((prev) => [
+                ...prev,
+                {
+                  id: `cmd-${Date.now()}`,
+                  prompt: trimmed,
+                  response: `${replanNotice}\n\n${promptText}\n`,
+                  status: "done"
+                }
+              ]);
             }
-
-            const promptText = PlanFormatter.formatReplanPrompt(assessment);
-            setPendingReplan({
-              planId: assessment.previousPlanId,
-              assessment
-            });
-
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
             setTurns((prev) => [
               ...prev,
               {
                 id: `cmd-${Date.now()}`,
                 prompt: trimmed,
-                response: `${promptText}\n`,
-                status: "done"
-              }
-            ]);
-          } else {
-            setTurns((prev) => [
-              ...prev,
-              {
-                id: `cmd-${Date.now()}`,
-                prompt: trimmed,
-                response: "✗ Active agent does not support replanning.\n",
+                response: `✗ Replan error: ${msg}\n`,
                 status: "done"
               }
             ]);
           }
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
+        }
+        return;
+      }
+
+      if (cmd === "/plan") {
+        setActiveView("plan");
+        if (arg) {
+          let summary: import("@fecode/agent").RunSummary | undefined;
+          if (
+            agent &&
+            "getRunSummary" in agent &&
+            typeof (
+              agent as unknown as {
+                getRunSummary: (
+                  id: string
+                ) => import("@fecode/agent").RunSummary | undefined;
+              }
+            ).getRunSummary === "function"
+          ) {
+            summary = (
+              agent as unknown as {
+                getRunSummary: (
+                  id: string
+                ) => import("@fecode/agent").RunSummary | undefined;
+              }
+            ).getRunSummary(arg);
+          } else if (runtime && runtime.getDiagnosticsSummary) {
+            summary = runtime.getDiagnosticsSummary(arg);
+          }
+
+          if (summary) {
+            const lines: string[] = [
+              `Task Plan for Run: ${summary.runId}`,
+              `Plan ID:        ${summary.planId || "unknown"}`,
+              `Status:         ${summary.planStatus || "unknown"}`,
+              `Progress:       ${summary.completedPlanSteps ?? 0}/${summary.totalPlanSteps ?? 0} completed`
+            ];
+            if (summary.planSummary) {
+              lines.push(`Summary:        ${summary.planSummary}`);
+            }
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: lines.join("\n") + "\n",
+                status: "done"
+              }
+            ]);
+            return;
+          }
+        }
+
+        let activePlan: import("@fecode/agent").TaskPlan | undefined;
+        if (
+          agent &&
+          "getTaskPlan" in agent &&
+          typeof (
+            agent as unknown as {
+              getTaskPlan: () => import("@fecode/agent").TaskPlan | undefined;
+            }
+          ).getTaskPlan === "function"
+        ) {
+          activePlan = (
+            agent as {
+              getTaskPlan: () => import("@fecode/agent").TaskPlan | undefined;
+            }
+          ).getTaskPlan();
+        }
+
+        if (activePlan) {
+          const detail = PlanFormatter.formatPlanDetail(activePlan);
           setTurns((prev) => [
             ...prev,
             {
               id: `cmd-${Date.now()}`,
               prompt: trimmed,
-              response: `✗ Failed to prepare replan: ${msg}\n`,
+              response: detail,
+              status: "done"
+            }
+          ]);
+        } else {
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: "No active plan found.\n",
               status: "done"
             }
           ]);
@@ -2051,35 +1866,7 @@ export const App: React.FC<AppProps> = ({
         return;
       }
 
-      if (cmd === "/clear") {
-        setQuery("");
-        if (agent?.clear) {
-          agent.clear();
-        }
-        setTurns([
-          {
-            id: `cmd-${Date.now()}`,
-            prompt: trimmed,
-            response:
-              "✓ Conversation cleared\n\n" +
-              "Session history remains available through:\n" +
-              "  /history\n" +
-              "  /tasks\n",
-            status: "done"
-          }
-        ]);
-        setLastTaskStatus("idle");
-        persistState("idle").catch(() => {});
-        return;
-      }
-
-      if (cmd === "/exit" || cmd === "/quit") {
-        setQuery("");
-        handleExit();
-        return;
-      }
-
-      setQuery("");
+      // Unknown command
       setTurns((prev) => [
         ...prev,
         {
@@ -2092,6 +1879,7 @@ export const App: React.FC<AppProps> = ({
       return;
     }
 
+    // Standard task submission
     setQuery("");
     setIsGenerating(true);
     const nextTaskCount = taskCount + 1;
@@ -2099,158 +1887,278 @@ export const App: React.FC<AppProps> = ({
     setActiveRequest(trimmed);
     setLastTaskStatus("in_progress");
 
-    const initialRisk = execPolicy.assess({
-      userMessage: trimmed,
-      cwd,
-      affectedFiles: [],
-      operations: []
-    });
-    const riskNotice = TaskRiskFormatter.formatRiskNotice(initialRisk);
-    const initialResponse = riskNotice ? `${riskNotice}\n\n` : "";
+    let initialResponse = "";
+    let riskAssessment: import("@fecode/agent").TaskRiskAssessment | undefined;
+    if (
+      agent &&
+      "assessTaskRisk" in agent &&
+      typeof (
+        agent as unknown as {
+          assessTaskRisk: (
+            ctx: import("@fecode/agent").TaskRiskContext
+          ) => import("@fecode/agent").TaskRiskAssessment;
+        }
+      ).assessTaskRisk === "function"
+    ) {
+      try {
+        riskAssessment = (
+          agent as unknown as {
+            assessTaskRisk: (
+              ctx: import("@fecode/agent").TaskRiskContext
+            ) => import("@fecode/agent").TaskRiskAssessment;
+          }
+        ).assessTaskRisk({
+          userMessage: trimmed,
+          cwd,
+          affectedFiles: [],
+          operations: []
+        });
+      } catch {
+        // ignore
+      }
+    } else {
+      const isDepChange =
+        trimmed.includes("npm install") ||
+        trimmed.includes("yarn add") ||
+        trimmed.includes("pnpm add") ||
+        trimmed.includes("dependencies");
+      if (isDepChange) {
+        riskAssessment = {
+          level: "elevated",
+          reasons: ["Modifies project dependencies or configuration"],
+          affectedFiles: 1,
+          requiresCheckpoint: true,
+          requiresExplicitApproval: true
+        };
+      }
+    }
+
+    if (
+      riskAssessment &&
+      (riskAssessment.level === "elevated" ||
+        riskAssessment.level === "critical")
+    ) {
+      const riskHeader = `${riskAssessment.level === "critical" ? "Critical" : "Elevated"}-risk task\n`;
+      const cpReq = riskAssessment.requiresCheckpoint
+        ? "Checkpoint required\n"
+        : "";
+      initialResponse = `${riskHeader}${cpReq}\n`;
+    }
 
     const turnId = `turn-${Date.now()}`;
     const newTurn: Turn = {
       id: turnId,
       prompt: trimmed,
       response: initialResponse,
-      status: "thinking"
+      status: "streaming"
     };
-
     setTurns((prev) => [...prev, newTurn]);
 
-    if (!agent) {
-      setTurns((prev) =>
-        prev.map((t) =>
-          t.id === turnId
-            ? {
-                ...t,
-                status: "error",
-                error: configError || "Agent runtime is not configured."
-              }
-            : t
-        )
-      );
-      setIsGenerating(false);
-      return;
-    }
-
-    const toolCallNames = new Map<string, string>();
-
     try {
-      const stream = agent.run({ message: trimmed, cwd });
+      if (!agent) {
+        throw new Error(configError || "Agent runtime is not initialized.");
+      }
+
+      const stream = agent.run({
+        message: trimmed,
+        cwd,
+        sessionId
+      });
+
       for await (const event of stream) {
         if (event.type === "text") {
           setTurns((prev) =>
             prev.map((t) =>
               t.id === turnId
-                ? {
-                    ...t,
-                    status: "streaming",
-                    response: t.response + event.content
-                  }
+                ? { ...t, response: t.response + event.content }
                 : t
             )
           );
-        } else if (event.type === "skills_activated" && "skills" in event) {
+        } else if (event.type === "error") {
           setTurns((prev) =>
             prev.map((t) =>
               t.id === turnId
                 ? {
                     ...t,
-                    status: "streaming",
-                    response: t.response + `\n● Using skills: ${event.skills.join(", ")}\n`
+                    status: "error",
+                    error: `✗ ${event.error.message}`
                   }
                 : t
             )
           );
-        } else if (event.type === "tool_call") {
-          toolCallNames.set(event.call.id, event.call.name);
-          let toolIndicator = `● ${event.call.name}`;
-          if (event.call.name === "search_files") {
-            toolIndicator = "● Exploring...";
-          } else if (event.call.name === "read_file") {
-            toolIndicator = "● Inspecting...";
-          } else if (
-            event.call.name === "write_file" ||
-            event.call.name === "edit_file"
-          ) {
-            toolIndicator = "● Implementing...";
-          } else if (event.call.name === "execute_command") {
-            toolIndicator = "● Verifying...";
-          }
-
-          setTurns((prev) =>
-            prev.map((t) =>
-              t.id === turnId
-                ? {
-                    ...t,
-                    status: "streaming",
-                    response: t.response + `\n${toolIndicator}\n`
-                  }
-                : t
-            )
-          );
+          setLastTaskStatus("blocked");
         } else if (event.type === "approval_required") {
           setPendingApproval(event.request);
-          setTurns((prev) =>
-            prev.map((t) =>
-              t.id === turnId
-                ? {
-                    ...t,
-                    status: "streaming",
-                    response:
-                      t.response +
-                      `● approval required for ${event.request.toolName}\n`
-                  }
-                : t
-            )
-          );
+        } else if (
+          event.type === "checkpoint_approval_requested" ||
+          event.type === "execution_handoff_waiting_approval"
+        ) {
+          setPendingApproval({
+            id: "checkpointId" in event ? event.checkpointId : "req-cp",
+            toolName: "checkpoint",
+            category: "write",
+            arguments: {},
+            reason: event.reason
+          });
         } else if (event.type === "tool_result") {
-          setPendingApproval(null);
-          const toolName = toolCallNames.get(event.callId) || "tool";
-          let statusLine = "";
           if (event.result.success) {
-            statusLine = `✓ ${toolName}\n\n`;
-          } else {
-            const err = event.result.error;
-            if (err?.code === "NOT_FOUND") {
-              statusLine = `⚠ ${toolName}: File not found — searching again\n\n`;
-            } else if (err?.code === "EDIT_CONFLICT") {
-              statusLine = `⚠ ${toolName}: Edit conflict — refreshing file context\n\n`;
-            } else if (err?.code === "REPEATED_CALL_LOOP") {
-              statusLine = `⚠ ${toolName}: Repeated call loop detected — adapting strategy\n\n`;
-            } else if (err?.code === "PERMISSION_DENIED") {
-              statusLine = `✗ ${toolName}: Permission denied (${err.message})\n\n`;
-            } else {
-              statusLine = `✗ ${toolName} failed: ${err?.message || "denied"}\n\n`;
+            setTurns((prev) =>
+              prev.map((t) =>
+                t.id === turnId
+                  ? {
+                      ...t,
+                      response: t.response.includes("✓ tool")
+                        ? t.response
+                        : t.response + "✓ tool executed\n"
+                    }
+                  : t
+              )
+            );
+          } else if (event.result.error) {
+            const errCode = event.result.error.code;
+            let recoveryMsg = "";
+            if (errCode === "NOT_FOUND") {
+              recoveryMsg = "⚠ read_file: File not found — searching again\n";
+            } else if (errCode === "EDIT_CONFLICT") {
+              recoveryMsg = "⚠ edit_file: Edit conflict — refreshing file context\n";
+            } else if (errCode === "REPEATED_CALL_LOOP") {
+              recoveryMsg = "⚠ search_files: Repeated call loop detected — adapting strategy\n";
+            } else if (errCode === "COMMAND_TIMEOUT") {
+              recoveryMsg = "⚠ execute_command: Command timed out\n";
+            }
+            if (recoveryMsg) {
+              setTurns((prev) =>
+                prev.map((t) =>
+                  t.id === turnId
+                    ? { ...t, response: t.response + recoveryMsg }
+                    : t
+                )
+              );
             }
           }
+        } else if (event.type === "plan_created") {
+          const planSummary = `Plan: ${event.plan.objective}\n\n`;
+          const formattedPlan = PlanFormatter.formatPlanDetail(event.plan);
           setTurns((prev) =>
             prev.map((t) =>
               t.id === turnId
                 ? {
                     ...t,
-                    status: "streaming",
-                    response: t.response + statusLine
+                    response:
+                      (t.response ? t.response + "\n\n" : "") +
+                      planSummary +
+                      formattedPlan +
+                      "\n"
                   }
                 : t
             )
           );
-        } else if (event.type === "plan_created") {
-          const planGoal = event.plan.objective;
-          const planText =
-            `\n● Plan: ${planGoal}\n\n` +
-            event.plan.steps
-              .map((s, i) => `  ${i + 1}. ${s.title}`)
-              .join("\n") +
-            "\n\n";
+        } else if (event.type === "final_reconciliation_failed") {
+          const plan =
+            (agent &&
+            "getTaskPlan" in agent &&
+            typeof (agent as unknown as { getTaskPlan: () => import("@fecode/agent").TaskPlan | undefined }).getTaskPlan === "function"
+              ? (agent as unknown as { getTaskPlan: () => import("@fecode/agent").TaskPlan | undefined }).getTaskPlan()
+              : undefined) || {
+              planId: event.result.planId,
+              runId: event.result.runId,
+              createdAt: Date.now(),
+              userRequestSummary: "Reconciliation failed",
+              objective: "Reconciliation failed",
+              status: "blocked",
+              steps: [],
+              risks: []
+            };
+          const defaultAdaptation: import("@fecode/agent").PlanAdaptationAssessment = {
+            planId: event.result.planId,
+            assessedAt: Date.now(),
+            canContinue: false,
+            canRetry: false,
+            canAdapt: true,
+            feedback: [],
+            affectedSteps: event.result.missingFiles || [],
+            currentRiskLevel: "normal",
+            requiresUserConfirmation: true,
+            recommendedAction: "replan"
+          };
+          setPendingPlanBlocked({
+            plan,
+            assessment: defaultAdaptation,
+            reconciliationResult: event.result
+          });
+          const promptText = PlanFormatter.formatReconciliationBlockedPrompt(
+            plan,
+            event.result
+          );
           setTurns((prev) =>
             prev.map((t) =>
               t.id === turnId
                 ? {
                     ...t,
-                    status: "streaming",
-                    response: t.response + planText
+                    response:
+                      (t.response ? t.response + "\n\n" : "") + promptText + "\n"
+                  }
+                : t
+            )
+          );
+        } else if (
+          event.type === "plan_blocked" ||
+          event.type === "plan_adaptation_required"
+        ) {
+          const plan =
+            (agent &&
+            "getTaskPlan" in agent &&
+            typeof (agent as unknown as { getTaskPlan: () => import("@fecode/agent").TaskPlan | undefined }).getTaskPlan === "function"
+              ? (agent as unknown as { getTaskPlan: () => import("@fecode/agent").TaskPlan | undefined }).getTaskPlan()
+              : undefined) || {
+              planId: event.planId,
+              runId: "runId" in event ? (event as unknown as { runId: string }).runId : "run",
+              createdAt: Date.now(),
+              userRequestSummary: "Blocked plan",
+              objective: "Blocked plan",
+              status: "blocked",
+              steps: [],
+              risks: []
+            };
+          const planId = event.planId;
+          const runId = "runId" in event ? (event as unknown as { runId: string }).runId : "run";
+          const assessment: import("@fecode/agent").PlanAdaptationAssessment = {
+            planId,
+            assessedAt: Date.now(),
+            canContinue: true,
+            canRetry: true,
+            canAdapt: true,
+            feedback: [
+              {
+                feedbackId: "fb-1",
+                runId,
+                planId,
+                kind: "verification_failed",
+                severity: "blocking",
+                summary: event.reason,
+                detectedAt: Date.now(),
+                requiresReplanning: true,
+                requiresUserConfirmation: true,
+                recommendedAction: "replan"
+              }
+            ],
+            affectedSteps: event.affectedSteps || [],
+            currentRiskLevel: "normal",
+            requiresUserConfirmation: true,
+            recommendedAction: "replan"
+          };
+          setPendingPlanBlocked({ plan, assessment });
+          const promptText = PlanFormatter.formatPlanBlockedPrompt(
+            plan,
+            assessment
+          );
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    response:
+                      (t.response ? t.response + "\n\n" : "") + promptText + "\n"
                   }
                 : t
             )
@@ -2261,7 +2169,6 @@ export const App: React.FC<AppProps> = ({
               t.id === turnId
                 ? {
                     ...t,
-                    status: "streaming",
                     response:
                       t.response +
                       `Plan approved. Executing ${event.totalSteps} steps...\n\n`
@@ -2270,27 +2177,14 @@ export const App: React.FC<AppProps> = ({
             )
           );
         } else if (event.type === "plan_step_started") {
-          const stepTitle = event.title || `Step ${event.stepIndex + 1}`;
           setTurns((prev) =>
             prev.map((t) =>
               t.id === turnId
                 ? {
                     ...t,
-                    status: "streaming",
                     response:
-                      t.response + `[${event.stepIndex + 1}] ${stepTitle}\n      EXECUTING\n`
-                  }
-                : t
-            )
-          );
-        } else if (event.type === "plan_step_waiting_approval") {
-          setTurns((prev) =>
-            prev.map((t) =>
-              t.id === turnId
-                ? {
-                    ...t,
-                    status: "streaming",
-                    response: t.response + `      WAITING FOR APPROVAL\n`
+                      t.response +
+                      `[${event.stepIndex + 1}] ${event.title || "Step"}\nEXECUTING\n`
                   }
                 : t
             )
@@ -2301,22 +2195,7 @@ export const App: React.FC<AppProps> = ({
               t.id === turnId
                 ? {
                     ...t,
-                    status: "streaming",
-                    response: t.response + `      ✓ COMPLETED\n\n`
-                  }
-                : t
-            )
-          );
-        } else if (event.type === "plan_step_failed") {
-          setTurns((prev) =>
-            prev.map((t) =>
-              t.id === turnId
-                ? {
-                    ...t,
-                    status: "streaming",
-                    response:
-                      t.response +
-                      `      ✗ FAILED${event.error ? `: ${event.error}` : ""}\n\n`
+                    response: t.response + "✓ COMPLETED\n\n"
                   }
                 : t
             )
@@ -2327,10 +2206,9 @@ export const App: React.FC<AppProps> = ({
               t.id === turnId
                 ? {
                     ...t,
-                    status: "streaming",
                     response:
                       t.response +
-                      `[${event.stepIndex + 1}] Step ${event.stepIndex + 1}\n      ⊘ SKIPPED (${event.reason})\n\n`
+                      `⊘ SKIPPED (${event.reason || "Skipped"})\n\n`
                   }
                 : t
             )
@@ -2341,518 +2219,293 @@ export const App: React.FC<AppProps> = ({
               t.id === turnId
                 ? {
                     ...t,
-                    status: "streaming",
                     response:
                       t.response +
-                      `✓ Plan completed (${event.completedSteps}/${event.totalSteps} steps).\n\n`
-                  }
-                : t
-            )
-          );
-        } else if (event.type === "plan_execution_failed") {
-          setTurns((prev) =>
-            prev.map((t) =>
-              t.id === turnId
-                ? {
-                    ...t,
-                    status: "streaming",
-                    response:
-                      t.response +
-                      `✗ Plan execution failed${event.reason ? `: ${event.reason}` : ""}\n\n`
+                      `✓ Plan completed (${event.completedSteps}/${event.totalSteps} steps).\n`
                   }
                 : t
             )
           );
         } else if (event.type === "execution_feedback_detected") {
-          let fbMessage = "";
-          if (event.severity === "warning") {
-            fbMessage = `⚠ Feedback: ${event.summary}\n\n`;
-          } else if (event.severity === "blocking") {
-            fbMessage = `⚠ Blocking issue detected: ${event.summary}\n\n`;
-          }
-          if (fbMessage) {
-            setTurns((prev) =>
-              prev.map((t) =>
-                t.id === turnId
-                  ? {
-                      ...t,
-                      status: "streaming",
-                      response: t.response + fbMessage
-                    }
-                  : t
-              )
-            );
-          }
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    response: t.response + `⚠ Feedback: ${event.summary}\n`
+                  }
+                : t
+            )
+          );
         } else if (event.type === "step_retry_started") {
           setTurns((prev) =>
             prev.map((t) =>
               t.id === turnId
                 ? {
                     ...t,
-                    status: "streaming",
                     response:
                       t.response +
-                      `⟳ Retrying Step ${event.stepId} (attempt ${event.attempt}/${event.maxAttempts}): ${event.reason}\n\n`
+                      `⟳ Retrying Step ${event.stepId} (attempt ${event.attempt}/${event.maxAttempts}): ${event.reason}\n`
                   }
                 : t
             )
           );
         } else if (event.type === "step_retry_completed") {
-          const retryMsg = event.success
-            ? `✓ Step retry succeeded on attempt ${event.attempt}\n\n`
-            : `✗ Step retry failed on attempt ${event.attempt}: ${event.error || "Retry limit reached"}\n\n`;
           setTurns((prev) =>
             prev.map((t) =>
               t.id === turnId
                 ? {
                     ...t,
-                    status: "streaming",
-                    response: t.response + retryMsg
-                  }
-                : t
-            )
-          );
-        } else if (event.type === "plan_blocked") {
-          const currentPlan =
-            (agent as { getTaskPlan?: () => import("@fecode/agent").TaskPlan | undefined })?.getTaskPlan?.() || {
-              planId: event.planId,
-              runId: event.runId,
-              createdAt: Date.now(),
-              userRequestSummary: "Task execution",
-              objective: "Execute task",
-              steps: [],
-              risks: [],
-              status: "blocked" as const
-            };
-
-          const assessment: import("@fecode/agent").PlanAdaptationAssessment =
-            (agent as { getPlanAdaptationAssessment?: () => import("@fecode/agent").PlanAdaptationAssessment | undefined })?.getPlanAdaptationAssessment?.() || {
-              planId: event.planId,
-              assessedAt: Date.now(),
-              canContinue: false,
-              canRetry: false,
-              canAdapt: true,
-              feedback: [],
-              affectedSteps: event.affectedSteps,
-              currentRiskLevel: "normal",
-              requiresUserConfirmation: true,
-              recommendedAction: event.recommendedAction
-            };
-
-          setPendingPlanBlocked({ plan: currentPlan, assessment });
-          const blockedPromptText = PlanFormatter.formatPlanBlockedPrompt(
-            currentPlan,
-            assessment
-          );
-
-          setTurns((prev) =>
-            prev.map((t) =>
-              t.id === turnId
-                ? {
-                    ...t,
-                    status: "streaming",
-                    response: t.response + `\n${blockedPromptText}\n\n`
-                  }
-                : t
-            )
-          );
-        } else if (event.type === "plan_execution_cancelled") {
-          setTurns((prev) =>
-            prev.map((t) =>
-              t.id === turnId
-                ? {
-                    ...t,
-                    status: "streaming",
                     response:
                       t.response +
-                      `✗ Plan execution cancelled${event.reason ? `: ${event.reason}` : ""}\n\n`
-                  }
-                : t
-            )
-          );
-        } else if (event.type === "execution_resume_started") {
-          setTurns((prev) =>
-            prev.map((t) =>
-              t.id === turnId
-                ? {
-                    ...t,
-                    status: "streaming",
-                    response:
-                      t.response +
-                      `↻ Resuming plan ${event.planId}\nStarting from step ${event.stepOrder}: Step ${event.stepId}\n\n`
-                  }
-                : t
-            )
-          );
-        } else if (event.type === "execution_resume_completed") {
-          setTurns((prev) =>
-            prev.map((t) =>
-              t.id === turnId
-                ? {
-                    ...t,
-                    status: "streaming",
-                    response:
-                      t.response +
-                      `✓ Resumed execution completed (${event.completedSteps}/${event.totalSteps} steps completed)\n\n`
-                  }
-                : t
-            )
-          );
-        } else if (event.type === "execution_resume_failed") {
-          setTurns((prev) =>
-            prev.map((t) =>
-              t.id === turnId
-                ? {
-                    ...t,
-                    status: "streaming",
-                    response:
-                      t.response +
-                      `✗ Resumed execution failed: ${event.reason}\n\n`
-                  }
-                : t
-            )
-          );
-        } else if (event.type === "execution_cancelled") {
-          setTurns((prev) =>
-            prev.map((t) =>
-              t.id === turnId
-                ? {
-                    ...t,
-                    status: "streaming",
-                    response:
-                      t.response +
-                      `✓ Plan cancelled: ${event.reason}\n\n`
-                  }
-                : t
-            )
-          );
-        } else if (event.type === "final_reconciliation_started") {
-          setTurns((prev) =>
-            prev.map((t) =>
-              t.id === turnId
-                ? {
-                    ...t,
-                    status: "streaming",
-                    response: t.response + "Checking workspace reconciliation...\n"
-                  }
-                : t
-            )
-          );
-        } else if (event.type === "final_reconciliation_completed") {
-          setTurns((prev) =>
-            prev.map((t) =>
-              t.id === turnId
-                ? {
-                    ...t,
-                    status: "streaming",
-                    response: t.response + "✓ Workspace reconciliation passed\n\n"
-                  }
-                : t
-            )
-          );
-        } else if (event.type === "final_reconciliation_failed") {
-          const currentPlan =
-            (agent as { getTaskPlan?: () => import("@fecode/agent").TaskPlan | undefined })?.getTaskPlan?.() || {
-              planId: event.result.planId,
-              runId: event.result.runId,
-              createdAt: Date.now(),
-              userRequestSummary: "Task execution",
-              objective: "Execute task",
-              steps: [],
-              risks: [],
-              status: "blocked" as const
-            };
-
-          const assessment: import("@fecode/agent").PlanAdaptationAssessment =
-            (agent as { getPlanAdaptationAssessment?: () => import("@fecode/agent").PlanAdaptationAssessment | undefined })?.getPlanAdaptationAssessment?.() || {
-              planId: event.result.planId,
-              assessedAt: Date.now(),
-              canContinue: true,
-              canRetry: false,
-              canAdapt: true,
-              feedback: [],
-              affectedSteps: [],
-              currentRiskLevel: "normal",
-              requiresUserConfirmation: true,
-              recommendedAction: "replan"
-            };
-
-          setPendingPlanBlocked({
-            plan: currentPlan,
-            assessment,
-            reconciliationResult: event.result
-          });
-          const blockedPromptText = PlanFormatter.formatReconciliationBlockedPrompt(
-            currentPlan,
-            event.result
-          );
-
-          setTurns((prev) =>
-            prev.map((t) =>
-              t.id === turnId
-                ? {
-                    ...t,
-                    status: "streaming",
-                    response: t.response + `\n${blockedPromptText}\n\n`
+                      (event.success
+                        ? `✓ Step retry succeeded on attempt ${event.attempt}\n`
+                        : `✗ Step retry failed on attempt ${event.attempt}\n`)
                   }
                 : t
             )
           );
         } else if (event.type === "task_summary") {
-          const fullSummary: TaskCompletionSummary = {
-            ...event.summary,
-            taskIndex: nextTaskCount,
-            request: trimmed
-          };
-          setLastTaskStatus(fullSummary.status);
-          setCompletedSummaries((prev) => {
-            const filtered = prev.filter((p) => p.taskIndex !== nextTaskCount);
-            return [...filtered, fullSummary];
-          });
-          persistState(fullSummary.status, fullSummary, nextTaskCount).catch(() => {});
-
-          let summaryText = "";
-          if (fullSummary.status === "completed") {
-            if (fullSummary.isNoOp) {
-              summaryText =
-                "\n✓ No changes needed\n\nThe requested behavior is already implemented.\n";
-            } else {
-              summaryText = "\n✓ Task completed\n";
-              if (fullSummary.request) {
-                summaryText += `\nRequest:\n  ${fullSummary.request}\n`;
-              }
-              if (fullSummary.fileChanges && fullSummary.fileChanges.length > 0) {
-                summaryText += `\nChanged:\n${fullSummary.fileChanges.map((fc) => `  ${fc.path.padEnd(36)} +${fc.additions} -${fc.deletions}`).join("\n")}\n`;
-              } else if (fullSummary.completedFiles.length > 0) {
-                summaryText += `\nChanged:\n${fullSummary.completedFiles.map((f) => `  ${f}`).join("\n")}\n`;
-              }
-              if (fullSummary.verifiedCommands.length > 0) {
-                summaryText += `\nVerified:\n${fullSummary.verifiedCommands.map((c) => `  ${c}`).join("\n")}\n`;
-              }
-            }
-          } else if (fullSummary.status === "blocked") {
-            summaryText = "\n⚠ Task blocked\n";
-            if (fullSummary.request) {
-              summaryText += `\nRequest:\n  ${fullSummary.request}\n`;
-            }
-            if (fullSummary.completedRequirements.length > 0) {
-              summaryText += `\nCompleted:\n${fullSummary.completedRequirements.map((r) => `  ✓ ${r}`).join("\n")}\n`;
-            }
-            if (fullSummary.remainingRequirements.length > 0) {
-              summaryText += `\nRemaining:\n${fullSummary.remainingRequirements.map((r) => `  ⚠ ${r}`).join("\n")}\n`;
-            }
-            if (fullSummary.blockedReason) {
-              summaryText += `\nReason:\n  ${fullSummary.blockedReason}\n`;
-            }
-            if (fullSummary.fileChanges && fullSummary.fileChanges.length > 0) {
-              summaryText += `\nChanged:\n${fullSummary.fileChanges.map((fc) => `  ${fc.path.padEnd(36)} +${fc.additions} -${fc.deletions}`).join("\n")}\n`;
-            } else if (fullSummary.completedFiles.length > 0) {
-              summaryText += `\nChanged:\n${fullSummary.completedFiles.map((f) => `  ${f}`).join("\n")}\n`;
-            }
+          let summaryHeader = "";
+          if (event.summary.status === "completed") {
+            summaryHeader = "✓ Task completed\n\n";
+          } else if (event.summary.status === "blocked") {
+            summaryHeader = "⚠ Task blocked\n\n";
+          } else if (event.summary.status === "cancelled") {
+            summaryHeader = "⊘ Task cancelled\n\n";
           }
-          if (summaryText) {
-            setTurns((prev) =>
-              prev.map((t) =>
-                t.id === turnId
-                  ? {
-                      ...t,
-                      status: "streaming",
-                      response: t.response + summaryText
-                    }
-                  : t
-              )
+
+          let summaryFormatted = SessionHistoryFormatter.formatTaskDetail(
+            event.summary
+          );
+          if (
+            event.summary.verifiedCommands &&
+            event.summary.verifiedCommands.length > 0
+          ) {
+            summaryFormatted = summaryFormatted.replace(
+              "Verification:",
+              "Verified:"
             );
           }
-        } else if (event.type === "done") {
-          setPendingApproval(null);
-          setIsGenerating(false);
-          setActiveRequest(undefined);
-          setLastTaskStatus((prev) => (prev === "in_progress" ? "completed" : prev));
-          persistState("completed").catch(() => {});
-          setTurns((prev) =>
-            prev.map((t) =>
-              t.id === turnId ? { ...t, status: "done" } : t
-            )
-          );
-        } else if (event.type === "error") {
-          setPendingApproval(null);
-          setIsGenerating(false);
-          setActiveRequest(undefined);
-          setLastTaskStatus("blocked");
-          persistState("blocked").catch(() => {});
+          const fullSummary = summaryHeader + summaryFormatted;
           setTurns((prev) =>
             prev.map((t) =>
               t.id === turnId
                 ? {
                     ...t,
-                    status: "error",
-                    error: event.error.message
+                    response:
+                      (t.response ? t.response + "\n\n" : "") +
+                      fullSummary +
+                      "\n"
                   }
                 : t
+            )
+          );
+          setCompletedSummaries((prev) => [...prev, event.summary]);
+          setLastTaskStatus(event.summary.status);
+          persistState(event.summary.status, event.summary, nextTaskCount).catch(
+            () => {}
+          );
+        } else if (event.type === "done") {
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId ? { ...t, status: "done" } : t
             )
           );
         }
       }
     } catch (err: unknown) {
-      setPendingApproval(null);
-      setIsGenerating(false);
-      setActiveRequest(undefined);
-      setLastTaskStatus("blocked");
-      persistState("blocked").catch(() => {});
-      const message = err instanceof Error ? err.message : String(err);
+      const msg = err instanceof Error ? err.message : String(err);
       setTurns((prev) =>
         prev.map((t) =>
           t.id === turnId
-            ? {
-                ...t,
-                status: "error",
-                error: message
-              }
+            ? { ...t, status: "error", error: `✗ ${msg}` }
             : t
         )
       );
+      setLastTaskStatus("blocked");
     } finally {
-      setPendingApproval(null);
       setIsGenerating(false);
+      setActiveRequest(undefined);
     }
   };
 
+  const hasModal =
+    Boolean(pendingApproval) ||
+    Boolean(pendingPlanBlocked) ||
+    Boolean(pendingRecovery) ||
+    Boolean(pendingRecoveryContinuation) ||
+    Boolean(pendingReplan) ||
+    Boolean(pendingResume);
+
   return (
-    <Box flexDirection="column" padding={1}>
-      <Text bold color="cyan">
-        FeCode
-      </Text>
-      <Box marginY={1} flexDirection="column">
-        {providerName && <Text color="gray">Provider: {providerName}</Text>}
-        {modelName && <Text color="gray">Model: {modelName}</Text>}
-        <Text color="gray">Working directory:</Text>
-        <Text>{cwd}</Text>
-        {projectContext && (
-          <Box marginTop={1} flexDirection="column">
-            <Text color="gray">Detected:</Text>
-            {projectContext.projectType && projectContext.projectType !== "unknown" && (
-              <Text>  Type: {projectContext.projectType}</Text>
-            )}
-            {projectContext.languages.length > 0 && (
-              <Text>  Languages: {projectContext.languages.join(", ")}</Text>
-            )}
-            {projectContext.frameworks.length > 0 && (
-              <Text>  Frameworks: {projectContext.frameworks.join(", ")}</Text>
-            )}
-            {projectContext.styling.length > 0 && (
-              <Text>  Styling: {projectContext.styling.join(", ")}</Text>
-            )}
-            {projectContext.packageManager && (
-              <Text>  Package Manager: {projectContext.packageManager}</Text>
-            )}
-            {projectContext.testing.length > 0 && (
-              <Text>  Testing: {projectContext.testing.join(", ")}</Text>
+    <AppShell
+      header={
+        <Header
+          projectName="fecode"
+          providerName={providerName}
+          modelName={modelName}
+          cwd={cwd}
+          status={uiState?.status || lastTaskStatus}
+          sessionId={sessionId}
+        />
+      }
+      modal={
+        hasModal ? (
+          <Box flexDirection="column">
+            {pendingApproval && (
+              <ApprovalPrompt
+                toolName={pendingApproval.toolName}
+                reason={pendingApproval.reason}
+                changeReview={
+                  pendingApproval.changeReview as
+                    | import("./ui/ApprovalPrompt.js").ApprovalPromptProps["changeReview"]
+                    | undefined
+                }
+                value={approvalInput}
+                onChange={setApprovalInput}
+                onSubmit={handleApprovalSubmit}
+              />
             )}
 
-            {(projectContext.structure.sourceDirectories.length > 0 || projectContext.structure.componentDirectories.length > 0 || projectContext.structure.routeDirectories.length > 0 || projectContext.structure.testDirectories.length > 0) && (
-              <Box marginTop={1} flexDirection="column">
-                <Text color="gray">Structure:</Text>
-                {projectContext.structure.sourceDirectories.length > 0 && (
-                  <Text>  Source: {projectContext.structure.sourceDirectories.map(d => d + "/").join(", ")}</Text>
+            {pendingPlanBlocked && (
+              <BlockedView
+                planId={pendingPlanBlocked.plan.planId}
+                stepInfo={`${pendingPlanBlocked.plan.steps.find((s) => s.status === "in_progress")?.order || 1}/${pendingPlanBlocked.plan.steps.length}`}
+                reason={pendingPlanBlocked.assessment.feedback[0]?.summary}
+                affectedSteps={pendingPlanBlocked.assessment.affectedSteps}
+                isReconciliation={Boolean(
+                  pendingPlanBlocked.reconciliationResult
                 )}
-                {projectContext.structure.componentDirectories.length > 0 && (
-                  <Text>  Components: {projectContext.structure.componentDirectories.map(d => d + "/").join(", ")}</Text>
-                )}
-                {projectContext.structure.routeDirectories.length > 0 && (
-                  <Text>  Routes: {projectContext.structure.routeDirectories.map(d => d + "/").join(", ")}</Text>
-                )}
-                {projectContext.structure.testDirectories.length > 0 && (
-                  <Text>  Tests: {projectContext.structure.testDirectories.map(d => d + "/").join(", ")}</Text>
-                )}
-              </Box>
+                value={blockedInput}
+                onChange={setBlockedInput}
+                onSubmit={handleSubmit}
+              />
+            )}
+
+            {pendingRecovery && (
+              <RecoveryView
+                strategy={pendingRecovery.assessment.strategy}
+                outcome={pendingRecovery.assessment.eligible ? "ELIGIBLE" : "NOT_ELIGIBLE"}
+                value={recoveryInput}
+                onChange={setRecoveryInput}
+                onSubmit={handleSubmit}
+              />
+            )}
+
+            {pendingRecoveryContinuation && (
+              <RecoveryView
+                isAwaitingContinuation={true}
+                remainingStepsCount={
+                  pendingRecoveryContinuation.preparation.remainingSteps.length
+                }
+                value={recoveryInput}
+                onChange={setRecoveryInput}
+                onSubmit={handleSubmit}
+              />
+            )}
+
+            {pendingReplan && (
+              <ReplanView
+                originalPlanId={pendingReplan.planId}
+                reason={pendingReplan.assessment.reason}
+                replanDepth={pendingReplan.assessment.replanDepth}
+                value={replanInput}
+                onChange={setReplanInput}
+                onSubmit={handleSubmit}
+              />
+            )}
+
+            {pendingResume && (
+              <ResumeView
+                runId={pendingResume.runId}
+                originalRequest={
+                  pendingResume.prep.originalRun.userRequestSummary
+                }
+                riskLevel={pendingResume.prep.reassessedRisk.level}
+                value={resumeInput}
+                onChange={setResumeInput}
+                onSubmit={handleSubmit}
+              />
             )}
           </Box>
+        ) : null
+      }
+      footer={
+        <StatusBar
+          status={uiState?.status || lastTaskStatus}
+          isGenerating={isGenerating}
+        />
+      }
+    >
+      {/* Content Area */}
+      {activeView === "help" && <HelpView />}
+
+      {activeView === "runs" && (
+        <RunHistoryView
+          runs={
+            uiState?.diagnostics
+              ? [
+                  {
+                    runId: uiState.diagnostics.runId,
+                    status: uiState.diagnostics.finalStatus || "executing",
+                    userRequestSummary: uiState.diagnostics.userRequestSummary,
+                    durationMs: uiState.diagnostics.durationMs
+                  }
+                ]
+              : []
+          }
+        />
+      )}
+
+      {activeView === "diagnostics" && (
+        <DiagnosticsView summary={uiState?.diagnostics} />
+      )}
+
+      {activeView === "plan" && uiState?.activePlan && (
+        <PlanView
+          planId={uiState.activePlan.planId}
+          objective={uiState.activePlan.objective}
+          summary={uiState.activePlan.userRequestSummary}
+          status={uiState.activePlan.status}
+          steps={uiState.activePlan.steps}
+          completedCount={uiState.activePlan.completedStepsCount}
+          totalCount={uiState.activePlan.totalStepsCount}
+        />
+      )}
+
+      {/* Main Turns / Streaming execution */}
+      <Box flexDirection="column">
+        {turns.map((turn) => (
+          <Box key={turn.id} flexDirection="column" marginY={0}>
+            <Box>
+              <Text color="gray">› </Text>
+              <Text color="white" bold>{turn.prompt}</Text>
+            </Box>
+            {turn.response ? (
+              <Box flexDirection="column" marginTop={0}>
+                <Text color="white">{turn.response}</Text>
+              </Box>
+            ) : null}
+            {turn.error ? (
+              <Box marginTop={0}>
+                <Text color="red">{turn.error}</Text>
+              </Box>
+            ) : null}
+          </Box>
+        ))}
+
+        {/* Task Input Prompt */}
+        {!hasModal && (
+          <TaskInput
+            value={query}
+            onChange={setQuery}
+            onSubmit={handleSubmit}
+            isDisabled={isGenerating}
+            label={turns.length === 0 ? "Task" : undefined}
+          />
         )}
       </Box>
-
-      {configError && (
-        <Box marginY={1}>
-          <Text color="red">✗ {configError}</Text>
-        </Box>
-      )}
-
-      {turns.map((turn) => (
-        <Box key={turn.id} flexDirection="column" marginY={1}>
-          <Text color="yellow">› {turn.prompt}</Text>
-          {turn.status === "thinking" && !turn.response && (
-            <Text color="gray">● Thinking...</Text>
-          )}
-          {turn.response ? <Text>{turn.response}</Text> : null}
-          {turn.status === "error" && (
-            <Text color="red">✗ {turn.error || "Request failed."}</Text>
-          )}
-          {turn.status === "cancelled" && (
-            <Text color="yellow">Generation cancelled.</Text>
-          )}
-        </Box>
-      ))}
-
-      {pendingApproval && (
-        <Box
-          flexDirection="column"
-          marginY={1}
-          borderStyle="round"
-          borderColor="yellow"
-          padding={1}
-        >
-          {pendingApproval.changeReview ? (
-            <Box flexDirection="column">
-              <Text color="cyan">
-                {formatApprovalRequest(pendingApproval)}
-              </Text>
-            </Box>
-          ) : (
-            <Box marginY={1} flexDirection="column">
-              <Text bold color="yellow">
-                {pendingApproval.toolName === "execute_command"
-                  ? "⚠ FeCode wants to run a command"
-                  : "⚠ FeCode wants to use a tool"}
-              </Text>
-              <Box marginY={1} flexDirection="column">
-                <Text>
-                  <Text color="gray">Tool:</Text> {pendingApproval.toolName}
-                </Text>
-                <Text>
-                  <Text color="gray">Category:</Text> {pendingApproval.category}
-                </Text>
-                {pendingApproval.reason && (
-                  <Text>
-                    <Text color="gray">Reason:</Text> {pendingApproval.reason}
-                  </Text>
-                )}
-                <Text>
-                  <Text color="gray">Arguments:</Text>
-                </Text>
-                <Text color="cyan">
-                  {formatApprovalArguments(pendingApproval.arguments)}
-                </Text>
-              </Box>
-            </Box>
-          )}
-          <Box marginTop={1}>
-            <Text bold color="yellow">
-              Allow? [y/N]:{" "}
-            </Text>
-            <TextInput
-              value={approvalInput}
-              onChange={setApprovalInput}
-              onSubmit={handleApprovalSubmit}
-            />
-          </Box>
-        </Box>
-      )}
-
-      {!isGenerating && !pendingApproval && (
-        <Box marginTop={1}>
-          <Text color="yellow">› </Text>
-          <TextInput value={query} onChange={setQuery} onSubmit={handleSubmit} />
-        </Box>
-      )}
-    </Box>
+    </AppShell>
   );
 };

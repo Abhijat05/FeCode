@@ -1,9 +1,26 @@
 import type { ModelProvider, ApprovalDecision } from "@fecode/models";
 import type { TaskRiskLevel, TaskRiskAssessment, TaskRiskContext } from "../policy/types.js";
 import type { AgentRunStatus } from "../run/types.js";
-import type { PlanStatus, PlanStepStatus, PlanStepType } from "../planning/types.js";
+import type {
+  PlanStatus,
+  PlanStepStatus,
+  PlanStepType,
+  TaskPlan,
+  ReplanAssessment,
+  ReplanRequest,
+  ReplanResult,
+  PlanAdaptationAssessment,
+  ExecutionDecision,
+  ExecutionDecisionResult,
+  FinalReconciliationResult,
+  ExecutionRecoveryAssessment,
+  ExecutionRecoveryResult,
+  RecoveryOutcomeStatus,
+  RecoveryContinuationPreparation,
+  RecoveryContinuationRequest
+} from "../planning/types.js";
 import type { RunSummary } from "../diagnostics/types.js";
-import type { DurableRunRecord } from "../history/types.js";
+import type { DurableRunRecord, ResumePreparation } from "../history/types.js";
 import type { AgentEvent } from "../index.js";
 
 export type UIStatus =
@@ -252,6 +269,36 @@ export interface ProductRuntime {
   getHistoricalRuns(options?: { limit?: number }): Promise<DurableRunRecord[]>;
   getHistoricalRun(runId: string): Promise<DurableRunRecord | null>;
   getRunLineage(runId: string): Promise<DurableRunRecord[]>;
+
+  // Planning, Recovery, Resume & Decision Resolvers
+  prepareReplan?(planId?: string, opts?: { cwd: string }): Promise<ReplanAssessment>;
+  executeReplan?(request: ReplanRequest): Promise<ReplanResult>;
+  prepareResume?(runId: string, cwd: string): Promise<ResumePreparation>;
+  resumeRun?(runId: string): AsyncIterable<ProductEvent>;
+  assessExecutionRecovery?(
+    planId?: string,
+    opts?: { cwd: string; reconciliationResult?: FinalReconciliationResult }
+  ): Promise<ExecutionRecoveryAssessment>;
+  executeExecutionRecovery?(
+    assessment: ExecutionRecoveryAssessment,
+    opts: { cwd: string; approved: boolean }
+  ): AsyncIterable<ProductEvent>;
+  prepareRecoveryContinuation?(opts: {
+    cwd: string;
+    recoveryResult: ExecutionRecoveryResult;
+    recoveryOutcome: RecoveryOutcomeStatus;
+  }): Promise<RecoveryContinuationPreparation>;
+  continueRecoveredPlan?(
+    preparation: RecoveryContinuationPreparation,
+    request: RecoveryContinuationRequest
+  ): AsyncIterable<ProductEvent>;
+  resolveExecutionDecision?(
+    planId: string,
+    decision: ExecutionDecision,
+    opts?: { cwd: string }
+  ): Promise<ExecutionDecisionResult>;
+  getTaskPlan?(planId?: string): TaskPlan | undefined;
+  getPlanAdaptationAssessment?(): PlanAdaptationAssessment | undefined;
 
   // Lifecycle & Event Subscriptions
   subscribe(

@@ -12,6 +12,7 @@ import {
   DefaultSkillRegistry,
   SkillActivationPolicy,
   DefaultSessionStore,
+  DefaultProductRuntime,
   type PersistedSessionData
 } from "@fecode/agent";
 import type { ProjectContext } from "@fecode/agent";
@@ -116,9 +117,19 @@ async function main(): Promise<void> {
     configError = err instanceof Error ? err.message : String(err);
   }
 
+  const productRuntime = agent
+    ? new DefaultProductRuntime({
+        agentRuntime: agent,
+        approvalResolver,
+        initialCwd: cwd,
+        initialSessionId: initialSessionData?.sessionId
+      })
+    : undefined;
+
   render(
     <App
       agent={agent}
+      productRuntime={productRuntime}
       cwd={cwd}
       providerName={providerName}
       modelName={modelName}

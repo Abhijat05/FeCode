@@ -1,7 +1,22 @@
 import type { ApprovalDecision, ApprovalResolver } from "@fecode/models";
 import type { TaskRiskAssessment, TaskRiskContext } from "../policy/types.js";
 import type { RunSummary } from "../diagnostics/types.js";
-import type { DurableRunRecord } from "../history/types.js";
+import type { DurableRunRecord, ResumePreparation } from "../history/types.js";
+import type {
+  TaskPlan,
+  ReplanAssessment,
+  ReplanRequest,
+  ReplanResult,
+  PlanAdaptationAssessment,
+  ExecutionDecision,
+  ExecutionDecisionResult,
+  FinalReconciliationResult,
+  ExecutionRecoveryAssessment,
+  ExecutionRecoveryResult,
+  RecoveryOutcomeStatus,
+  RecoveryContinuationPreparation,
+  RecoveryContinuationRequest
+} from "../planning/types.js";
 import type { GitRepository } from "../git/types.js";
 import { DefaultGitRepository } from "../git/gitRepository.js";
 import type { AgentRuntime } from "../runtime.js";
@@ -333,6 +348,169 @@ export class DefaultProductRuntime implements ProductRuntime {
 
   public async getRunLineage(runId: string): Promise<DurableRunRecord[]> {
     return this.agentRuntime.getRunLineage(runId);
+  }
+
+  public async prepareReplan(
+    planId?: string,
+    opts?: { cwd: string }
+  ): Promise<ReplanAssessment> {
+    return this.agentRuntime.prepareReplan(planId, opts);
+  }
+
+  public async executeReplan(request: ReplanRequest): Promise<ReplanResult> {
+    return this.agentRuntime.executeReplan(request);
+  }
+
+  public async prepareResume(
+    runId: string,
+    cwd: string
+  ): Promise<ResumePreparation> {
+    return this.agentRuntime.prepareResume(runId, cwd);
+  }
+
+  public async *resumeRun(runId: string): AsyncIterable<ProductEvent> {
+    try {
+      const stream = this.agentRuntime.resumeRun(runId);
+      for await (const rawEvent of stream) {
+        const prevUiStatus: UIStatus = this.uiState.status;
+        this.uiState = reduceUIState(this.uiState, rawEvent);
+
+        const rawProductEvent: ProductEvent = {
+          type: "raw_agent_event",
+          event: rawEvent
+        };
+        this.notifySubscribers(rawProductEvent);
+        yield rawProductEvent;
+
+        if (rawEvent.type === "text") {
+          const textEvent: ProductEvent = {
+            type: "text_chunk",
+            text: rawEvent.content
+          };
+          this.notifySubscribers(textEvent);
+          yield textEvent;
+        }
+
+        if (this.uiState.status !== prevUiStatus) {
+          const statusEvent: ProductEvent = {
+            type: "run_status_changed",
+            runId: this.uiState.runId || runId,
+            status: this.uiState.status,
+            previousStatus: prevUiStatus
+          };
+          this.notifySubscribers(statusEvent);
+          yield statusEvent;
+        }
+
+        const stateEvent: ProductEvent = {
+          type: "ui_state_changed",
+          state: this.getUIState()
+        };
+        this.notifySubscribers(stateEvent);
+        yield stateEvent;
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.uiState.status = "failed";
+      this.uiState.error = msg;
+      const failEvent: ProductEvent = {
+        type: "run_status_changed",
+        runId,
+        status: "failed",
+        previousStatus: "executing"
+      };
+      this.notifySubscribers(failEvent);
+      yield failEvent;
+    }
+  }
+
+  public async assessExecutionRecovery(
+    planId?: string,
+    opts?: { cwd: string; reconciliationResult?: FinalReconciliationResult }
+  ): Promise<ExecutionRecoveryAssessment> {
+    return this.agentRuntime.assessExecutionRecovery(planId, opts);
+  }
+
+  public async *executeExecutionRecovery(
+    assessment: ExecutionRecoveryAssessment,
+    opts: { cwd: string; approved: boolean }
+  ): AsyncIterable<ProductEvent> {
+    try {
+      const stream = this.agentRuntime.executeExecutionRecovery(assessment, opts);
+      for await (const rawEvent of stream) {
+        this.uiState = reduceUIState(this.uiState, rawEvent);
+        const rawProductEvent: ProductEvent = {
+          type: "raw_agent_event",
+          event: rawEvent
+        };
+        this.notifySubscribers(rawProductEvent);
+        yield rawProductEvent;
+
+        const stateEvent: ProductEvent = {
+          type: "ui_state_changed",
+          state: this.getUIState()
+        };
+        this.notifySubscribers(stateEvent);
+        yield stateEvent;
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.uiState.status = "failed";
+      this.uiState.error = msg;
+    }
+  }
+
+  public async prepareRecoveryContinuation(opts: {
+    cwd: string;
+    recoveryResult: ExecutionRecoveryResult;
+    recoveryOutcome: RecoveryOutcomeStatus;
+  }): Promise<RecoveryContinuationPreparation> {
+    return this.agentRuntime.prepareRecoveryContinuation(opts);
+  }
+
+  public async *continueRecoveredPlan(
+    preparation: RecoveryContinuationPreparation,
+    request: RecoveryContinuationRequest
+  ): AsyncIterable<ProductEvent> {
+    try {
+      const stream = this.agentRuntime.continueRecoveredPlan(preparation, request);
+      for await (const rawEvent of stream) {
+        this.uiState = reduceUIState(this.uiState, rawEvent);
+        const rawProductEvent: ProductEvent = {
+          type: "raw_agent_event",
+          event: rawEvent
+        };
+        this.notifySubscribers(rawProductEvent);
+        yield rawProductEvent;
+
+        const stateEvent: ProductEvent = {
+          type: "ui_state_changed",
+          state: this.getUIState()
+        };
+        this.notifySubscribers(stateEvent);
+        yield stateEvent;
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.uiState.status = "failed";
+      this.uiState.error = msg;
+    }
+  }
+
+  public async resolveExecutionDecision(
+    planId: string,
+    decision: ExecutionDecision,
+    opts?: { cwd: string }
+  ): Promise<ExecutionDecisionResult> {
+    return this.agentRuntime.resolveExecutionDecision(planId, decision, opts);
+  }
+
+  public getTaskPlan(): TaskPlan | undefined {
+    return this.agentRuntime.getTaskPlan();
+  }
+
+  public getPlanAdaptationAssessment(): PlanAdaptationAssessment | undefined {
+    return this.agentRuntime.getPlanAdaptationAssessment();
   }
 
   public subscribe(
