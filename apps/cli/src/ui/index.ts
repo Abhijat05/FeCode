@@ -18,3 +18,4 @@ export * from "./WorkspaceStatus.js";
 export * from "./HelpView.js";
 export * from "./ThinkingIndicator.js";
 export * from "./MessageBubble.js";
+export * from "./TurnView.js";

@@ -21,8 +21,80 @@ import {
   WorkspaceStatus,
   HelpView,
   ThinkingIndicator,
-  MessageBubble
+  MessageBubble,
+  TurnView
 } from "./index.js";
+
+describe("TurnView", () => {
+  it("renders user prompt and agent response with separator", () => {
+    const { lastFrame } = render(
+      <TurnView
+        prompt="Fix the tests"
+        response="I will run the tests now."
+        status="done"
+      />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("▶");
+    expect(frame).toContain("You");
+    expect(frame).toContain("Fix the tests");
+    expect(frame).toContain("fecode");
+    expect(frame).toContain("│");
+    expect(frame).toContain("I will run the tests now.");
+  });
+
+  it("renders streaming placeholder while status is streaming and response is empty", () => {
+    const { lastFrame } = render(
+      <TurnView
+        prompt="Do something"
+        response=""
+        status="streaming"
+      />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("…");
+  });
+
+  it("renders error box for error status", () => {
+    const { lastFrame } = render(
+      <TurnView
+        prompt="Run tests"
+        response=""
+        status="error"
+        error="Agent failed: timeout"
+      />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("✗ Error");
+    expect(frame).toContain("Agent failed: timeout");
+  });
+
+  it("renders turn separator when isLast is false", () => {
+    const { lastFrame } = render(
+      <TurnView
+        prompt="Task 1"
+        response="Done"
+        status="done"
+        isLast={false}
+      />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toMatch(/─{3,}/);
+  });
+
+  it("does NOT render separator when isLast is true", () => {
+    const { lastFrame } = render(
+      <TurnView
+        prompt="Task 1"
+        response="Done"
+        status="done"
+        isLast={true}
+      />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).not.toMatch(/─{3,}/);
+  });
+});
 
 describe("MessageBubble", () => {
   it("renders user bubble with You label and green glyph", () => {
