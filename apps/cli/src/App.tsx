@@ -37,6 +37,7 @@ import {
   StatusBar,
   TaskInput,
   ThinkingIndicator,
+  TurnView,
   PlanView,
   ApprovalPrompt,
   BlockedView,
@@ -2511,23 +2512,15 @@ export const App: React.FC<AppProps> = ({
 
       {/* Main Turns / Streaming execution */}
       <Box flexDirection="column">
-        {turns.map((turn) => (
-          <Box key={turn.id} flexDirection="column" marginY={0}>
-            <Box>
-              <Text color="gray">› </Text>
-              <Text color="white" bold>{turn.prompt}</Text>
-            </Box>
-            {turn.response ? (
-              <Box flexDirection="column" marginTop={0}>
-                <Text color="white">{turn.response}</Text>
-              </Box>
-            ) : null}
-            {turn.error ? (
-              <Box marginTop={0}>
-                <Text color="red">{turn.error}</Text>
-              </Box>
-            ) : null}
-          </Box>
+        {turns.map((turn, idx) => (
+          <TurnView
+            key={turn.id}
+            prompt={turn.prompt}
+            response={turn.response}
+            status={turn.status}
+            error={turn.error}
+            isLast={idx === turns.length - 1}
+          />
         ))}
 
         {/* Thinking Indicator — shown while generating */}
