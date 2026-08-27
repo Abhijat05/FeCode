@@ -9,6 +9,7 @@ export interface TaskInputProps {
   isDisabled?: boolean;
   placeholder?: string;
   label?: string;
+  pendingQuery?: string | null;
 }
 
 export const TaskInput: React.FC<TaskInputProps> = ({
@@ -17,7 +18,8 @@ export const TaskInput: React.FC<TaskInputProps> = ({
   onSubmit,
   isDisabled = false,
   placeholder = "Describe task or type /help...",
-  label = "Task"
+  label = "Task",
+  pendingQuery
 }) => {
   return (
     <Box flexDirection="column" marginY={0}>
@@ -29,7 +31,9 @@ export const TaskInput: React.FC<TaskInputProps> = ({
       <Box>
         <Text color="cyan" bold>› </Text>
         {isDisabled ? (
-          <Text color="gray">{value || placeholder}</Text>
+          <Text color="gray">
+            {pendingQuery ? `[queued] ${pendingQuery}` : (value || placeholder)}
+          </Text>
         ) : (
           <TextInput
             value={value}
@@ -39,6 +43,13 @@ export const TaskInput: React.FC<TaskInputProps> = ({
           />
         )}
       </Box>
+      {isDisabled && pendingQuery && (
+        <Box marginTop={0}>
+          <Text color="yellow">⏎ Queued: </Text>
+          <Text color="white">{pendingQuery}</Text>
+          <Text color="gray">  (Ctrl+C to cancel)</Text>
+        </Box>
+      )}
     </Box>
   );
 };

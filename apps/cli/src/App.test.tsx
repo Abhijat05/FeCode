@@ -2269,6 +2269,122 @@ describe("CLI App Component", () => {
     shellProps = selectApplicationShellProps(uiState);
     expect(shellProps.status).toBe("completed");
   });
+
+  describe("CLI UX Improvements: Feedback & Prompt Queuing", () => {
+    it("shows ThinkingIndicator when agent is generating", async () => {
+      let resolveRun: (() => void) | undefined;
+      const mockAgent = new MockAgent();
+      mockAgent.runFn = async function* () {
+        yield { type: "text", content: "Working on task..." };
+        await new Promise<void>((resolve) => {
+          resolveRun = resolve;
+        });
+        yield { type: "done" };
+      };
+
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      await typeAndSubmit(stdin, "Long task");
+      await delay(100);
+
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("Agent is working...");
+      expect(frame).toContain("Type next task (will be queued)...");
+
+      if (resolveRun) resolveRun();
+      await delay(100);
+    });
+
+    it("queues second prompt while generating, displays queue banner, and auto-submits on completion", async () => {
+      let finishFirstTask: (() => void) | undefined;
+      const executedTasks: string[] = [];
+
+      const mockAgent = new MockAgent();
+      mockAgent.runFn = async function* (input: AgentInput) {
+        executedTasks.push(input.message);
+        if (input.message === "task one") {
+          yield { type: "text", content: "Result 1" };
+          await new Promise<void>((resolve) => {
+            finishFirstTask = resolve;
+          });
+          yield { type: "done" };
+        } else {
+          yield { type: "text", content: "Result 2" };
+          yield { type: "done" };
+        }
+      };
+
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      // Start task one
+      await typeAndSubmit(stdin, "task one");
+      await delay(100);
+
+      expect(executedTasks).toEqual(["task one"]);
+
+      // Enter task two while task one is still running
+      await typeAndSubmit(stdin, "task two");
+      await delay(100);
+
+      // Verify task two is queued in UI and not yet executed
+      const queueFrame = lastFrame() ?? "";
+      expect(queueFrame).toContain("[queued] task two");
+      expect(queueFrame).toContain("Queued: task two");
+      expect(queueFrame).toContain("Ctrl+C to cancel");
+      expect(executedTasks).toEqual(["task one"]);
+
+      // Complete task one
+      if (finishFirstTask) finishFirstTask();
+      await delay(200);
+
+      // Task two should now auto-submit and execute!
+      expect(executedTasks).toEqual(["task one", "task two"]);
+      const finalFrame = lastFrame() ?? "";
+      expect(finalFrame).toContain("Result 2");
+    });
+
+    it("cancels queued prompt when Ctrl+C is pressed", async () => {
+      let finishFirstTask: (() => void) | undefined;
+      const executedTasks: string[] = [];
+
+      const mockAgent = new MockAgent();
+      mockAgent.runFn = async function* (input: AgentInput) {
+        executedTasks.push(input.message);
+        yield { type: "text", content: "Working..." };
+        await new Promise<void>((resolve) => {
+          finishFirstTask = resolve;
+        });
+        yield { type: "done" };
+      };
+
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      await typeAndSubmit(stdin, "initial task");
+      await delay(100);
+
+      await typeAndSubmit(stdin, "mistyped task");
+      await delay(100);
+
+      expect(lastFrame() ?? "").toContain("Queued: mistyped task");
+
+      // Press Ctrl+C to cancel queued prompt
+      stdin.write("\x03"); // Ctrl+C
+      await delay(100);
+
+      // Queued prompt should be removed from UI
+      expect(lastFrame() ?? "").not.toContain("Queued: mistyped task");
+
+      // Finish first task
+      if (finishFirstTask) finishFirstTask();
+      await delay(200);
+
+      // Only initial task was executed
+      expect(executedTasks).toEqual(["initial task"]);
+    });
+  });
 });
 
 

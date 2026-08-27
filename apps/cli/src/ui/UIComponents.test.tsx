@@ -98,6 +98,22 @@ describe("Phase 5AD: Modular UI Components", () => {
     expect(frame).toContain("Custom Prompt");
   });
 
+  it("renders TaskInput with queued prompt and cancellation hint when disabled with pendingQuery", () => {
+    const { lastFrame } = render(
+      <TaskInput
+        value=""
+        onChange={() => {}}
+        onSubmit={() => {}}
+        isDisabled={true}
+        pendingQuery="analyze bundle size"
+      />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("[queued] analyze bundle size");
+    expect(frame).toContain("Queued: analyze bundle size");
+    expect(frame).toContain("Ctrl+C to cancel");
+  });
+
   it("renders PlanStep with accessible symbols, dependencies, and risk badges", () => {
     const { lastFrame: completedFrame } = render(
       <PlanStep

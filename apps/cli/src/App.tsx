@@ -36,6 +36,7 @@ import {
   Header,
   StatusBar,
   TaskInput,
+  ThinkingIndicator,
   PlanView,
   ApprovalPrompt,
   BlockedView,
@@ -173,6 +174,8 @@ export const App: React.FC<AppProps> = ({
   });
 
   const [isGenerating, setIsGenerating] = useState(false);
+  const [pendingQuery, setPendingQuery] = useState<string | null>(null);
+  const prevIsGeneratingRef = useRef(false);
   const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(
     null
   );
@@ -237,6 +240,16 @@ export const App: React.FC<AppProps> = ({
     }
   }, [approvalResolver]);
 
+  // Auto-submit queued prompt when generation completes
+  useEffect(() => {
+    if (prevIsGeneratingRef.current && !isGenerating && pendingQuery) {
+      const queued = pendingQuery;
+      setPendingQuery(null);
+      void handleSubmit(queued);
+    }
+    prevIsGeneratingRef.current = isGenerating;
+  }, [isGenerating, pendingQuery]);
+
   const persistState = useCallback(
     async (
       status: SessionStatus,
@@ -298,6 +311,11 @@ export const App: React.FC<AppProps> = ({
     (input, key) => {
       // Ctrl+C cancellation
       if (key.ctrl && input === "c") {
+        if (pendingQuery) {
+          setPendingQuery(null);
+          return;
+        }
+
         if (pendingApproval) {
           if (approvalResolver) {
             approvalResolver.cancelPending("Approval request cancelled via Ctrl+C");
@@ -310,6 +328,7 @@ export const App: React.FC<AppProps> = ({
         if (isGenerating && agent) {
           agent.cancel().catch(() => {});
           setIsGenerating(false);
+          setPendingQuery(null);
           setLastTaskStatus("cancelled");
           setActiveRequest(undefined);
 
@@ -362,7 +381,23 @@ export const App: React.FC<AppProps> = ({
 
   const handleSubmit = async (value: string) => {
     const trimmed = value.trim();
-    if (!trimmed || isGenerating) return;
+    if (!trimmed) return;
+
+    // Queue the prompt if agent is currently running and no modal is active
+    const modalActive =
+      Boolean(pendingApproval) ||
+      Boolean(pendingPlanBlocked) ||
+      Boolean(pendingRecovery) ||
+      Boolean(pendingRecoveryContinuation) ||
+      Boolean(pendingReplan) ||
+      Boolean(pendingResume);
+
+    if (isGenerating && !modalActive) {
+      setPendingQuery(trimmed);
+      setQuery("");
+      return;
+    }
+    if (isGenerating) return;
 
     // Handle modal submissions first
     if (pendingRecoveryContinuation) {
@@ -2495,14 +2530,27 @@ export const App: React.FC<AppProps> = ({
           </Box>
         ))}
 
+        {/* Thinking Indicator — shown while generating */}
+        {isGenerating && (
+          <Box marginTop={0}>
+            <ThinkingIndicator isActive={isGenerating} label="Agent is working..." />
+          </Box>
+        )}
+
         {/* Task Input Prompt */}
         {!hasModal && (
           <TaskInput
             value={query}
             onChange={setQuery}
             onSubmit={handleSubmit}
-            isDisabled={isGenerating}
+            isDisabled={Boolean(pendingQuery)}
+            placeholder={
+              isGenerating
+                ? "Type next task (will be queued)..."
+                : "Describe task or type /help..."
+            }
             label={turns.length === 0 ? "Task" : undefined}
+            pendingQuery={pendingQuery}
           />
         )}
       </Box>
