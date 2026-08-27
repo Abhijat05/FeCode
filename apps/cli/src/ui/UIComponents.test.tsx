@@ -278,6 +278,24 @@ describe("Phase 5AD: Modular UI Components", () => {
     expect(frame).toMatch(/─{3,}/);
   });
 
+  it("renders CommandPalette inside TaskInput when suggestions are passed", () => {
+    const suggestions: CommandDef[] = [
+      { command: "/help", description: "Show help" }
+    ];
+    const { lastFrame } = render(
+      <TaskInput
+        value="/he"
+        onChange={() => {}}
+        onSubmit={() => {}}
+        suggestions={suggestions}
+        selectedSuggestion={0}
+      />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("/help");
+    expect(frame).toContain("Show help");
+  });
+
   it("renders PlanStep with accessible symbols, dependencies, and risk badges", () => {
     const { lastFrame: completedFrame } = render(
       <PlanStep

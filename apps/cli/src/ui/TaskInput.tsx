@@ -1,6 +1,8 @@
 import React from "react";
 import { Box, Text } from "ink";
 import TextInput from "ink-text-input";
+import { CommandPalette } from "./CommandPalette.js";
+import type { CommandDef } from "../commands.js";
 
 export interface TaskInputProps {
   value: string;
@@ -10,6 +12,8 @@ export interface TaskInputProps {
   placeholder?: string;
   label?: string;
   pendingQuery?: string | null;
+  suggestions?: CommandDef[];
+  selectedSuggestion?: number;
 }
 
 export const TaskInput: React.FC<TaskInputProps> = ({
@@ -19,7 +23,9 @@ export const TaskInput: React.FC<TaskInputProps> = ({
   isDisabled = false,
   placeholder = "Describe task or type /help...",
   label,
-  pendingQuery
+  pendingQuery,
+  suggestions,
+  selectedSuggestion = 0
 }) => {
   return (
     <Box flexDirection="column" marginY={0}>
@@ -33,6 +39,15 @@ export const TaskInput: React.FC<TaskInputProps> = ({
           <Text bold color="white">{label}</Text>
         </Box>
       )}
+
+      {/* Command Palette — shown above input when typing a slash command */}
+      {suggestions && suggestions.length > 0 && (
+        <CommandPalette
+          suggestions={suggestions}
+          selectedIndex={selectedSuggestion}
+        />
+      )}
+
       <Box>
         <Text color="cyan" bold>› </Text>
         {isDisabled ? (
@@ -58,3 +73,4 @@ export const TaskInput: React.FC<TaskInputProps> = ({
     </Box>
   );
 };
+

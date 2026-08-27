@@ -31,6 +31,7 @@ import {
 } from "@fecode/agent";
 import type { ApprovalRequest, ModelMessage } from "@fecode/models";
 import { InteractiveApprovalResolver } from "./approvalResolver.js";
+import { filterCommands, type CommandDef } from "./commands.js";
 import {
   AppShell,
   Header,
@@ -176,7 +177,13 @@ export const App: React.FC<AppProps> = ({
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [pendingQuery, setPendingQuery] = useState<string | null>(null);
+  const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const prevIsGeneratingRef = useRef(false);
+
+  const handleQueryChange = (val: string) => {
+    setQuery(val);
+    setSelectedSuggestion(0);
+  };
   const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(
     null
   );
@@ -207,6 +214,19 @@ export const App: React.FC<AppProps> = ({
     plan: import("@fecode/agent").TaskPlan;
     preparation: import("@fecode/agent").RecoveryContinuationPreparation;
   } | null>(null);
+
+  const hasModal =
+    Boolean(pendingApproval) ||
+    Boolean(pendingPlanBlocked) ||
+    Boolean(pendingRecovery) ||
+    Boolean(pendingRecoveryContinuation) ||
+    Boolean(pendingReplan) ||
+    Boolean(pendingResume);
+
+  const commandSuggestions: CommandDef[] =
+    !isGenerating && !hasModal && query.startsWith("/")
+      ? filterCommands(query)
+      : [];
 
   // Subscribe to ProductRuntime event stream
   const [uiState, setUiState] = useState<UIState | undefined>(() =>
@@ -310,6 +330,28 @@ export const App: React.FC<AppProps> = ({
   // Keyboard navigation & shortcuts
   useInput(
     (input, key) => {
+      // Tab: select top autocomplete suggestion
+      if (key.tab && commandSuggestions.length > 0) {
+        const selected = commandSuggestions[selectedSuggestion];
+        if (selected) {
+          setQuery(selected.command + " ");
+          setSelectedSuggestion(0);
+        }
+        return;
+      }
+
+      // ArrowDown / ArrowUp: cycle suggestions
+      if (key.downArrow && commandSuggestions.length > 0) {
+        setSelectedSuggestion((prev) => (prev + 1) % commandSuggestions.length);
+        return;
+      }
+      if (key.upArrow && commandSuggestions.length > 0) {
+        setSelectedSuggestion((prev) =>
+          prev === 0 ? commandSuggestions.length - 1 : prev - 1
+        );
+        return;
+      }
+
       // Ctrl+C cancellation
       if (key.ctrl && input === "c") {
         if (pendingQuery) {
@@ -2366,14 +2408,6 @@ export const App: React.FC<AppProps> = ({
     }
   };
 
-  const hasModal =
-    Boolean(pendingApproval) ||
-    Boolean(pendingPlanBlocked) ||
-    Boolean(pendingRecovery) ||
-    Boolean(pendingRecoveryContinuation) ||
-    Boolean(pendingReplan) ||
-    Boolean(pendingResume);
-
   return (
     <AppShell
       header={
@@ -2534,7 +2568,7 @@ export const App: React.FC<AppProps> = ({
         {!hasModal && (
           <TaskInput
             value={query}
-            onChange={setQuery}
+            onChange={handleQueryChange}
             onSubmit={handleSubmit}
             isDisabled={Boolean(pendingQuery)}
             placeholder={
@@ -2544,6 +2578,8 @@ export const App: React.FC<AppProps> = ({
             }
             label={turns.length === 0 ? "Task" : undefined}
             pendingQuery={pendingQuery}
+            suggestions={commandSuggestions}
+            selectedSuggestion={selectedSuggestion}
           />
         )}
       </Box>
