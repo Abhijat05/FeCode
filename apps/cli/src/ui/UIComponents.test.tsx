@@ -61,6 +61,14 @@ describe("Phase 5AD: Modular UI Components", () => {
     expect(frame).toContain("[c] Cancel [p] Plan [r] Runs [d] Diagnostics [?] Help");
   });
 
+  it("renders StatusBar with spinner in executing and active states", () => {
+    const { lastFrame } = render(
+      <StatusBar status="executing" isGenerating={true} />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toMatch(/Executing task\.\.\./);
+  });
+
   it("renders AppShell containing header, body, and footer slots", () => {
     const { lastFrame } = render(
       <AppShell

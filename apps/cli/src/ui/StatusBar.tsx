@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Box, Text } from "ink";
 
 export interface StatusBarProps {
@@ -10,6 +10,16 @@ export interface StatusBarProps {
   customMessage?: string;
 }
 
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const INTERVAL_MS = 80;
+
+const ACTIVE_STATUSES = new Set([
+  "executing",
+  "planning",
+  "verifying",
+  "recovering"
+]);
+
 export const StatusBar: React.FC<StatusBarProps> = ({
   status = "idle",
   activeStep,
@@ -18,21 +28,34 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   isGenerating = false,
   customMessage
 }) => {
+  const [frame, setFrame] = useState(0);
+  const isAnimating = isGenerating || ACTIVE_STATUSES.has(status);
+
+  useEffect(() => {
+    if (!isAnimating) return;
+    const timer = setInterval(() => {
+      setFrame((prev) => (prev + 1) % SPINNER_FRAMES.length);
+    }, INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [isAnimating]);
+
+  const spinner = isAnimating ? `${SPINNER_FRAMES[frame]} ` : "";
+
   const renderStatusText = () => {
     if (customMessage) {
-      return <Text color="yellow">{customMessage}</Text>;
+      return <Text color="yellow">{spinner}{customMessage}</Text>;
     }
 
     if (activeStep !== undefined && totalSteps !== undefined && totalSteps > 0) {
       const stepText = `Step ${activeStep}/${totalSteps}${activeStepTitle ? `: ${activeStepTitle}` : ""}`;
       if (status === "executing" || isGenerating) {
-        return <Text color="green">● Executing {stepText}</Text>;
+        return <Text color="green">{spinner}Executing {stepText}</Text>;
       }
       if (status === "awaiting_step_approval") {
         return <Text color="yellow">⚠ Waiting for Approval ({stepText})</Text>;
       }
       if (status === "verifying") {
-        return <Text color="cyan">◌ Verifying ({stepText})</Text>;
+        return <Text color="cyan">{spinner}Verifying ({stepText})</Text>;
       }
       if (status === "blocked") {
         return <Text color="red">! Blocked at {stepText}</Text>;
@@ -41,17 +64,17 @@ export const StatusBar: React.FC<StatusBarProps> = ({
 
     switch (status) {
       case "executing":
-        return <Text color="green">● Executing task...</Text>;
+        return <Text color="green">{spinner}Executing task...</Text>;
       case "planning":
-        return <Text color="cyan">◌ Generating task plan...</Text>;
+        return <Text color="cyan">{spinner}Generating task plan...</Text>;
       case "awaiting_plan_approval":
         return <Text color="yellow">⚠ Plan approval required</Text>;
       case "awaiting_step_approval":
         return <Text color="yellow">⚠ Step approval required</Text>;
       case "verifying":
-        return <Text color="cyan">◌ Verifying changes...</Text>;
+        return <Text color="cyan">{spinner}Verifying changes...</Text>;
       case "recovering":
-        return <Text color="yellow">◌ Performing recovery...</Text>;
+        return <Text color="yellow">{spinner}Performing recovery...</Text>;
       case "blocked":
         return <Text color="red">! Plan execution blocked</Text>;
       case "completed":
