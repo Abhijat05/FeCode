@@ -16,3 +16,4 @@ export * from "./DiagnosticsView.js";
 export * from "./RunHistoryView.js";
 export * from "./WorkspaceStatus.js";
 export * from "./HelpView.js";
+export * from "./ThinkingIndicator.js";

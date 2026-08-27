@@ -19,8 +19,21 @@ import {
   DiagnosticsView,
   RunHistoryView,
   WorkspaceStatus,
-  HelpView
+  HelpView,
+  ThinkingIndicator
 } from "./index.js";
+
+describe("ThinkingIndicator", () => {
+  it("renders thinking label when active", () => {
+    const { lastFrame } = render(<ThinkingIndicator isActive={true} label="Thinking" />);
+    expect(lastFrame()).toContain("Thinking");
+  });
+
+  it("renders nothing when not active", () => {
+    const { lastFrame } = render(<ThinkingIndicator isActive={false} />);
+    expect(lastFrame()).toBe("");
+  });
+});
 
 describe("Phase 5AD: Modular UI Components", () => {
   it("renders Header with project, model, cwd, status badge, and masked tokens", () => {
