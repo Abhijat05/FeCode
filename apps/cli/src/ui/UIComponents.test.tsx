@@ -20,8 +20,48 @@ import {
   RunHistoryView,
   WorkspaceStatus,
   HelpView,
-  ThinkingIndicator
+  ThinkingIndicator,
+  MessageBubble
 } from "./index.js";
+
+describe("MessageBubble", () => {
+  it("renders user bubble with You label and green glyph", () => {
+    const { lastFrame } = render(
+      <MessageBubble role="user" content="Refactor the login flow" />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("▶");
+    expect(frame).toContain("You");
+    expect(frame).toContain("Refactor the login flow");
+  });
+
+  it("renders agent bubble with fecode label and left gutter", () => {
+    const { lastFrame } = render(
+      <MessageBubble role="agent" content="I will start by..." />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("fecode");
+    expect(frame).toContain("│");
+    expect(frame).toContain("I will start by...");
+  });
+
+  it("renders streaming placeholder when content is empty and isStreaming", () => {
+    const { lastFrame } = render(
+      <MessageBubble role="agent" content="" isStreaming={true} />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("…");
+  });
+
+  it("renders error box when error is provided", () => {
+    const { lastFrame } = render(
+      <MessageBubble role="agent" content="" error="Connection refused" />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("✗ Error");
+    expect(frame).toContain("Connection refused");
+  });
+});
 
 describe("ThinkingIndicator", () => {
   it("renders thinking label when active", () => {
