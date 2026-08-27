@@ -20,3 +20,4 @@ export * from "./ThinkingIndicator.js";
 export * from "./MessageBubble.js";
 export * from "./TurnView.js";
 export * from "./CommandPalette.js";
+export * from "./ThinkingBlock.js";

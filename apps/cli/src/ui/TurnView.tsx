@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
 import { MessageBubble } from "./MessageBubble.js";
+import { ThinkingBlock } from "./ThinkingBlock.js";
 
 export interface TurnViewProps {
   prompt: string;
@@ -8,6 +9,9 @@ export interface TurnViewProps {
   status: "thinking" | "streaming" | "done" | "error" | "cancelled";
   error?: string;
   isLast?: boolean;
+  thinkingMs?: number;
+  thinkingTokens?: number;
+  thinkingSummary?: string;
 }
 
 const SEPARATOR = "─".repeat(48);
@@ -17,7 +21,10 @@ export const TurnView: React.FC<TurnViewProps> = ({
   response,
   status,
   error,
-  isLast = false
+  isLast = false,
+  thinkingMs,
+  thinkingTokens,
+  thinkingSummary
 }) => {
   const isStreaming = status === "streaming" || status === "thinking";
   const hasError = status === "error";
@@ -29,6 +36,15 @@ export const TurnView: React.FC<TurnViewProps> = ({
 
       {/* Spacer between user and agent */}
       <Box height={0} />
+
+      {/* Thinking summary if available */}
+      {thinkingMs !== undefined && thinkingMs > 0 && (
+        <ThinkingBlock
+          durationMs={thinkingMs}
+          tokenCount={thinkingTokens}
+          summary={thinkingSummary}
+        />
+      )}
 
       {/* Agent response */}
       <MessageBubble

@@ -99,7 +99,7 @@ export const PlanStep: React.FC<PlanStepProps> = ({
         <Text color="gray"> — </Text>
         {getStatusLabel()}
         {durationMs !== undefined && durationMs > 0 && (
-          <Text color="gray"> ({durationMs}ms)</Text>
+          <Text color="gray"> ({durationMs >= 1000 ? `${(durationMs / 1000).toFixed(1)}s` : `${durationMs}ms`})</Text>
         )}
       </Box>
 

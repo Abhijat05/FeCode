@@ -23,9 +23,40 @@ import {
   ThinkingIndicator,
   MessageBubble,
   TurnView,
-  CommandPalette
+  CommandPalette,
+  ThinkingBlock
 } from "./index.js";
 import type { CommandDef } from "../commands.js";
+
+describe("ThinkingBlock", () => {
+  it("renders thinking summary with duration and token count", () => {
+    const { lastFrame } = render(
+      <ThinkingBlock durationMs={3200} tokenCount={291} summary="Analyzing the Failure" />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("Thought for");
+    expect(frame).toContain("3.2s");
+    expect(frame).toContain("291 tokens");
+    expect(frame).toContain("Analyzing the Failure");
+  });
+
+  it("renders without token count when not provided", () => {
+    const { lastFrame } = render(
+      <ThinkingBlock durationMs={1000} />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("Thought for");
+    expect(frame).toContain("1.0s");
+  });
+
+  it("renders nothing when durationMs is 0", () => {
+    const { lastFrame } = render(
+      <ThinkingBlock durationMs={0} />
+    );
+    expect(lastFrame()).toBe("");
+  });
+});
+
 
 describe("CommandPalette", () => {
   it("renders matching command suggestions", () => {
@@ -131,6 +162,23 @@ describe("TurnView", () => {
     );
     const frame = lastFrame() ?? "";
     expect(frame).not.toMatch(/─{3,}/);
+  });
+
+  it("renders thinking block when thinkingMs is provided", () => {
+    const { lastFrame } = render(
+      <TurnView
+        prompt="Investigate bug"
+        response="Root cause found."
+        status="done"
+        thinkingMs={2500}
+        thinkingTokens={150}
+        thinkingSummary="Tracing stack trace"
+      />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("Thought for 2.5s, 150 tokens");
+    expect(frame).toContain("Tracing stack trace");
+    expect(frame).toContain("Root cause found.");
   });
 });
 

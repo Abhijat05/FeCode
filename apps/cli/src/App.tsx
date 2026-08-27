@@ -56,6 +56,9 @@ export interface Turn {
   response: string;
   status: "thinking" | "streaming" | "done" | "error" | "cancelled";
   error?: string;
+  thinkingMs?: number;
+  thinkingTokens?: number;
+  thinkingSummary?: string;
 }
 
 export interface AppProps {
@@ -2024,6 +2027,7 @@ export const App: React.FC<AppProps> = ({
     }
 
     const turnId = `turn-${Date.now()}`;
+    const turnStartMs = Date.now();
     const newTurn: Turn = {
       id: turnId,
       prompt: trimmed,
@@ -2043,15 +2047,66 @@ export const App: React.FC<AppProps> = ({
         sessionId
       });
 
+      const toolCallMap = new Map<string, string>();
+
       for await (const event of stream) {
         if (event.type === "text") {
-          setTurns((prev) =>
-            prev.map((t) =>
-              t.id === turnId
-                ? { ...t, response: t.response + event.content }
-                : t
-            )
-          );
+          const content = event.content;
+          const thinkingMatch = content.match(/<thinking>([\s\S]*?)<\/thinking>/);
+
+          if (thinkingMatch) {
+            const thinkingContent = thinkingMatch[1].trim();
+            const firstLine = thinkingContent.split("\n")[0]?.trim() || "";
+            const elapsed = Date.now() - turnStartMs;
+            const cleanContent = content.replace(/<thinking>[\s\S]*?<\/thinking>/g, "").trim();
+            setTurns((prev) =>
+              prev.map((t) =>
+                t.id === turnId
+                  ? {
+                      ...t,
+                      thinkingMs: elapsed > 0 ? elapsed : 1000,
+                      thinkingSummary: firstLine,
+                      response: cleanContent ? t.response + cleanContent : t.response
+                    }
+                  : t
+              )
+            );
+          } else {
+            setTurns((prev) => {
+              const turn = prev.find((t) => t.id === turnId);
+              const isFirstToken = !turn?.response || turn.response === initialResponse;
+              const elapsed = Date.now() - turnStartMs;
+              return prev.map((t) =>
+                t.id === turnId
+                  ? {
+                      ...t,
+                      thinkingMs:
+                        t.thinkingMs !== undefined
+                          ? t.thinkingMs
+                          : isFirstToken && elapsed > 500
+                            ? elapsed
+                            : undefined,
+                      response: t.response + content
+                    }
+                  : t
+              );
+            });
+          }
+        } else if (event.type === "skills_activated") {
+          if (event.skills && event.skills.length > 0) {
+            setTurns((prev) =>
+              prev.map((t) =>
+                t.id === turnId
+                  ? {
+                      ...t,
+                      response:
+                        t.response +
+                        `⚡ Skills: ${event.skills.join(", ")}\n`
+                    }
+                  : t
+              )
+            );
+          }
         } else if (event.type === "error") {
           setTurns((prev) =>
             prev.map((t) =>
@@ -2078,16 +2133,19 @@ export const App: React.FC<AppProps> = ({
             arguments: {},
             reason: event.reason
           });
+        } else if (event.type === "tool_call") {
+          toolCallMap.set(event.call.id, event.call.name);
         } else if (event.type === "tool_result") {
+          const toolName = toolCallMap.get(event.callId) || "tool";
           if (event.result.success) {
             setTurns((prev) =>
               prev.map((t) =>
                 t.id === turnId
                   ? {
                       ...t,
-                      response: t.response.includes("✓ tool")
+                      response: t.response.includes(`✓ ${toolName}`)
                         ? t.response
-                        : t.response + "✓ tool executed\n"
+                        : t.response + `✓ ${toolName} executed\n`
                     }
                   : t
               )
@@ -2096,13 +2154,15 @@ export const App: React.FC<AppProps> = ({
             const errCode = event.result.error.code;
             let recoveryMsg = "";
             if (errCode === "NOT_FOUND") {
-              recoveryMsg = "⚠ read_file: File not found — searching again\n";
+              recoveryMsg = `⚠ ${toolName}: File not found — searching again\n`;
             } else if (errCode === "EDIT_CONFLICT") {
-              recoveryMsg = "⚠ edit_file: Edit conflict — refreshing file context\n";
+              recoveryMsg = `⚠ ${toolName}: Edit conflict — refreshing file context\n`;
             } else if (errCode === "REPEATED_CALL_LOOP") {
-              recoveryMsg = "⚠ search_files: Repeated call loop detected — adapting strategy\n";
+              recoveryMsg = `⚠ ${toolName}: Repeated call loop detected — adapting strategy\n`;
             } else if (errCode === "COMMAND_TIMEOUT") {
-              recoveryMsg = "⚠ execute_command: Command timed out\n";
+              recoveryMsg = `⚠ ${toolName}: Command timed out\n`;
+            } else {
+              recoveryMsg = `✗ ${toolName}: ${event.result.error.message || "Execution error"}\n`;
             }
             if (recoveryMsg) {
               setTurns((prev) =>
@@ -2554,6 +2614,9 @@ export const App: React.FC<AppProps> = ({
             status={turn.status}
             error={turn.error}
             isLast={idx === turns.length - 1}
+            thinkingMs={turn.thinkingMs}
+            thinkingTokens={turn.thinkingTokens}
+            thinkingSummary={turn.thinkingSummary}
           />
         ))}
 
