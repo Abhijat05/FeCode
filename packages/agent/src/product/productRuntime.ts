@@ -115,7 +115,7 @@ export class DefaultProductRuntime implements ProductRuntime {
           event: rawEvent
         };
         this.notifySubscribers(rawProductEvent);
-        yield rawProductProductEvent(rawProductEvent);
+        yield rawProductEvent;
 
         // Text chunk product event
         if (rawEvent.type === "text") {
@@ -200,6 +200,7 @@ export class DefaultProductRuntime implements ProductRuntime {
   }
 
   public async cancelCurrentRun(): Promise<void> {
+    const previousStatus = this.uiState.status;
     await this.agentRuntime.cancel();
     this.uiState.status = "cancelled";
     this.uiState.lifecycleState = "cancelled";
@@ -207,7 +208,7 @@ export class DefaultProductRuntime implements ProductRuntime {
       type: "run_status_changed",
       runId: this.uiState.runId || "unknown",
       status: "cancelled",
-      previousStatus: this.uiState.status
+      previousStatus
     };
     this.notifySubscribers(cancelEvent);
   }
@@ -534,6 +535,3 @@ export class DefaultProductRuntime implements ProductRuntime {
   }
 }
 
-function rawProductProductEvent(event: ProductEvent): ProductEvent {
-  return event;
-}

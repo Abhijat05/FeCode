@@ -436,6 +436,42 @@ describe("DefaultCheckpointManager — Phase 5G", () => {
       expect(valMissingStep.status).toBe("invalidated");
       expect(valMissingStep.reason).toContain("Step ID mismatch");
     });
+
+    it("rejects cross-plan checkpoint consumption", async () => {
+      const store = new DefaultCheckpointStore(storeDir);
+      const manager = new DefaultCheckpointManager(store);
+
+      const record = await manager.requestApproval({
+        runId: "run-cross-plan",
+        planId: "plan-A",
+        stepId: "step-1",
+        stepOrder: 1,
+        riskLevel: "elevated",
+        reason: "Cross-plan test",
+        affectedTargets: ["src/app.ts"],
+        requiredAction: "modify src/app.ts",
+        cwd: tmpDir
+      });
+
+      await manager.approve(record.checkpointId, {
+        approved: true,
+        approvedBy: "user",
+        decision: "approved",
+        timestamp: Date.now()
+      });
+
+      const consumeRes = await manager.consume(record.checkpointId, {
+        runId: "run-cross-plan",
+        planId: "plan-B", // Different plan!
+        stepId: "step-1",
+        riskLevel: "elevated",
+        cwd: tmpDir
+      });
+
+      expect(consumeRes.success).toBe(false);
+      expect(consumeRes.error).toContain("Plan ID mismatch");
+    });
   });
 });
+
 
