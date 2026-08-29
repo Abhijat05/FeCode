@@ -29,6 +29,21 @@ export const ReplanView: React.FC<ReplanViewProps> = ({
   onChange,
   onSubmit
 }) => {
+  const getRiskColor = (risk: string) => {
+    switch (risk.toLowerCase()) {
+      case "critical":
+        return "red";
+      case "elevated":
+      case "high":
+        return "yellow";
+      case "low":
+        return "green";
+      case "normal":
+      default:
+        return "cyan";
+    }
+  };
+
   return (
     <Box
       flexDirection="column"
@@ -69,17 +84,20 @@ export const ReplanView: React.FC<ReplanViewProps> = ({
         </Box>
       )}
 
-      <Box marginTop={0}>
-        <Text color="gray">Replan depth: </Text>
-        <Text color="white">{replanDepth}</Text>
-      </Box>
-
-      {riskLevel && (
-        <Box marginTop={0}>
-          <Text color="gray">Risk reassessment: </Text>
-          <Text color="yellow" bold>{riskLevel.toUpperCase()}</Text>
+      <Box marginTop={0} justifyContent="space-between">
+        <Box>
+          <Text color="gray">Replan depth: </Text>
+          <Text color="white">{replanDepth}</Text>
         </Box>
-      )}
+        {riskLevel && (
+          <Box>
+            <Text color="gray">Risk: </Text>
+            <Text bold color={getRiskColor(riskLevel)}>
+              {riskLevel.toUpperCase()}
+            </Text>
+          </Box>
+        )}
+      </Box>
 
       {workspaceChanges.length > 0 && (
         <Box flexDirection="column" marginTop={0}>
@@ -114,7 +132,9 @@ export const ReplanView: React.FC<ReplanViewProps> = ({
       </Box>
 
       <Box marginTop={0}>
-        <Text color="yellow" bold>Choice [N]: </Text>
+        <Text color="yellow" bold>
+          Choice [N]:{" "}
+        </Text>
         <TextInput
           value={value}
           onChange={onChange}

@@ -40,6 +40,8 @@ import {
   ThinkingIndicator,
   TurnView,
   PlanView,
+  CurrentStepView,
+  WorkspaceStatus,
   ApprovalPrompt,
   BlockedView,
   RecoveryView,
@@ -2477,6 +2479,9 @@ export const App: React.FC<AppProps> = ({
           modelName={modelName}
           cwd={cwd}
           status={uiState?.status || lastTaskStatus}
+          gitBranch={uiState?.workspace?.gitBranch}
+          isGitClean={uiState?.workspace ? !uiState.workspace.isGitDirty : true}
+          runId={uiState?.runId}
           sessionId={sessionId}
         />
       }
@@ -2565,11 +2570,39 @@ export const App: React.FC<AppProps> = ({
         <StatusBar
           status={uiState?.status || lastTaskStatus}
           isGenerating={isGenerating}
+          hasModal={hasModal}
+          modalType={
+            pendingApproval
+              ? "approval"
+              : pendingPlanBlocked
+                ? "blocked"
+                : pendingRecovery || pendingRecoveryContinuation
+                  ? "recovery"
+                  : pendingReplan
+                    ? "replan"
+                    : pendingResume
+                      ? "resume"
+                      : undefined
+          }
         />
       }
     >
       {/* Content Area */}
       {activeView === "help" && <HelpView />}
+
+      {activeView === "git" && (
+        <WorkspaceStatus
+          cwd={cwd}
+          branch={uiState?.workspace?.gitBranch}
+          isClean={uiState?.workspace ? !uiState.workspace.isGitDirty : true}
+          riskLevel={uiState?.riskLevel}
+          modifiedFiles={uiState?.workspace?.modifiedFiles}
+          stagedFiles={uiState?.workspace?.stagedFiles}
+          untrackedFiles={uiState?.workspace?.untrackedFiles}
+          hasDrift={uiState?.workspace?.hasDrift}
+          driftReason={uiState?.workspace?.driftReason}
+        />
+      )}
 
       {activeView === "runs" && (
         <RunHistoryView
@@ -2601,6 +2634,15 @@ export const App: React.FC<AppProps> = ({
           steps={uiState.activePlan.steps}
           completedCount={uiState.activePlan.completedStepsCount}
           totalCount={uiState.activePlan.totalStepsCount}
+        />
+      )}
+
+      {/* Active step & tool execution view */}
+      {isGenerating && uiState?.activeTool && (
+        <CurrentStepView
+          toolName={uiState.activeTool.toolName}
+          target={uiState.activeTool.target}
+          riskLevel={uiState.riskLevel}
         />
       )}
 

@@ -40,7 +40,9 @@ export const BlockedView: React.FC<BlockedViewProps> = ({
       {planId && (
         <Box marginTop={0}>
           <Text color="gray">Plan: </Text>
-          <Text color="white" bold>{planId}</Text>
+          <Text color="white" bold>
+            {planId}
+          </Text>
         </Box>
       )}
 
@@ -68,24 +70,44 @@ export const BlockedView: React.FC<BlockedViewProps> = ({
       )}
 
       <Box marginTop={1} flexDirection="column">
-        <Text color="gray">What would you like to do?</Text>
+        <Text color="gray">What action would you like to take?</Text>
         {isReconciliation ? (
-          <>
-            <Text color="white">[r] Recover from checkpoint</Text>
-            <Text color="white">[p] Replan</Text>
-            <Text color="white">[x] Cancel</Text>
-          </>
+          <Box flexDirection="row" marginY={0}>
+            <Text bold color="yellow">
+              [r]
+            </Text>
+            <Text color="white"> Recover from checkpoint  </Text>
+            <Text bold color="cyan">
+              [p]
+            </Text>
+            <Text color="white"> Replan  </Text>
+            <Text bold color="gray">
+              [x]
+            </Text>
+            <Text color="white"> Cancel (Default)</Text>
+          </Box>
         ) : (
-          <>
-            <Text color="white">[c] Continue</Text>
-            <Text color="white">[r] Replan</Text>
-            <Text color="white">[x] Cancel</Text>
-          </>
+          <Box flexDirection="row" marginY={0}>
+            <Text bold color="green">
+              [c]
+            </Text>
+            <Text color="white"> Continue  </Text>
+            <Text bold color="cyan">
+              [r]
+            </Text>
+            <Text color="white"> Replan  </Text>
+            <Text bold color="gray">
+              [x]
+            </Text>
+            <Text color="white"> Cancel (Default)</Text>
+          </Box>
         )}
       </Box>
 
-      <Box marginTop={1}>
-        <Text color="yellow" bold>Choice [x]: </Text>
+      <Box marginTop={0}>
+        <Text color="yellow" bold>
+          Choice [x]:{" "}
+        </Text>
         <TextInput
           value={value}
           onChange={onChange}

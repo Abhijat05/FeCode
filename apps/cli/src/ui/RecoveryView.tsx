@@ -12,7 +12,13 @@ export interface RecoveryViewProps {
   steps?: RecoveryStepItem[];
   verificationStatus?: "PASSED" | "FAILED" | "PENDING" | string;
   workspaceStatus?: "CONSISTENT" | "INCONSISTENT" | string;
-  outcome?: "RECOVERED" | "RECOVERED_WITH_CHANGES" | "STILL_BLOCKED" | "FAILED" | string;
+  outcome?:
+    | "RECOVERED"
+    | "RECOVERED_WITH_CHANGES"
+    | "STILL_BLOCKED"
+    | "FAILED"
+    | "CANCELLED"
+    | string;
   blockers?: string[];
   remainingStepsCount?: number;
   isAwaitingContinuation?: boolean;
@@ -53,8 +59,20 @@ export const RecoveryView: React.FC<RecoveryViewProps> = ({
         <Box flexDirection="column" marginTop={0}>
           {steps.map((s, idx) => (
             <Box key={`rec-step-${idx}`}>
-              <Text color={s.status === "completed" ? "green" : s.status === "failed" ? "red" : "yellow"}>
-                {s.status === "completed" ? "✓" : s.status === "failed" ? "✗" : "●"}{" "}
+              <Text
+                color={
+                  s.status === "completed"
+                    ? "green"
+                    : s.status === "failed"
+                      ? "red"
+                      : "yellow"
+                }
+              >
+                {s.status === "completed"
+                  ? "✓"
+                  : s.status === "failed"
+                    ? "✗"
+                    : "●"}{" "}
               </Text>
               <Text color="white">{s.title}</Text>
             </Box>
@@ -66,8 +84,11 @@ export const RecoveryView: React.FC<RecoveryViewProps> = ({
       {verificationStatus && (
         <Box marginTop={0}>
           <Text color="gray">Verification: </Text>
-          <Text color={verificationStatus === "PASSED" ? "green" : "red"} bold>
-            {verificationStatus}
+          <Text
+            color={verificationStatus.toUpperCase() === "PASSED" ? "green" : "red"}
+            bold
+          >
+            {verificationStatus.toUpperCase()}
           </Text>
         </Box>
       )}
@@ -75,8 +96,11 @@ export const RecoveryView: React.FC<RecoveryViewProps> = ({
       {workspaceStatus && (
         <Box marginTop={0}>
           <Text color="gray">Workspace: </Text>
-          <Text color={workspaceStatus === "CONSISTENT" ? "green" : "yellow"} bold>
-            {workspaceStatus}
+          <Text
+            color={workspaceStatus.toUpperCase() === "CONSISTENT" ? "green" : "yellow"}
+            bold
+          >
+            {workspaceStatus.toUpperCase()}
           </Text>
         </Box>
       )}
@@ -86,23 +110,27 @@ export const RecoveryView: React.FC<RecoveryViewProps> = ({
           <Text color="gray">Outcome: </Text>
           <Text
             color={
-              outcome === "RECOVERED" || outcome === "RECOVERED_WITH_CHANGES"
+              outcome.toUpperCase() === "RECOVERED" || outcome.toUpperCase() === "RECOVERED_WITH_CHANGES"
                 ? "green"
                 : "red"
             }
             bold
           >
-            {outcome}
+            {outcome.toUpperCase()}
           </Text>
         </Box>
       )}
 
       {/* Initial Recovery Approval Prompt */}
-      {!isAwaitingContinuation && outcome !== "STILL_BLOCKED" && (
+      {!isAwaitingContinuation && outcome?.toUpperCase() !== "STILL_BLOCKED" && (
         <Box flexDirection="column" marginTop={1}>
-          <Text color="yellow">Proceed with recovery? [y/N]</Text>
+          <Text color="yellow">
+            Proceed with recovery? [y/N]
+          </Text>
           <Box marginTop={0}>
-            <Text color="yellow" bold>Choice [N]: </Text>
+            <Text color="yellow" bold>
+              Choice [N]:{" "}
+            </Text>
             <TextInput
               value={value}
               onChange={onChange}
@@ -113,7 +141,7 @@ export const RecoveryView: React.FC<RecoveryViewProps> = ({
         </Box>
       )}
 
-      {/* Continuation Prompt or Blocked Options */}
+      {/* Continuation Prompt */}
       {isAwaitingContinuation && (
         <Box flexDirection="column" marginTop={1}>
           <Text color="yellow">
@@ -122,7 +150,9 @@ export const RecoveryView: React.FC<RecoveryViewProps> = ({
               : "Continue remaining plan steps? [y/N]"}
           </Text>
           <Box marginTop={0}>
-            <Text color="yellow" bold>Choice [N]: </Text>
+            <Text color="yellow" bold>
+              Choice [N]:{" "}
+            </Text>
             <TextInput
               value={value}
               onChange={onChange}
@@ -133,10 +163,11 @@ export const RecoveryView: React.FC<RecoveryViewProps> = ({
         </Box>
       )}
 
-      {outcome === "STILL_BLOCKED" && (
+      {/* Still Blocked Prompt */}
+      {outcome?.toUpperCase() === "STILL_BLOCKED" && (
         <Box flexDirection="column" marginTop={1}>
           <Text color="red">
-            ⚠ Recovery could not fully resolve the problem.
+            ⚠ Recovery still blocked.
           </Text>
           {blockers.length > 0 && (
             <Box flexDirection="column" marginTop={0}>
@@ -148,13 +179,24 @@ export const RecoveryView: React.FC<RecoveryViewProps> = ({
               ))}
             </Box>
           )}
-          <Box flexDirection="column" marginTop={0}>
-            <Text color="white">[r] Replan</Text>
-            <Text color="white">[c] Re-check</Text>
-            <Text color="white">[x] Cancel</Text>
+          <Box flexDirection="row" marginTop={0}>
+            <Text bold color="cyan">
+              [r]
+            </Text>
+            <Text color="white"> Replan  </Text>
+            <Text bold color="green">
+              [c]
+            </Text>
+            <Text color="white"> Re-check  </Text>
+            <Text bold color="gray">
+              [x]
+            </Text>
+            <Text color="white"> Cancel (Default)</Text>
           </Box>
           <Box marginTop={0}>
-            <Text color="yellow" bold>Choice [x]: </Text>
+            <Text color="yellow" bold>
+              Choice [x]:{" "}
+            </Text>
             <TextInput
               value={value}
               onChange={onChange}

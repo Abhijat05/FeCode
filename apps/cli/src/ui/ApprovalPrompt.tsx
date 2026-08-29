@@ -20,6 +20,9 @@ export interface ApprovalPromptProps {
     | "replan"
     | string;
   title?: string;
+  stepTitle?: string;
+  stepOrder?: number;
+  totalSteps?: number;
   toolName?: string;
   reason?: string;
   riskLevel?: string;
@@ -39,6 +42,9 @@ export interface ApprovalPromptProps {
 export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
   approvalType = "tool_permission",
   title,
+  stepTitle,
+  stepOrder,
+  totalSteps,
   toolName,
   reason,
   riskLevel = "elevated",
@@ -75,6 +81,21 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
     }
   };
 
+  const getRiskColor = (risk: string) => {
+    switch (risk.toLowerCase()) {
+      case "critical":
+        return "red";
+      case "elevated":
+      case "high":
+        return "yellow";
+      case "low":
+        return "green";
+      case "normal":
+      default:
+        return "cyan";
+    }
+  };
+
   return (
     <Box
       flexDirection="column"
@@ -89,28 +110,38 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
         </Text>
       </Box>
 
-      {riskLevel && (
+      {stepTitle && (
         <Box marginTop={0}>
-          <Text color="gray">Risk: </Text>
-          <Text
-            bold
-            color={
-              riskLevel === "critical"
-                ? "red"
-                : riskLevel === "high" || riskLevel === "elevated"
-                  ? "yellow"
-                  : "cyan"
-            }
-          >
-            {riskLevel.toUpperCase()}
+          <Text color="gray">Step: </Text>
+          <Text bold color="white">
+            {stepOrder !== undefined && totalSteps !== undefined
+              ? `[${stepOrder}/${totalSteps}] ${stepTitle}`
+              : stepTitle}
           </Text>
         </Box>
       )}
 
+      <Box marginTop={0} justifyContent="space-between">
+        <Box>
+          <Text color="gray">Risk: </Text>
+          <Text bold color={getRiskColor(riskLevel)}>
+            {riskLevel.toUpperCase()}
+          </Text>
+        </Box>
+        <Box>
+          <Text color="gray">Checkpoint: </Text>
+          <Text color={checkpointId || riskLevel.toLowerCase() === "elevated" || riskLevel.toLowerCase() === "critical" ? "yellow" : "gray"}>
+            {checkpointId ? `REQUIRED (${checkpointId.slice(0, 18)})` : "REQUIRED"}
+          </Text>
+        </Box>
+      </Box>
+
       {toolName && (
         <Box marginTop={0}>
           <Text color="gray">Tool: </Text>
-          <Text bold color="white">{toolName}</Text>
+          <Text bold color="magenta">
+            {toolName}
+          </Text>
         </Box>
       )}
 
@@ -123,7 +154,7 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
 
       {affectedTargets.length > 0 && (
         <Box flexDirection="column" marginTop={0}>
-          <Text color="gray">Files / Targets:</Text>
+          <Text color="gray">Files / Resources:</Text>
           {affectedTargets.map((t, i) => (
             <Text key={`target-${i}`} color="cyan">
               {"  "}• {t}
@@ -132,23 +163,21 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
         </Box>
       )}
 
-      {checkpointId && (
-        <Box marginTop={0}>
-          <Text color="gray">Checkpoint: </Text>
-          <Text color="yellow">Required ({checkpointId})</Text>
-        </Box>
-      )}
-
       {/* Structured Change Review */}
       {changeReview && changeReview.files && changeReview.files.length > 0 && (
         <Box flexDirection="column" marginTop={1}>
-          <Text bold color="gray">Change Review:</Text>
+          <Text bold color="gray">
+            Change Review:
+          </Text>
           {changeReview.files.map((cf, idx) => (
             <Box key={`cf-${idx}`} flexDirection="column" marginLeft={1}>
               <Box>
                 <Text color="white">{cf.path}</Text>
                 {cf.additions !== undefined && cf.deletions !== undefined && (
-                  <Text color="gray"> Change: +{cf.additions} -{cf.deletions}</Text>
+                  <Text color="gray">
+                    {" "}
+                    Change: +{cf.additions} -{cf.deletions}
+                  </Text>
                 )}
               </Box>
               {cf.diff && (
@@ -159,7 +188,7 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
                   marginY={0}
                   flexDirection="column"
                 >
-                  {cf.diff.split("\n").map((line, lIdx) => {
+                  {cf.diff.split("\n").slice(0, 15).map((line, lIdx) => {
                     const isAdd = line.startsWith("+") && !line.startsWith("+++");
                     const isDel = line.startsWith("-") && !line.startsWith("---");
                     return (
@@ -171,6 +200,11 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
                       </Text>
                     );
                   })}
+                  {cf.diff.split("\n").length > 15 && (
+                    <Text color="gray">
+                      ... ({cf.diff.split("\n").length - 15} lines omitted)
+                    </Text>
+                  )}
                 </Box>
               )}
             </Box>
@@ -187,7 +221,7 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
           marginY={1}
           flexDirection="column"
         >
-          {diff.split("\n").map((line, lIdx) => {
+          {diff.split("\n").slice(0, 15).map((line, lIdx) => {
             const isAdd = line.startsWith("+") && !line.startsWith("+++");
             const isDel = line.startsWith("-") && !line.startsWith("---");
             return (
@@ -202,9 +236,11 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
         </Box>
       )}
 
-      {/* Approval Input Prompt with Safe Defaults */}
+      {/* Approval Input Prompt with Strict Safe Defaults */}
       <Box marginTop={1}>
-        <Text color="yellow" bold>Allow? [y/N]: </Text>
+        <Text color="yellow" bold>
+          Allow? [y/N]:{" "}
+        </Text>
         <TextInput
           value={value}
           onChange={onChange}

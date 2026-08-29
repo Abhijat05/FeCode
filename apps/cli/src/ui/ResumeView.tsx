@@ -7,6 +7,7 @@ export interface ResumeViewProps {
   status?: string;
   duration?: string;
   originalRequest?: string;
+  failureReason?: string;
   workspaceDrift?: string[];
   riskLevel?: string;
   value: string;
@@ -19,12 +20,28 @@ export const ResumeView: React.FC<ResumeViewProps> = ({
   status = "FAILED",
   duration,
   originalRequest,
+  failureReason,
   workspaceDrift = [],
   riskLevel = "ELEVATED",
   value,
   onChange,
   onSubmit
 }) => {
+  const getRiskColor = (risk: string) => {
+    switch (risk.toLowerCase()) {
+      case "critical":
+        return "red";
+      case "elevated":
+      case "high":
+        return "yellow";
+      case "low":
+        return "green";
+      case "normal":
+      default:
+        return "cyan";
+    }
+  };
+
   return (
     <Box
       flexDirection="column"
@@ -39,32 +56,42 @@ export const ResumeView: React.FC<ResumeViewProps> = ({
         </Text>
       </Box>
 
-      <Box marginTop={0}>
-        <Text color="gray">ID: </Text>
-        <Text color="white" bold>{runId}</Text>
-      </Box>
-
-      <Box marginTop={0}>
-        <Text color="gray">Status: </Text>
-        <Text
-          bold
-          color={
-            status.toLowerCase() === "completed"
-              ? "green"
-              : status.toLowerCase() === "failed"
-                ? "red"
-                : "yellow"
-          }
-        >
-          {status.toUpperCase()}
-        </Text>
-        {duration && <Text color="gray"> | Duration: {duration}</Text>}
+      <Box marginTop={0} justifyContent="space-between">
+        <Box>
+          <Text color="gray">ID: </Text>
+          <Text color="white" bold>
+            {runId}
+          </Text>
+        </Box>
+        <Box>
+          <Text color="gray">Status: </Text>
+          <Text
+            bold
+            color={
+              status.toLowerCase() === "completed"
+                ? "green"
+                : status.toLowerCase() === "failed"
+                  ? "red"
+                  : "yellow"
+            }
+          >
+            {status.toUpperCase()}
+          </Text>
+          {duration && <Text color="gray"> | Duration: {duration}</Text>}
+        </Box>
       </Box>
 
       {originalRequest && (
         <Box marginTop={0} flexDirection="column">
           <Text color="gray">Original request:</Text>
           <Text color="white">{originalRequest}</Text>
+        </Box>
+      )}
+
+      {failureReason && (
+        <Box marginTop={0} flexDirection="column">
+          <Text color="gray">Failure reason:</Text>
+          <Text color="red">{failureReason}</Text>
         </Box>
       )}
 
@@ -82,7 +109,9 @@ export const ResumeView: React.FC<ResumeViewProps> = ({
       {riskLevel && (
         <Box marginTop={0}>
           <Text color="gray">Risk reassessment: </Text>
-          <Text color="yellow" bold>{riskLevel.toUpperCase()}</Text>
+          <Text bold color={getRiskColor(riskLevel)}>
+            {riskLevel.toUpperCase()}
+          </Text>
         </Box>
       )}
 
@@ -94,7 +123,9 @@ export const ResumeView: React.FC<ResumeViewProps> = ({
       </Box>
 
       <Box marginTop={0}>
-        <Text color="yellow" bold>Choice [N]: </Text>
+        <Text color="yellow" bold>
+          Choice [N]:{" "}
+        </Text>
         <TextInput
           value={value}
           onChange={onChange}

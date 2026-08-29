@@ -7,15 +7,19 @@ export interface PlanStepProps {
   title: string;
   status:
     | "pending"
+    | "planned"
     | "ready"
     | "in_progress"
+    | "executing"
     | "verifying"
+    | "waiting"
     | "waiting_approval"
     | "completed"
     | "skipped"
     | "blocked"
     | "failed"
     | string;
+  riskLevel?: string;
   dependencies?: string[];
   checkpointRequired?: boolean;
   verificationRequired?: boolean;
@@ -29,6 +33,7 @@ export const PlanStep: React.FC<PlanStepProps> = ({
   totalSteps,
   title,
   status,
+  riskLevel,
   dependencies,
   checkpointRequired,
   verificationRequired,
@@ -36,14 +41,16 @@ export const PlanStep: React.FC<PlanStepProps> = ({
   error
 }) => {
   const getStatusIcon = () => {
-    switch (status) {
+    switch (status.toLowerCase()) {
       case "completed":
+      case "done":
         return <Text color="green">✓</Text>;
       case "in_progress":
       case "executing":
         return <Text color="yellow">●</Text>;
       case "verifying":
         return <Text color="cyan">◌</Text>;
+      case "waiting":
       case "waiting_approval":
         return <Text color="yellow">⚠</Text>;
       case "ready":
@@ -62,14 +69,16 @@ export const PlanStep: React.FC<PlanStepProps> = ({
   };
 
   const getStatusLabel = () => {
-    switch (status) {
+    switch (status.toLowerCase()) {
       case "completed":
+      case "done":
         return <Text color="green">COMPLETED</Text>;
       case "in_progress":
       case "executing":
         return <Text color="yellow">EXECUTING</Text>;
       case "verifying":
         return <Text color="cyan">VERIFYING</Text>;
+      case "waiting":
       case "waiting_approval":
         return <Text color="yellow">WAITING FOR APPROVAL</Text>;
       case "ready":
@@ -87,19 +96,44 @@ export const PlanStep: React.FC<PlanStepProps> = ({
     }
   };
 
+  const getRiskBadge = () => {
+    if (!riskLevel || riskLevel.toLowerCase() === "low" || riskLevel.toLowerCase() === "normal") {
+      return null;
+    }
+    const isCrit = riskLevel.toLowerCase() === "critical";
+    return <Text color={isCrit ? "red" : "yellow"}> [{riskLevel.toUpperCase()}]</Text>;
+  };
+
   return (
     <Box flexDirection="column" marginY={0}>
       <Box>
-        <Text color="gray">[{stepIndex}/{totalSteps}] </Text>
+        <Text color="gray">
+          [{stepIndex}/{totalSteps}]{" "}
+        </Text>
         {getStatusIcon()}
         <Text> </Text>
-        <Text bold={status === "in_progress" || status === "executing"} color={status === "failed" ? "red" : status === "blocked" ? "red" : "white"}>
+        <Text
+          bold={status === "in_progress" || status === "executing"}
+          color={
+            status === "failed" || status === "blocked"
+              ? "red"
+              : "white"
+          }
+        >
           {title}
         </Text>
+        {getRiskBadge()}
         <Text color="gray"> — </Text>
         {getStatusLabel()}
         {durationMs !== undefined && durationMs > 0 && (
-          <Text color="gray"> ({durationMs >= 1000 ? `${(durationMs / 1000).toFixed(1)}s` : `${durationMs}ms`})</Text>
+          <Text color="gray">
+            {" "}
+            (
+            {durationMs >= 1000
+              ? `${(durationMs / 1000).toFixed(1)}s`
+              : `${durationMs}ms`}
+            )
+          </Text>
         )}
       </Box>
 

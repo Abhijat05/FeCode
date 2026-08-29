@@ -24,6 +24,10 @@ import {
   MessageBubble,
   TurnView,
   CommandPalette,
+  ProgressBar,
+  CurrentStepView,
+  getTerminalLayout,
+  truncateText,
   ThinkingBlock
 } from "./index.js";
 import type { CommandDef } from "../commands.js";
@@ -674,3 +678,172 @@ describe("Phase 5AD: Modular UI Components", () => {
     expect(frame).toContain("Esc");
   });
 });
+
+describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
+  describe("ProgressBar", () => {
+    it("renders progress bar with 0% completion", () => {
+      const { lastFrame } = render(<ProgressBar completed={0} total={5} width={10} />);
+      const frame = lastFrame();
+      expect(frame).toContain("0%");
+      expect(frame).toContain("(0/5 steps)");
+      expect(frame).toContain("░░░░░░░░░░");
+    });
+
+    it("renders progress bar with 50% completion", () => {
+      const { lastFrame } = render(<ProgressBar completed={2} total={4} width={10} />);
+      const frame = lastFrame();
+      expect(frame).toContain("50%");
+      expect(frame).toContain("(2/4 steps)");
+      expect(frame).toContain("█████░░░░░");
+    });
+
+    it("renders progress bar with 100% completion", () => {
+      const { lastFrame } = render(<ProgressBar completed={5} total={5} width={10} />);
+      const frame = lastFrame();
+      expect(frame).toContain("100%");
+      expect(frame).toContain("(5/5 steps)");
+      expect(frame).toContain("██████████");
+    });
+  });
+
+  describe("CurrentStepView", () => {
+    it("renders active step details with risk and tool context", () => {
+      const { lastFrame } = render(
+        <CurrentStepView
+          stepOrder={3}
+          totalSteps={5}
+          title="Modify authentication middleware"
+          objective="Add session verification"
+          riskLevel="elevated"
+          checkpointRequired={true}
+          verificationRequired={true}
+          toolName="edit_file"
+          target="src/auth/middleware.ts"
+          durationMs={1200}
+        />
+      );
+      const frame = lastFrame();
+      expect(frame).toContain("Step 3/5: Modify authentication middleware");
+      expect(frame).toContain("Risk: ELEVATED");
+      expect(frame).toContain("Goal: Add session verification");
+      expect(frame).toContain("Tool: edit_file");
+      expect(frame).toContain("Target: src/auth/middleware.ts");
+      expect(frame).toContain("[Checkpoint Required]");
+      expect(frame).toContain("[Verification Required]");
+      expect(frame).toContain("Elapsed: 1.2s");
+    });
+
+    it("returns null when no step information is provided", () => {
+      const { lastFrame } = render(<CurrentStepView />);
+      expect(lastFrame()).toBe("");
+    });
+  });
+
+  describe("AppShell Responsive Layout & Truncation", () => {
+    it("computes correct layout modes based on terminal column widths", () => {
+      expect(getTerminalLayout(120)).toBe("wide");
+      expect(getTerminalLayout(100)).toBe("wide");
+      expect(getTerminalLayout(85)).toBe("medium");
+      expect(getTerminalLayout(70)).toBe("medium");
+      expect(getTerminalLayout(60)).toBe("narrow");
+      expect(getTerminalLayout(50)).toBe("narrow");
+      expect(getTerminalLayout(45)).toBe("very_narrow");
+    });
+
+    it("truncates long strings with ellipsis", () => {
+      expect(truncateText("short", 10)).toBe("short");
+      expect(truncateText("a very long path that exceeds boundary", 15)).toBe("a very long ...");
+      expect(truncateText("", 10)).toBe("");
+    });
+
+    it("renders wide layout with sidebar side-by-side", () => {
+      const { lastFrame } = render(
+        <AppShell
+          columns={120}
+          header={<Header projectName="fecode" />}
+          sidebar={<WorkspaceStatus branch="main" />}
+        >
+          <TurnView prompt="Test Prompt" response="Test Response" status="done" isLast={true} />
+        </AppShell>
+      );
+      const frame = lastFrame();
+      expect(frame).toContain("FeCode");
+      expect(frame).toContain("Test Prompt");
+      expect(frame).toContain("Directory:");
+    });
+  });
+
+  describe("Header Enhanced Indicators", () => {
+    it("renders header with git branch, clean status, elapsed time and run ID", () => {
+      const { lastFrame } = render(
+        <Header
+          projectName="my-app"
+          status="executing"
+          gitBranch="feature/auth"
+          isGitClean={true}
+          runId="run-1234567890abcdef"
+          elapsedMs={4500}
+        />
+      );
+      const frame = lastFrame();
+      expect(frame).toContain("FeCode project: my-app");
+      expect(frame).toContain("⎇ feature/auth ● clean");
+      expect(frame).toContain("● LIVE (EXECUTING)");
+      expect(frame).toContain("5s");
+      expect(frame).toContain("Run: run-1234567890ab");
+    });
+
+    it("renders dirty git status with modified indicator", () => {
+      const { lastFrame } = render(
+        <Header
+          projectName="my-app"
+          status="idle"
+          gitBranch="main"
+          isGitClean={false}
+        />
+      );
+      const frame = lastFrame();
+      expect(frame).toContain("⎇ main ● modified");
+      expect(frame).toContain("○ IDLE");
+    });
+  });
+
+  describe("StatusBar Context-Sensitive Shortcuts", () => {
+    it("renders modal approval shortcuts when approval modal is active", () => {
+      const { lastFrame } = render(
+        <StatusBar
+          status="awaiting_step_approval"
+          hasModal={true}
+          modalType="approval"
+        />
+      );
+      const frame = lastFrame();
+      expect(frame).toContain("[y] Approve [n] Reject [Esc] Cancel");
+    });
+
+    it("renders blocked modal shortcuts when blocked modal is active", () => {
+      const { lastFrame } = render(
+        <StatusBar
+          status="blocked"
+          hasModal={true}
+          modalType="blocked"
+        />
+      );
+      const frame = lastFrame();
+      expect(frame).toContain("[c] Continue [r] Replan [x] Cancel");
+    });
+
+    it("renders recovery modal shortcuts when recovery modal is active", () => {
+      const { lastFrame } = render(
+        <StatusBar
+          status="recovering"
+          hasModal={true}
+          modalType="recovery"
+        />
+      );
+      const frame = lastFrame();
+      expect(frame).toContain("[c] Continue [r] Replan [v] Re-check [x] Cancel");
+    });
+  });
+});
+

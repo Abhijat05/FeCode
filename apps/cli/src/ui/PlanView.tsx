@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
 import { PlanStep } from "./PlanStep.js";
+import { ProgressBar } from "./ProgressBar.js";
 
 export interface PlanStepItem {
   stepId: string;
@@ -8,6 +9,7 @@ export interface PlanStepItem {
   title: string;
   objective?: string;
   status: string;
+  riskLevel?: string;
   dependencies?: string[];
   checkpointRequired?: boolean;
   verificationRequired?: boolean;
@@ -40,6 +42,21 @@ export const PlanView: React.FC<PlanViewProps> = ({
   const completed =
     completedCount ?? steps.filter((s) => s.status === "completed").length;
 
+  const getRiskColor = (risk: string) => {
+    switch (risk.toLowerCase()) {
+      case "critical":
+        return "red";
+      case "elevated":
+      case "high":
+        return "yellow";
+      case "low":
+        return "green";
+      case "normal":
+      default:
+        return "cyan";
+    }
+  };
+
   return (
     <Box
       flexDirection="column"
@@ -50,20 +67,32 @@ export const PlanView: React.FC<PlanViewProps> = ({
     >
       <Box justifyContent="space-between" marginBottom={0}>
         <Box>
-          <Text bold color="blue">Plan: </Text>
-          <Text bold color="white">{objective || summary || "Task Plan"}</Text>
+          <Text bold color="blue">
+            Plan:{" "}
+          </Text>
+          <Text bold color="white">
+            {objective || summary || "Task Plan"}
+          </Text>
           {planId && <Text color="gray"> ({planId})</Text>}
         </Box>
         <Box>
           {riskLevel && (
-            <Text color={riskLevel === "elevated" || riskLevel === "high" ? "yellow" : riskLevel === "critical" ? "red" : "gray"}>
-              Risk: {riskLevel.toUpperCase()}{" "}
+            <Text color={getRiskColor(riskLevel)} bold>
+              [{riskLevel.toUpperCase()}]{" "}
             </Text>
           )}
           <Text color="gray">
-            [{completed}/{total}] Status: {status.toUpperCase()}
+            [{completed}/{total}] Status:{" "}
+          </Text>
+          <Text bold color="cyan">
+            {status.toUpperCase()}
           </Text>
         </Box>
+      </Box>
+
+      {/* Deterministic Unicode Progress Bar */}
+      <Box marginY={0}>
+        <ProgressBar completed={completed} total={total} width={24} />
       </Box>
 
       {steps.length > 0 ? (
@@ -75,6 +104,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
               totalSteps={total}
               title={step.title}
               status={step.status}
+              riskLevel={step.riskLevel}
               dependencies={step.dependencies}
               checkpointRequired={step.checkpointRequired}
               verificationRequired={step.verificationRequired}
