@@ -769,7 +769,7 @@ describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
       const frame = lastFrame();
       expect(frame).toContain("FeCode");
       expect(frame).toContain("Test Prompt");
-      expect(frame).toContain("Directory:");
+      expect(frame).toContain("Working directory:");
     });
   });
 
