@@ -149,4 +149,61 @@ describe("GeminiModelProvider (offline unit tests)", () => {
       expect(events[0].error.message).toContain("aborted");
     }
   });
+
+  it("coalesces multiple consecutive tool responses into a single user turn", async () => {
+    let capturedContents: unknown = null;
+    const mockClient = {
+      models: {
+        generateContentStream: vi.fn().mockImplementation((req: { contents: unknown }) => {
+          capturedContents = req.contents;
+          return (async function* () {
+            yield { text: "Done analyzing" };
+          })();
+        })
+      }
+    } as unknown as GoogleGenAI;
+
+    const provider = new GeminiModelProvider({
+      apiKey: "fake-gemini-key",
+      client: mockClient
+    });
+
+    const events: ModelEvent[] = [];
+    for await (const event of provider.generate({
+      messages: [
+        { role: "user", content: "Check codebase" },
+        {
+          role: "assistant",
+          toolCalls: [
+            { id: "call-1", name: "list_directory", arguments: {} },
+            { id: "call-2", name: "search_files", arguments: { query: "App" } }
+          ]
+        },
+        {
+          role: "tool",
+          toolCallId: "call-1",
+          name: "list_directory",
+          content: JSON.stringify({ success: true, output: { path: ".", entries: [] } })
+        },
+        {
+          role: "tool",
+          toolCallId: "call-2",
+          name: "search_files",
+          content: JSON.stringify({ success: true, output: { query: "App", matches: [] } })
+        }
+      ]
+    })) {
+      events.push(event);
+    }
+
+    expect(Array.isArray(capturedContents)).toBe(true);
+    const contents = capturedContents as Array<{ role: string; parts: Array<Record<string, unknown>> }>;
+    expect(contents).toHaveLength(3); // user (prompt), model (2 tool calls), user (2 tool responses coalesced)
+    expect(contents[0].role).toBe("user");
+    expect(contents[1].role).toBe("model");
+    expect(contents[2].role).toBe("user");
+    expect(contents[2].parts).toHaveLength(2);
+    expect(contents[2].parts[0].functionResponse).toBeDefined();
+    expect(contents[2].parts[1].functionResponse).toBeDefined();
+  });
 });

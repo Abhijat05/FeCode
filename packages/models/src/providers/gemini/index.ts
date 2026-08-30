@@ -71,10 +71,22 @@ export class GeminiModelProvider implements ModelProvider {
 
       for (const msg of request.messages) {
         if (msg.role === "user") {
-          geminiContents.push({
-            role: "user",
-            parts: [{ text: msg.content || "" }]
-          });
+          const last = geminiContents[geminiContents.length - 1];
+          if (
+            last &&
+            last.role === "user" &&
+            Array.isArray(last.parts) &&
+            !last.parts.some(
+              (p) => typeof p === "object" && p !== null && "functionResponse" in p
+            )
+          ) {
+            (last.parts as Array<Record<string, unknown>>).push({ text: msg.content || "" });
+          } else {
+            geminiContents.push({
+              role: "user",
+              parts: [{ text: msg.content || "" }]
+            });
+          }
         } else if (msg.role === "assistant") {
           const parts: Array<Record<string, unknown>> = [];
           if (msg.toolCalls && msg.toolCalls.length > 0) {
@@ -125,17 +137,33 @@ export class GeminiModelProvider implements ModelProvider {
               }
             }
           }
-          geminiContents.push({
-            role: "user",
-            parts: [
-              {
-                functionResponse: {
-                  name: toolName || "tool",
-                  response: (parsedResponse as Record<string, unknown>) || {}
-                }
-              }
-            ] as unknown as Content["parts"]
-          });
+          const formattedResponse =
+            parsedResponse &&
+            typeof parsedResponse === "object" &&
+            !Array.isArray(parsedResponse)
+              ? (parsedResponse as Record<string, unknown>)
+              : { output: parsedResponse };
+
+          const fnResponsePart = {
+            functionResponse: {
+              name: toolName || "tool",
+              response: formattedResponse
+            }
+          };
+
+          const lastContent = geminiContents[geminiContents.length - 1];
+          if (
+            lastContent &&
+            lastContent.role === "user" &&
+            Array.isArray(lastContent.parts)
+          ) {
+            (lastContent.parts as Array<Record<string, unknown>>).push(fnResponsePart);
+          } else {
+            geminiContents.push({
+              role: "user",
+              parts: [fnResponsePart] as unknown as Content["parts"]
+            });
+          }
         }
       }
 

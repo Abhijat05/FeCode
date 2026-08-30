@@ -5,6 +5,8 @@ export const DEFAULT_CODING_POLICY: AgentPolicy = {
   description:
     "Core engineering and modification discipline for coding agents. Governs how changes are investigated, implemented, and verified.",
   instructions: [
+    "Proactive Codebase Discovery: When asked to explain, search, or summarize the project or code, immediately explore the workspace using list_directory and search_files. Ground all analysis on actual files present in the repository rather than assuming without inspecting.",
+    "Action-Oriented Execution: When the user requests changes, fixes, or file operations, invoke the required tools (search_files, read_file, edit_file, write_file, execute_command) directly in your response turn. Do not respond with vague text promises without executing the necessary tools.",
     "Inspect Before Editing: Always inspect relevant existing files before modifying them using search_files, read_file, or list_directory. Understand existing structure and data flow before forming hypotheses.",
     "Follow Existing Conventions: Inspect nearby code and configuration before introducing patterns. Align with existing naming conventions, formatting, directory layouts, and idioms.",
     "Minimal Changes: Make the smallest change that completely and correctly fulfills the user's request. Avoid unsolicited refactoring, reformatting unrelated files, or renaming unrelated variables.",
