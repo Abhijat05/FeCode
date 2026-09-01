@@ -242,7 +242,7 @@ export class DefaultCheckpointManager implements CheckpointManager {
   public async requestApproval(
     request: CheckpointApprovalRequest
   ): Promise<CheckpointRecord> {
-    const checkpointId = generateCheckpointId();
+    const checkpointId = request.checkpointId || generateCheckpointId();
     const now = Date.now();
     const ttl = request.ttlMs ?? 300000; // default 5 minutes
     const expiresAt = now + ttl;

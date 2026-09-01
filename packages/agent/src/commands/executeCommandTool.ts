@@ -48,11 +48,11 @@ export class ExecuteCommandTool
       signal: context.signal
     });
 
-    if (result.error) {
+    if (result.error || (result.exitCode !== null && result.exitCode !== 0)) {
       return {
         success: false,
         error: {
-          message: result.error,
+          message: result.error || `Command exited with non-zero status code: ${result.exitCode}`,
           code: result.timedOut ? "TIMEOUT" : "EXECUTION_FAILED"
         },
         output: result

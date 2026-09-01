@@ -83,6 +83,8 @@ export function compareWorkspaceFingerprints(
       const currentMeta = current.fileFingerprints[filePath];
       if (!currentMeta) {
         reasons.push(`Tracked file "${filePath}" is missing in current workspace`);
+      } else if (savedMeta.size !== undefined && currentMeta.size === undefined) {
+        reasons.push(`Tracked file "${filePath}" was deleted from disk`);
       } else if (
         savedMeta.size !== undefined &&
         currentMeta.size !== undefined &&

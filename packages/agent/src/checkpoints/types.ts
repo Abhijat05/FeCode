@@ -76,6 +76,7 @@ export interface CheckpointConsumptionResult {
 }
 
 export interface CheckpointApprovalRequest {
+  checkpointId?: string;
   runId: string;
   planId?: string;
   stepId?: string;

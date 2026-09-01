@@ -228,6 +228,7 @@ export class DefaultExecutionHandoffManager implements ExecutionHandoffManager {
 
         if (this.options.checkpointManager.requestApproval) {
           cpRecord = await this.options.checkpointManager.requestApproval({
+            checkpointId: cpRes.checkpoint?.id,
             runId: context.runId,
             planId: context.planId,
             stepId: step.stepId,
@@ -312,9 +313,10 @@ export class DefaultExecutionHandoffManager implements ExecutionHandoffManager {
         }
         return blockedRes;
       }
+    }
 
-      // 6. Explicit User Approval Boundary
-      if (prep.requiresExplicitApproval && this.options.approvalResolver) {
+    // 6. Explicit User Approval Boundary
+    if (prep.requiresExplicitApproval && this.options.approvalResolver) {
         const approvalRequest: ApprovalRequest = {
           id: `approval-${step.stepId}-${Date.now()}`,
           toolName: prep.toolCall?.name || step.type,
@@ -330,7 +332,7 @@ export class DefaultExecutionHandoffManager implements ExecutionHandoffManager {
         );
 
         if (decision.approved) {
-          if (cpRecord && this.options.checkpointManager.approve) {
+          if (cpRecord && this.options.checkpointManager?.approve) {
             const approvedRecord = await this.options.checkpointManager.approve(
               cpRecord.checkpointId,
               {
@@ -370,7 +372,7 @@ export class DefaultExecutionHandoffManager implements ExecutionHandoffManager {
             };
 
             // 7. Validate & Single-Use Checkpoint Consumption
-            if (this.options.checkpointManager.consume) {
+            if (this.options.checkpointManager?.consume) {
               const consumeRes = await this.options.checkpointManager.consume(
                 cpRecord.checkpointId,
                 {
@@ -448,7 +450,7 @@ export class DefaultExecutionHandoffManager implements ExecutionHandoffManager {
             }
           }
         } else {
-          if (cpRecord && this.options.checkpointManager.reject) {
+          if (cpRecord && this.options.checkpointManager?.reject) {
             const rejectedRecord = await this.options.checkpointManager.reject(
               cpRecord.checkpointId,
               decision.reason
@@ -500,7 +502,6 @@ export class DefaultExecutionHandoffManager implements ExecutionHandoffManager {
           return rejectRes;
         }
       }
-    }
 
     // 8. Pre-Execution Abort Signal Check
     if (context.signal?.aborted) {

@@ -170,7 +170,7 @@ export class EditFileTool
         };
       }
 
-      const proposedContent = originalContent.replace(input.oldText, input.newText);
+      const proposedContent = originalContent.replace(input.oldText, () => input.newText);
       const bytesWritten = Buffer.byteLength(proposedContent, "utf-8");
 
       if (bytesWritten > this.maxBytes) {

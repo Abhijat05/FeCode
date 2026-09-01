@@ -169,7 +169,7 @@ export class SafeEditValidator {
         };
       }
 
-      const proposedContent = originalContent.replace(oldText, newText);
+      const proposedContent = originalContent.replace(oldText, () => newText);
       const diff = createUnifiedDiff(displayPath, originalContent, proposedContent);
 
       return {
