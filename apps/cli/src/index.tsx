@@ -13,6 +13,7 @@ import {
   registerBuiltinSkills,
   SkillActivationPolicy,
   DefaultSessionStore,
+  DefaultRunHistoryStore,
   DefaultProductRuntime,
   type PersistedSessionData
 } from "@fecode/agent";
@@ -43,21 +44,49 @@ async function main(): Promise<void> {
     try {
       initialSessionData = await sessionStore.load(resumeId);
       cwd = initialSessionData.workingDirectory;
-      try {
-        await fs.stat(cwd);
-      } catch {
-        console.error(
-          `⚠ Working directory no longer exists\n\nPath:\n  ${cwd}\n`
-        );
+    } catch (err: unknown) {
+      const historyStore = new DefaultRunHistoryStore();
+      const runRecord = await historyStore.getRun(resumeId);
+      if (runRecord) {
+        initialSessionData = {
+          version: 1,
+          sessionId: runRecord.runId,
+          workingDirectory: process.cwd(),
+          provider: "gemini",
+          model: "gemini-2.5-flash",
+          startedAt: new Date(runRecord.startedAt).toISOString(),
+          updatedAt: new Date(
+            runRecord.completedAt || runRecord.startedAt
+          ).toISOString(),
+          taskCount: runRecord.tools.length,
+          status: runRecord.finalStatus === "completed" ? "completed" : "idle",
+          completedTaskSummaries: [],
+          messages: []
+        };
+        cwd = initialSessionData.workingDirectory;
+      } else {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (
+          msg.includes("Session not found") ||
+          msg.includes("corrupted") ||
+          msg.includes("version")
+        ) {
+          console.error(`✗ ${msg}`);
+        } else {
+          console.error(
+            `✗ Unable to load session\n\nSession:\n  ${resumeId}\n\nReason:\n  ${msg}\n`
+          );
+        }
         process.exit(1);
       }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes("Session not found") || msg.includes("corrupted") || msg.includes("version")) {
-        console.error(`✗ ${msg}`);
-      } else {
-        console.error(`✗ Unable to load session\n\nSession:\n  ${resumeId}\n\nReason:\n  ${msg}\n`);
-      }
+    }
+
+    try {
+      await fs.stat(cwd);
+    } catch {
+      console.error(
+        `⚠ Working directory no longer exists\n\nPath:\n  ${cwd}\n`
+      );
       process.exit(1);
     }
   }

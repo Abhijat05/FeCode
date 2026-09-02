@@ -15,6 +15,8 @@ import {
   PlanFormatter,
   transitionPlanStatus,
   DefaultProductRuntime,
+  createInitialUIState,
+  reduceUIState,
   type ProductRuntime,
   type UIState,
   type Agent,
@@ -152,6 +154,12 @@ export const App: React.FC<AppProps> = ({
   const [completedSummaries, setCompletedSummaries] = useState<
     TaskCompletionSummary[]
   >(() => initialSessionData?.completedTaskSummaries || []);
+  const completedSummariesRef = useRef<TaskCompletionSummary[]>(
+    initialSessionData?.completedTaskSummaries || []
+  );
+  useEffect(() => {
+    completedSummariesRef.current = completedSummaries;
+  }, [completedSummaries]);
   const [lastTaskStatus, setLastTaskStatus] = useState<SessionStatus>(
     () => initialSessionData?.status || "idle"
   );
@@ -284,9 +292,10 @@ export const App: React.FC<AppProps> = ({
     ) => {
       try {
         const summaries = newSummary
-          ? [...completedSummaries, newSummary]
-          : completedSummaries;
+          ? [...completedSummariesRef.current, newSummary]
+          : completedSummariesRef.current;
         if (newSummary) {
+          completedSummariesRef.current = summaries;
           setCompletedSummaries(summaries);
         }
         const state = (
@@ -318,13 +327,16 @@ export const App: React.FC<AppProps> = ({
       providerName,
       modelName,
       taskCount,
-      completedSummaries,
       agent
     ]
   );
 
-  const handleExit = useCallback(() => {
-    persistState(lastTaskStatus).catch(() => {});
+  const handleExit = useCallback(async () => {
+    try {
+      await persistState(lastTaskStatus);
+    } catch {
+      // ignore
+    }
     if (onExit) {
       onExit();
     } else {
@@ -2053,6 +2065,17 @@ export const App: React.FC<AppProps> = ({
       const toolCallMap = new Map<string, string>();
 
       for await (const event of stream) {
+        setUiState((prev) =>
+          reduceUIState(
+            prev ||
+              createInitialUIState({
+                cwd,
+                sessionId
+              }),
+            event
+          )
+        );
+
         if (event.type === "text") {
           const chunk = event.content;
           accumulatedRawText += chunk;
@@ -2422,6 +2445,50 @@ export const App: React.FC<AppProps> = ({
                 : t
             )
           );
+        } else if (event.type === "plan_step_failed") {
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    response:
+                      t.response +
+                      `✗ Step ${event.stepId} failed${event.error ? `: ${event.error}` : ""}\n`
+                  }
+                : t
+            )
+          );
+        } else if (event.type === "plan_execution_failed") {
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    status: "error",
+                    error: event.reason,
+                    response:
+                      t.response +
+                      `\n✗ Plan execution failed: ${event.reason || "Unknown error"}\n`
+                  }
+                : t
+            )
+          );
+          setLastTaskStatus("blocked");
+        } else if (event.type === "plan_execution_cancelled") {
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    status: "cancelled",
+                    response:
+                      t.response +
+                      `\n⊘ Plan execution cancelled: ${event.reason || "Cancelled by user"}\n`
+                  }
+                : t
+            )
+          );
+          setLastTaskStatus("cancelled");
         } else if (event.type === "task_summary") {
           let summaryHeader = "";
           if (event.summary.status === "completed") {

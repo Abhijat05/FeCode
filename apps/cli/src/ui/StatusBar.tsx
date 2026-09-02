@@ -80,6 +80,8 @@ export const StatusBar: React.FC<StatusBarProps> = ({
     }
 
     switch (status.toLowerCase()) {
+      case "in_progress":
+      case "generating":
       case "executing":
       case "running":
         return <Text color="green">{spinner}Executing task...</Text>;

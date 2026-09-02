@@ -27,6 +27,8 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const getStatusBadge = () => {
     switch (status.toLowerCase()) {
+      case "in_progress":
+      case "generating":
       case "executing":
       case "running":
         return <Text bold color="green">● LIVE (EXECUTING)</Text>;

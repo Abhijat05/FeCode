@@ -65,7 +65,7 @@ export function formatApprovalArguments(
           : value;
       entries.push(`${key}: ${displayVal}`);
     } else {
-      const jsonStr = JSON.stringify(value);
+      const jsonStr = JSON.stringify(value) ?? "undefined";
       const displayVal =
         jsonStr.length > maxStringLength
           ? jsonStr.slice(0, maxStringLength) + "..."
@@ -89,12 +89,11 @@ export class InteractiveApprovalResolver implements ApprovalResolver {
 
     this.pendingRequest = request;
 
-    if (this.onRequest) {
-      this.onRequest(request);
-    }
-
     return new Promise<ApprovalDecision>((res) => {
       this.pendingResolver = res;
+      if (this.onRequest) {
+        this.onRequest(request);
+      }
     });
   }
 
