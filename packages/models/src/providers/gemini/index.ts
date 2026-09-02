@@ -20,6 +20,7 @@ interface GeminiStreamChunk {
   candidates?: Array<{
     content?: {
       parts?: Array<{
+        text?: string;
         functionCall?: { name: string; args?: Record<string, unknown> };
       }>;
     };
@@ -67,10 +68,24 @@ export class GeminiModelProvider implements ModelProvider {
         throw new Error("Request aborted");
       }
 
+      const systemParts: string[] = [];
+      if (request.system) {
+        systemParts.push(request.system);
+      }
+      for (const msg of request.messages) {
+        if (msg.role === "system" && msg.content) {
+          systemParts.push(msg.content);
+        }
+      }
+      const combinedSystemInstruction =
+        systemParts.length > 0 ? systemParts.join("\n\n") : undefined;
+
       const geminiContents: Content[] = [];
 
       for (const msg of request.messages) {
-        if (msg.role === "user") {
+        if (msg.role === "system") {
+          continue;
+        } else if (msg.role === "user") {
           const last = geminiContents[geminiContents.length - 1];
           if (
             last &&
@@ -186,7 +201,7 @@ export class GeminiModelProvider implements ModelProvider {
         model: this.model,
         contents: geminiContents,
         config: {
-          systemInstruction: request.system ? request.system : undefined,
+          systemInstruction: combinedSystemInstruction,
           tools: geminiTools
         }
       });
@@ -200,9 +215,16 @@ export class GeminiModelProvider implements ModelProvider {
         }
 
         const chunk = rawChunk as GeminiStreamChunk;
+        const candidateParts = chunk.candidates?.[0]?.content?.parts;
 
         if (chunk.text) {
           yield { type: "text_delta", content: chunk.text };
+        } else if (candidateParts) {
+          for (const part of candidateParts) {
+            if (part.text) {
+              yield { type: "text_delta", content: part.text };
+            }
+          }
         }
 
         if (chunk.functionCalls && Array.isArray(chunk.functionCalls)) {
@@ -215,8 +237,8 @@ export class GeminiModelProvider implements ModelProvider {
             };
             yield { type: "tool_call", call };
           }
-        } else if (chunk.candidates?.[0]?.content?.parts) {
-          for (const part of chunk.candidates[0].content.parts) {
+        } else if (candidateParts) {
+          for (const part of candidateParts) {
             if (part.functionCall) {
               callCounter++;
               const call: ToolCall = {

@@ -198,9 +198,20 @@ export class DefaultRepositoryExplorer implements RepositoryExplorer {
       return;
     }
 
-    const normalizedTarget = filePath.replace(/\\/g, "/");
+    const normalizedTarget = filePath.replace(/\\/g, "/").replace(/^\.\//, "");
     for (const [key, result] of Array.from(this.cache.entries())) {
-      if (result.relevantFiles.some((f) => f.path.includes(normalizedTarget))) {
+      if (
+        result.relevantFiles.some((f) => {
+          const fNorm = f.path.replace(/\\/g, "/").replace(/^\.\//, "");
+          return (
+            fNorm === normalizedTarget ||
+            normalizedTarget.endsWith("/" + fNorm) ||
+            fNorm.endsWith("/" + normalizedTarget) ||
+            fNorm.includes(normalizedTarget) ||
+            normalizedTarget.includes(fNorm)
+          );
+        })
+      ) {
         this.cache.delete(key);
       }
     }

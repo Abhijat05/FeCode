@@ -177,11 +177,13 @@ export class OpenAIModelProvider implements ModelProvider {
       }
 
       for (const [, callData] of accumulatedToolCalls) {
-        let parsedArgs: unknown = callData.arguments;
-        try {
-          parsedArgs = JSON.parse(callData.arguments);
-        } catch {
-          // fallback to raw string
+        let parsedArgs: unknown = {};
+        if (callData.arguments && callData.arguments.trim()) {
+          try {
+            parsedArgs = JSON.parse(callData.arguments);
+          } catch {
+            parsedArgs = callData.arguments;
+          }
         }
 
         const call: ToolCall = {

@@ -1358,6 +1358,13 @@ export class AgentRuntime implements Agent {
             turnError.message.toLowerCase().includes("abort") ||
             turnError.message.toLowerCase().includes("cancel");
           this.state.status = isCancelled ? "cancelled" : "failed";
+          if (isCancelled) {
+            this.completionTracker.recordCancelled();
+            yield* this.transitionRunState("cancelled", "Run cancelled");
+          } else {
+            this.completionTracker.recordBlocked(turnError.message);
+            yield* this.transitionRunState("failed", turnError.message);
+          }
           break;
         }
 
@@ -2070,11 +2077,12 @@ export class AgentRuntime implements Agent {
       if (this.currentPlan) {
         this.diagnosticsManager.recordPlan(runId, this.currentPlan);
       }
+      const currentRunState = this.currentRunStateMachine.getState();
       this.currentRunStateMachine.transition("cancelled", "Run cancelled");
       this.state.status = "cancelled";
       this.diagnosticsManager.recordStateChange(runId, {
         timestamp: Date.now(),
-        from: "executing",
+        from: currentRunState,
         to: "cancelled",
         reason: "Run cancelled"
       });

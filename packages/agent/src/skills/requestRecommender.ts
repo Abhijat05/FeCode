@@ -46,7 +46,18 @@ const KEYWORD_BOOST: Array<{ keywords: string[]; skillName: string; bonus: numbe
   { keywords: ["test", "testing", "jest", "vitest", "coverage", "mock"], skillName: "frontend-testing", bonus: 15 }
 ];
 
-const BACKEND_PENALTY_KEYWORDS = ["database", "postgres", "postgresql", "sql", "migration", "api", "backend", "middleware", "worker", "server", "docker", "index"];
+const BACKEND_PENALTY_KEYWORDS = [
+  "database",
+  "postgres",
+  "postgresql",
+  "sql",
+  "migration",
+  "backend",
+  "middleware",
+  "worker",
+  "server",
+  "docker"
+];
 
 const FRONTEND_ACTION_VERBS = new Set(["build", "create", "implement", "make", "add", "write", "refactor", "update", "fix", "change", "new", "design", "style", "redesign"]);
 

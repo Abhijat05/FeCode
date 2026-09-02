@@ -37,7 +37,7 @@ describe("recommendSkills", () => {
       "frontend-debugging",
       "accessibility",
       "typescript-frontend",
-      "testing-frontend",
+      "frontend-testing",
       "react",
       "tailwind"
     ]);

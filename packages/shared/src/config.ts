@@ -44,7 +44,7 @@ export function loadConfig(options: LoadConfigOptions = {}): FeCodeConfig {
     dotenv.config({ path: envPath, override: false });
   }
 
-  const provider = process.env.FE_PROVIDER || "openai";
+  const provider = process.env.FE_PROVIDER || "gemini";
   const defaultModel =
     provider === "gemini"
       ? "gemini-2.5-flash"
@@ -55,7 +55,8 @@ export function loadConfig(options: LoadConfigOptions = {}): FeCodeConfig {
   const model = process.env.FE_MODEL || defaultModel;
   const openaiApiKey = process.env.OPENAI_API_KEY;
   const geminiApiKey = process.env.GEMINI_API_KEY;
-  const ollamaBaseUrl = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
+  const ollamaBaseUrl =
+    process.env.OLLAMA_BASE_URL || "http://localhost:11434/v1";
 
   return {
     provider,
@@ -71,7 +72,7 @@ export function maskSecret(secret?: string): string {
     return "[NOT SET]";
   }
 
-  if (secret.length <= 6) {
+  if (secret.length <= 8) {
     return "[SET]";
   }
 

@@ -58,9 +58,9 @@ describe("loadConfig", () => {
     delete process.env.OLLAMA_BASE_URL;
 
     const config = loadConfig({ cwd: tmpDir });
-    expect(config.provider).toBe("openai");
-    expect(config.model).toBe("gpt-4o");
-    expect(config.ollamaBaseUrl).toBe("http://localhost:11434");
+    expect(config.provider).toBe("gemini");
+    expect(config.model).toBe("gemini-2.5-flash");
+    expect(config.ollamaBaseUrl).toBe("http://localhost:11434/v1");
     expect(config.openaiApiKey).toBeUndefined();
     expect(config.geminiApiKey).toBeUndefined();
   });
@@ -77,5 +77,8 @@ describe("maskSecret", () => {
 
     const maskedShort = maskSecret("abc");
     expect(maskedShort).toBe("[SET]");
+
+    const maskedEight = maskSecret("12345678");
+    expect(maskedEight).toBe("[SET]");
   });
 });

@@ -202,9 +202,20 @@ export class DefaultCodeContextSelector implements CodeContextSelector {
       return;
     }
 
-    const normalized = filePath.replace(/\\/g, "/");
+    const normalized = filePath.replace(/\\/g, "/").replace(/^\.\//, "");
     for (const [key, result] of Array.from(this.cache.entries())) {
-      if (result.regions.some((r) => r.path.includes(normalized))) {
+      if (
+        result.regions.some((r) => {
+          const rNorm = r.path.replace(/\\/g, "/").replace(/^\.\//, "");
+          return (
+            rNorm === normalized ||
+            normalized.endsWith("/" + rNorm) ||
+            rNorm.endsWith("/" + normalized) ||
+            rNorm.includes(normalized) ||
+            normalized.includes(rNorm)
+          );
+        })
+      ) {
         this.cache.delete(key);
       }
     }

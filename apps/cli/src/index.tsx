@@ -10,6 +10,7 @@ import {
   ProjectDetector,
   SkillLoader,
   DefaultSkillRegistry,
+  registerBuiltinSkills,
   SkillActivationPolicy,
   DefaultSessionStore,
   DefaultProductRuntime,
@@ -69,9 +70,20 @@ async function main(): Promise<void> {
   }
 
   const config = loadConfig();
-  // Precedence: explicit config > persisted session config > defaults
-  const providerName = config.provider || initialSessionData?.provider || "gemini";
-  const modelName = config.model || initialSessionData?.model || (providerName === "openai" ? "gpt-4o" : "gemini-2.5-flash");
+  // Precedence: explicit env vars > persisted session config > defaults
+  const providerName =
+    process.env.FE_PROVIDER ||
+    initialSessionData?.provider ||
+    config.provider ||
+    "gemini";
+  const modelName =
+    process.env.FE_MODEL ||
+    initialSessionData?.model ||
+    (providerName === "openai"
+      ? "gpt-4o"
+      : providerName === "ollama"
+        ? "qwen2.5-coder"
+        : "gemini-2.5-flash");
 
   const approvalResolver = new InteractiveApprovalResolver();
 
@@ -96,6 +108,7 @@ async function main(): Promise<void> {
     const activationPolicy = new SkillActivationPolicy();
 
     // We can lazily load built-in skills asynchronously.
+    registerBuiltinSkills(skillRegistry);
     const builtinSkills = await skillLoader.discoverSkills(skillLoader.getBuiltinSkillsDir());
     for (const s of builtinSkills) {
       skillRegistry.register(s);

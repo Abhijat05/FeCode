@@ -16,7 +16,7 @@ export function recommendSkills(projectContext?: ProjectContext): string[] {
   }
 
   if (projectContext.testing && projectContext.testing.length > 0) {
-    skills.push("testing-frontend");
+    skills.push("frontend-testing");
   }
 
   if (projectContext.framework === "react") {

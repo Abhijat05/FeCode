@@ -101,6 +101,18 @@ export class DefaultPlanExecutor implements PlanExecutor {
       activePlan = plan;
     }
 
+    if (isResume) {
+      activePlan = {
+        ...activePlan,
+        steps: activePlan.steps.map((s) => {
+          if (s.status !== "completed") {
+            return { ...s, status: "pending", error: undefined };
+          }
+          return s;
+        })
+      };
+    }
+
     if (this.options.diagnosticsManager) {
       this.options.diagnosticsManager.recordPlan(context.runId, activePlan);
     }

@@ -150,6 +150,10 @@ export class DefaultRunDiagnosticsManager implements RunDiagnosticsManager {
 
     if (status === "completed") {
       summary.completedPlanSteps = (summary.completedPlanSteps ?? 0) + 1;
+      if (summary.failedPlanStep === stepId) {
+        summary.failedPlanStep = undefined;
+        summary.failureReason = undefined;
+      }
     } else if (status === "skipped") {
       summary.skippedPlanSteps = (summary.skippedPlanSteps ?? 0) + 1;
     } else if (status === "failed") {

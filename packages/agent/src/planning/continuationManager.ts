@@ -606,13 +606,26 @@ export class DefaultRecoveryContinuationManager
 
     // Gates passed! Transition plan to executing
     try {
-      if (plan.status === "blocked" || plan.status === "approved") {
+      if (plan.status === "blocked" || plan.status === "approved" || plan.status === "failed") {
         const updated = transitionPlanStatus(plan, "executing");
         plan.status = updated.status;
       }
     } catch {
       // ignore
     }
+
+    // Reset remaining non-completed steps to pending
+    const remainingStepIdSet = new Set(preparation.remainingSteps.map((s) => s.stepId));
+    plan.steps = plan.steps.map((s) => {
+      if (remainingStepIdSet.has(s.stepId) && s.status !== "completed") {
+        return {
+          ...s,
+          status: "pending",
+          error: undefined
+        };
+      }
+      return s;
+    });
 
     const resumedStepIds = preparation.remainingSteps.map((s) => s.stepId);
 

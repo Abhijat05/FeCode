@@ -16,10 +16,10 @@ function generateRunId(): string {
 const LEGAL_TRANSITIONS: Record<AgentRunStatus, ReadonlySet<AgentRunStatus>> = {
   idle: new Set(["planning", "cancelled"]),
   planning: new Set(["executing", "verifying", "reconciling", "completed", "failed", "cancelled"]),
-  executing: new Set(["verifying", "reconciling", "recovering", "completed", "failed", "cancelled"]),
-  verifying: new Set(["executing", "reconciling", "recovering", "completed", "failed", "cancelled"]),
-  reconciling: new Set(["completed", "failed", "executing", "recovering", "cancelled"]),
-  recovering: new Set(["verifying", "reconciling", "executing", "completed", "failed", "cancelled"]),
+  executing: new Set(["verifying", "reconciling", "recovering", "completed", "failed", "cancelled", "idle"]),
+  verifying: new Set(["executing", "reconciling", "recovering", "completed", "failed", "cancelled", "idle"]),
+  reconciling: new Set(["completed", "failed", "executing", "recovering", "cancelled", "idle"]),
+  recovering: new Set(["verifying", "reconciling", "executing", "completed", "failed", "cancelled", "idle"]),
   completed: new Set([]),
   failed: new Set([]),
   cancelled: new Set([])
