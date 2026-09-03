@@ -69,12 +69,19 @@ export class GeminiModelProvider implements ModelProvider {
       }
 
       const systemParts: string[] = [];
-      if (request.system) {
-        systemParts.push(request.system);
+      const seenSystem = new Set<string>();
+      if (request.system && request.system.trim()) {
+        const trimmed = request.system.trim();
+        systemParts.push(trimmed);
+        seenSystem.add(trimmed);
       }
       for (const msg of request.messages) {
-        if (msg.role === "system" && msg.content) {
-          systemParts.push(msg.content);
+        if (msg.role === "system" && msg.content && msg.content.trim()) {
+          const trimmed = msg.content.trim();
+          if (!seenSystem.has(trimmed)) {
+            systemParts.push(trimmed);
+            seenSystem.add(trimmed);
+          }
         }
       }
       const combinedSystemInstruction =

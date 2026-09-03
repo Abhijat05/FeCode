@@ -18,6 +18,40 @@ const VALID_TRANSITIONS: Record<PlanStatus, PlanStatus[]> = {
   superseded: []
 };
 
+export function validatePlanDependencies(steps: PlanStep[]): {
+  valid: boolean;
+  error?: string;
+} {
+  const stepMap = new Map<string, PlanStep>();
+  for (const s of steps) {
+    stepMap.set(s.stepId, s);
+  }
+
+  for (const step of steps) {
+    const visited = new Set<string>();
+    const stack = [...step.dependencies];
+
+    while (stack.length > 0) {
+      const depId = stack.pop()!;
+      if (depId === step.stepId) {
+        return {
+          valid: false,
+          error: `Circular dependency detected in plan: step '${step.stepId}' depends on itself via cycle.`
+        };
+      }
+      if (!visited.has(depId)) {
+        visited.add(depId);
+        const depStep = stepMap.get(depId);
+        if (depStep && depStep.dependencies) {
+          stack.push(...depStep.dependencies);
+        }
+      }
+    }
+  }
+
+  return { valid: true };
+}
+
 export function createTaskPlan(params: {
   planId?: string;
   runId: string;
@@ -46,6 +80,11 @@ export function createTaskPlan(params: {
     status: step.status || "pending",
     dependencies: step.dependencies || []
   }));
+
+  const validation = validatePlanDependencies(orderedSteps);
+  if (!validation.valid) {
+    throw new Error(validation.error);
+  }
 
   return {
     planId,
