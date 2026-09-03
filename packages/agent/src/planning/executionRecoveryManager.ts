@@ -127,6 +127,7 @@ export class DefaultExecutionRecoveryManager implements ExecutionRecoveryManager
                     : step.intent?.type === "modify_file"
                       ? "modify_file"
                       : "restore_file",
+                content: step.intent?.expectedChange || "",
                 reason: `Repair missing expected file: ${missingFile}`
               });
             } else {

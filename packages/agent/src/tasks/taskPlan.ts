@@ -89,9 +89,30 @@ export function failTaskStep(
       : plan.steps.findIndex((s) => s.id === stepIdOrIndex);
   if (stepIndex < 0 || stepIndex >= plan.steps.length) return plan;
 
+  const targetStepId = plan.steps[stepIndex].id;
+
+  // Find all transitive dependents
+  const stepsToSkip = new Set<string>();
+  const findDependents = (depId: string) => {
+    for (const step of plan.steps) {
+      if (
+        step.dependencies &&
+        step.dependencies.includes(depId) &&
+        !stepsToSkip.has(step.id)
+      ) {
+        stepsToSkip.add(step.id);
+        findDependents(step.id);
+      }
+    }
+  };
+  findDependents(targetStepId);
+
   const updatedSteps = plan.steps.map((step, idx) => {
     if (idx === stepIndex) {
       return { ...step, status: "failed" as TaskStatus, error };
+    }
+    if (stepsToSkip.has(step.id) && step.status === "pending") {
+      return { ...step, status: "skipped" as TaskStatus };
     }
     return step;
   });
@@ -133,11 +154,21 @@ export function replanTask(
   const completedSteps = plan.steps.filter(
     (s) => s.status === "completed" || s.status === "skipped"
   );
+
+  let maxId = 0;
+  for (const step of plan.steps) {
+    const match = step.id.match(/\d+/);
+    if (match) {
+      const num = parseInt(match[0], 10);
+      if (num > maxId) maxId = num;
+    }
+  }
+
   const taskSteps: TaskStep[] = newSteps.map((s, idx) => {
     const desc = typeof s === "string" ? s : s.description;
     const deps = typeof s === "object" ? s.dependencies : undefined;
     return {
-      id: `step-${completedSteps.length + idx + 1}`,
+      id: `step-${maxId + idx + 1}`,
       description: desc,
       status: "pending",
       dependencies: deps

@@ -114,7 +114,7 @@ export async function detectPlanStaleness(
         const stats = await fs.stat(fullPath);
         if (
           (initialFileFp.size !== undefined && stats.size !== initialFileFp.size) ||
-          (initialFileFp.mtimeMs !== undefined && Math.abs(stats.mtimeMs - initialFileFp.mtimeMs) > 1)
+          (initialFileFp.mtimeMs !== undefined && Math.abs(stats.mtimeMs - initialFileFp.mtimeMs) > 1000)
         ) {
           return {
             stale: true,

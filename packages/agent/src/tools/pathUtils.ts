@@ -23,7 +23,12 @@ export function resolveSafePath(
     : rootDir;
 
   const relative = path.relative(rootDir, targetPath);
-  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+  if (
+    relative === ".." ||
+    relative.startsWith(".." + path.sep) ||
+    relative.startsWith("../") ||
+    path.isAbsolute(relative)
+  ) {
     return {
       error: {
         message: `Access denied: path traversal outside project root is not permitted (${requestedPath || ""}).`,

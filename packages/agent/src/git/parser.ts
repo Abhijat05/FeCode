@@ -68,7 +68,7 @@ export function parseGitStatusPorcelain(output: string): ParsedGitStatus {
       let filePath = rest;
       let origPath: string | undefined;
 
-      if (rest.includes(" -> ")) {
+      if ((indexStatus === "R" || worktreeStatus === "R") && rest.includes(" -> ")) {
         const parts = rest.split(" -> ");
         origPath = parts[0].trim().replace(/^["']|["']$/g, "").replace(/\\/g, "/");
         filePath = parts[1].trim().replace(/^["']|["']$/g, "").replace(/\\/g, "/");

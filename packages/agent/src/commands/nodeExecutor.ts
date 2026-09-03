@@ -21,13 +21,13 @@ export function prepareChildEnvironment(
   const env: Record<string, string> = {};
 
   for (const [key, value] of Object.entries(process.env)) {
-    if (value !== undefined && !SENSITIVE_ENV_KEYS.has(key)) {
+    if (value !== undefined && !SENSITIVE_ENV_KEYS.has(key.toUpperCase())) {
       env[key] = value;
     }
   }
 
   for (const [key, value] of Object.entries(overrides)) {
-    if (!SENSITIVE_ENV_KEYS.has(key)) {
+    if (!SENSITIVE_ENV_KEYS.has(key.toUpperCase())) {
       env[key] = value;
     }
   }

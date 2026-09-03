@@ -201,9 +201,16 @@ export class TaskCompletionTracker {
 
     // If there is an active TaskPlan, check if all steps are completed
     if (options.activePlan) {
-      const allPlanStepsDone = options.activePlan.steps.every(
-        (s) => s.status === "completed" || s.status === "skipped"
+      const hasSteps = options.activePlan.steps.length > 0;
+      const hasAtLeastOneCompleted = options.activePlan.steps.some(
+        (s) => s.status === "completed"
       );
+      const allPlanStepsDone =
+        hasSteps &&
+        hasAtLeastOneCompleted &&
+        options.activePlan.steps.every(
+          (s) => s.status === "completed" || s.status === "skipped"
+        );
       if (allPlanStepsDone) {
         this.status = "completed";
       } else {

@@ -78,6 +78,7 @@ export async function performRecoverySafetyCheck(
     if (normalizePath(checkpoint.repositoryRoot) !== normalizePath(cwd)) {
       reasons.push("Checkpoint repository mismatch");
     }
+    reasons.push("Automatic file recovery is only supported in Git repositories");
   }
 
   // 3. File status comparison and conflict detection

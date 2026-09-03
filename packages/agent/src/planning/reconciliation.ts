@@ -93,12 +93,13 @@ export class DefaultFinalWorkspaceReconciler implements FinalWorkspaceReconciler
     }
 
     // 2. Check expected deleted files
+    const failedDeletions: string[] = [];
     for (const relPath of expectedDeleted) {
       const fullPath = path.isAbsolute(relPath) ? relPath : path.join(params.cwd, relPath);
       try {
         await fs.access(fullPath);
         // If still accessible, deletion failed!
-        missingFiles.push(relPath);
+        failedDeletions.push(relPath);
       } catch {
         // File is deleted as expected
         changedFiles.push(relPath);
@@ -166,6 +167,9 @@ export class DefaultFinalWorkspaceReconciler implements FinalWorkspaceReconciler
     const failureReasons: string[] = [];
     if (missingFiles.length > 0 && !policy.allowMissingExpectedFiles) {
       failureReasons.push(`Missing expected files: ${missingFiles.join(", ")}`);
+    }
+    if (failedDeletions.length > 0) {
+      failureReasons.push(`Failed to delete files: ${failedDeletions.join(", ")}`);
     }
     if (unexpectedFiles.length > 0 && !policy.allowUnexpectedFiles) {
       failureReasons.push(

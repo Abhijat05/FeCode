@@ -11,7 +11,7 @@ import {
   captureWorkspaceFingerprint,
   compareWorkspaceFingerprints
 } from "../history/workspaceFingerprint.js";
-import { createTaskPlan } from "./taskPlan.js";
+import { createTaskPlan, transitionPlanStatus } from "./taskPlan.js";
 
 export class DefaultReplanManager implements ReplanManager {
   private readonly options: ReplanManagerOptions;
@@ -305,6 +305,15 @@ export class DefaultReplanManager implements ReplanManager {
       replanCount: (previousPlan?.replanCount ?? 0) + 1,
       status: "ready"
     };
+
+    if (previousPlan) {
+      try {
+        const superseded = transitionPlanStatus(previousPlan, "superseded");
+        this.registerPlan(superseded);
+      } catch {
+        // ignore if already in terminal state
+      }
+    }
 
     // Store in planStore and diagnostics
     this.registerPlan(adaptedPlan);

@@ -37,6 +37,10 @@ export class ChangeSetBuilder {
 
     const existing = this.filesMap.get(cleanPath);
     if (existing) {
+      if (existing.operation === "added" && file.operation === "deleted") {
+        this.filesMap.delete(cleanPath);
+        return;
+      }
       existing.additions += file.additions;
       existing.deletions += file.deletions;
       existing.operation = resolveAggregatedOperation(
@@ -98,14 +102,19 @@ export class ChangeSetBuilder {
       totalDeletions
     };
 
+    const latestCommandStatus = new Map<string, boolean>();
+    for (const cmd of this.commandsList) {
+      latestCommandStatus.set(cmd.command, cmd.succeeded);
+    }
+
     const succeededCommands = new Set<string>();
     const failedCommands = new Set<string>();
 
-    for (const cmd of this.commandsList) {
-      if (cmd.succeeded) {
-        succeededCommands.add(cmd.command);
+    for (const [command, succeeded] of latestCommandStatus.entries()) {
+      if (succeeded) {
+        succeededCommands.add(command);
       } else {
-        failedCommands.add(cmd.command);
+        failedCommands.add(command);
       }
     }
 
