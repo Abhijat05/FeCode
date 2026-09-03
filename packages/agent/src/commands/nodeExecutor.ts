@@ -108,11 +108,20 @@ export class NodeCommandExecutor implements CommandExecutor {
         return;
       }
 
+      let processClosed = false;
+      child.on("close", () => {
+        processClosed = true;
+      });
+
       const timer = setTimeout(() => {
         timedOut = true;
-        child.kill("SIGTERM");
+        try {
+          child.kill("SIGTERM");
+        } catch {
+          // ignore
+        }
         setTimeout(() => {
-          if (!child.killed) {
+          if (!processClosed) {
             try {
               child.kill("SIGKILL");
             } catch {
@@ -124,7 +133,11 @@ export class NodeCommandExecutor implements CommandExecutor {
 
       const onAbort = () => {
         aborted = true;
-        child.kill("SIGTERM");
+        try {
+          child.kill("SIGTERM");
+        } catch {
+          // ignore
+        }
       };
 
       if (options.signal) {

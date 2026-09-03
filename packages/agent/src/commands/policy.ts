@@ -9,13 +9,29 @@ const DEFAULT_ALLOWED = ["npm", "npx", "pnpm", "yarn", "bun", "node"];
 export function hasUnquotedForbiddenChars(commandStr: string): boolean {
   let inQuotes = false;
   let quoteChar = "";
+  let isEscaped = false;
 
   for (let i = 0; i < commandStr.length; i++) {
     const char = commandStr[i];
+
+    if (isEscaped) {
+      isEscaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      isEscaped = true;
+      continue;
+    }
+
     if (inQuotes) {
       if (char === quoteChar) {
         inQuotes = false;
         quoteChar = "";
+      } else if (quoteChar === '"') {
+        if (char === "`" || (char === "$" && commandStr[i + 1] === "(")) {
+          return true;
+        }
       }
     } else {
       if (char === '"' || char === "'") {
@@ -35,9 +51,21 @@ export function tokenizeCommand(commandStr: string): string[] {
   let currentToken = "";
   let inQuotes = false;
   let quoteChar = "";
+  let isEscaped = false;
 
   for (let i = 0; i < commandStr.length; i++) {
     const char = commandStr[i];
+
+    if (isEscaped) {
+      currentToken += char;
+      isEscaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      isEscaped = true;
+      continue;
+    }
 
     if (inQuotes) {
       if (char === quoteChar) {

@@ -830,7 +830,7 @@ describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
         />
       );
       const frame = lastFrame();
-      expect(frame).toContain("[c] Continue [r] Replan [x] Cancel");
+      expect(frame).toContain("[r] Recover [p] Replan [x] Cancel");
     });
 
     it("renders recovery modal shortcuts when recovery modal is active", () => {

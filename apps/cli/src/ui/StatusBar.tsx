@@ -125,9 +125,9 @@ export const StatusBar: React.FC<StatusBarProps> = ({
       if (modalType === "blocked") {
         return (
           <Box>
-            <Text color="green">[c]</Text>
-            <Text color="gray"> Continue </Text>
-            <Text color="cyan">[r]</Text>
+            <Text color="yellow">[r]</Text>
+            <Text color="gray"> Recover </Text>
+            <Text color="cyan">[p]</Text>
             <Text color="gray"> Replan </Text>
             <Text color="gray">[x] Cancel</Text>
           </Box>

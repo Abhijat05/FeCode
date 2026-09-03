@@ -686,7 +686,7 @@ export class DefaultRunDiagnosticsManager implements RunDiagnosticsManager {
     if (!summary) return undefined;
 
     summary.completedAt = Date.now();
-    summary.durationMs = summary.completedAt - summary.startedAt;
+    summary.durationMs = Math.max(0, summary.completedAt - summary.startedAt);
     summary.finalStatus = status;
 
     if (status === "failed") {
