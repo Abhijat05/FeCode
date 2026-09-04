@@ -270,7 +270,20 @@ export class GeminiModelProvider implements ModelProvider {
       yield { type: "completed", usage };
     } catch (err: unknown) {
       const error = err instanceof Error ? err : new Error(String(err));
-      yield { type: "error", error };
+      let message = error.message;
+      if (
+        message.includes("API_KEY_INVALID") ||
+        message.includes("401 Unauthorized") ||
+        message.toLowerCase().includes("invalid api key")
+      ) {
+        message = `Gemini API key is invalid or unauthorized. Please check your GEMINI_API_KEY environment variable. Original error: ${error.message}`;
+      } else if (
+        message.includes("RESOURCE_EXHAUSTED") ||
+        message.includes("429 Too Many Requests")
+      ) {
+        message = `Gemini quota exceeded or rate limit reached (429 ResourceExhausted). Please wait a moment before retrying.`;
+      }
+      yield { type: "error", error: new Error(message) };
     }
   }
 }

@@ -198,7 +198,19 @@ export class OpenAIModelProvider implements ModelProvider {
       yield { type: "completed", usage };
     } catch (err: unknown) {
       const error = err instanceof Error ? err : new Error(String(err));
-      yield { type: "error", error };
+      let message = error.message;
+      if (
+        message.includes("401 Unauthorized") ||
+        message.toLowerCase().includes("incorrect api key")
+      ) {
+        message = `OpenAI API key is invalid or unauthorized. Please check your OPENAI_API_KEY environment variable. Original error: ${error.message}`;
+      } else if (
+        message.includes("429 Too Many Requests") ||
+        message.toLowerCase().includes("rate limit reached (429")
+      ) {
+        message = `OpenAI quota exceeded or rate limit reached (429 RateLimit). Please wait a moment before retrying.`;
+      }
+      yield { type: "error", error: new Error(message) };
     }
   }
 }

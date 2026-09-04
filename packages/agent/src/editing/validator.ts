@@ -22,11 +22,16 @@ export function isSecretFile(filePath: string): boolean {
     basename.startsWith(".env") ||
     basename.endsWith(".pem") ||
     basename.endsWith(".key") ||
+    basename.endsWith(".pfx") ||
+    basename.endsWith(".p12") ||
+    basename.endsWith(".kdbx") ||
     basename === "id_rsa" ||
     basename === "id_dsa" ||
     basename === "id_ed25519" ||
     basename === "credentials" ||
-    basename === "secrets.json"
+    basename === "secrets.json" ||
+    basename === ".npmrc" ||
+    basename === ".netrc"
   ) {
     return true;
   }

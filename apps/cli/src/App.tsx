@@ -1961,6 +1961,12 @@ export const App: React.FC<AppProps> = ({
         return;
       }
 
+      if (cmd === "/clear") {
+        setTurns([]);
+        setQuery("");
+        return;
+      }
+
       // Unknown command
       setTurns((prev) => [
         ...prev,
