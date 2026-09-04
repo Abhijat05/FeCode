@@ -27,8 +27,14 @@ const SECRET_PATTERNS: Array<{ pattern: RegExp; replacement: string }> = [
     replacement: "[REDACTED_PRIVATE_KEY]"
   },
   {
+    // AWS Access Key IDs
+    pattern: /AKIA[0-9A-Z]{16}/g,
+    replacement: "[REDACTED_API_KEY]"
+  },
+  {
     // Generic API Key / Token / Secret / Password in assignment or env var format
-    pattern: /(?:OPENAI_API_KEY|GEMINI_API_KEY|ANTHROPIC_API_KEY|GITHUB_TOKEN|AWS_SECRET_ACCESS_KEY|SECRET_KEY|PASSWORD|TOKEN)\s*[:=]\s*[^\s,;"']+/gi,
+    pattern:
+      /(?:OPENAI_API_KEY|GEMINI_API_KEY|ANTHROPIC_API_KEY|DEEPSEEK_API_KEY|GROQ_API_KEY|GITHUB_TOKEN|AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|SECRET_KEY|PASSWORD|TOKEN)\s*[:=]\s*[^\s,;"']+/gi,
     replacement: "[REDACTED_ENV_VAR]"
   }
 ];

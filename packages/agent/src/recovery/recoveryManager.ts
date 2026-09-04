@@ -293,6 +293,7 @@ export class DefaultRecoveryManager implements RecoveryManager {
 
       // Attempt emergency rollback
       await restoreEmergencySnapshot(emergencySnapshotPath, options.cwd);
+      await cleanupEmergencySnapshot(emergencySnapshotPath);
 
       this.lastRecord = {
         checkpointId,

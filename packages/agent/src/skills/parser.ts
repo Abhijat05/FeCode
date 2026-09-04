@@ -30,16 +30,17 @@ export function parseFrontmatter(content: string): {
     throw new Error("Invalid SKILL.md: Frontmatter starting delimiter '---' not found.");
   }
 
-  const endMatchIndex = trimmed.indexOf("\n---", 3);
-  if (endMatchIndex === -1) {
+  const match = trimmed.slice(3).match(/\r?\n---\r?\n?/);
+  if (!match || match.index === undefined) {
     throw new Error("Invalid SKILL.md: Frontmatter ending delimiter '---' not found.");
   }
 
+  const endMatchIndex = match.index + 3;
   const yamlBlock = trimmed.slice(3, endMatchIndex).trim();
-  const body = trimmed.slice(endMatchIndex + 4).trim();
+  const body = trimmed.slice(endMatchIndex + match[0].length).trim();
 
   const frontmatter: FrontmatterData = {};
-  const lines = yamlBlock.split("\n");
+  const lines = yamlBlock.split(/\r?\n/);
 
   for (const line of lines) {
     const colonIdx = line.indexOf(":");
