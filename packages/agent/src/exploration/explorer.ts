@@ -98,9 +98,9 @@ export class DefaultRepositoryExplorer implements RepositoryExplorer {
           const sample = lines.join("\n");
 
           let contentMatches = 0;
+          const lowerSample = sample.toLowerCase();
           for (const term of searchTerms) {
-            const regex = new RegExp(term, "i");
-            if (regex.test(sample)) {
+            if (lowerSample.includes(term.toLowerCase())) {
               contentMatches++;
             }
           }
