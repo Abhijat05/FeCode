@@ -349,7 +349,8 @@ export const App: React.FC<AppProps> = ({
     (input, key) => {
       // Tab: select top autocomplete suggestion
       if (key.tab && commandSuggestions.length > 0) {
-        const selected = commandSuggestions[selectedSuggestion];
+        const clamped = Math.max(0, Math.min(selectedSuggestion, commandSuggestions.length - 1));
+        const selected = commandSuggestions[clamped];
         if (selected) {
           setQuery(selected.command + " ");
           setSelectedSuggestion(0);
@@ -364,7 +365,7 @@ export const App: React.FC<AppProps> = ({
       }
       if (key.upArrow && commandSuggestions.length > 0) {
         setSelectedSuggestion((prev) =>
-          prev === 0 ? commandSuggestions.length - 1 : prev - 1
+          prev <= 0 ? commandSuggestions.length - 1 : prev - 1
         );
         return;
       }

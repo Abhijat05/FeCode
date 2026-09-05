@@ -132,6 +132,12 @@ export class DefaultGitRepository implements GitRepository {
         return res.stdout.trim();
       }
 
+      // Check symbolic-ref (works on unborn HEAD / initial commit)
+      const symRefRes = await this.runner(["symbolic-ref", "--short", "HEAD"], cwd);
+      if (symRefRes.exitCode === 0 && symRefRes.stdout.trim()) {
+        return symRefRes.stdout.trim();
+      }
+
       // If detached HEAD or initial commit
       const statusRes = await this.runner(["status", "--porcelain=v1", "-b"], cwd);
       if (statusRes.exitCode === 0) {
@@ -180,11 +186,12 @@ export class DefaultGitRepository implements GitRepository {
       }
 
       const parsed = parseGitStatusPorcelain(statusRes.stdout);
+      const branch = parsed.branch || (await this.getBranch(cwd));
       return {
         isRepository: true,
         gitAvailable: true,
         root,
-        branch: parsed.branch,
+        branch,
         files: parsed.files,
         ahead: parsed.ahead,
         behind: parsed.behind,

@@ -50,7 +50,13 @@ export class DefaultCheckpointStore implements CheckpointStore {
         encoding: "utf-8",
         mode: 0o600
       });
-      await fs.rename(tempFile, targetFile);
+      try {
+        await fs.rename(tempFile, targetFile);
+      } catch {
+        // Fallback for Windows where rename fails if target file already exists
+        await fs.unlink(targetFile).catch(() => {});
+        await fs.rename(tempFile, targetFile);
+      }
     } catch (err: unknown) {
       try {
         await fs.unlink(tempFile);
@@ -128,12 +134,35 @@ export class DefaultCheckpointStore implements CheckpointStore {
   private async pruneOldCheckpoints(activeId?: string): Promise<void> {
     try {
       const all = await this.list();
-      if (all.length <= this.maxCheckpoints) return;
+      if (all.length > this.maxCheckpoints) {
+        const nonActive = all.filter((cp) => !activeId || cp.id !== activeId);
+        const maxNonActive =
+          activeId && all.some((c) => c.id === activeId)
+            ? this.maxCheckpoints - 1
+            : this.maxCheckpoints;
 
-      const toPrune = all.slice(this.maxCheckpoints);
-      for (const cp of toPrune) {
-        if (activeId && cp.id === activeId) continue;
-        await this.remove(cp.id);
+        if (nonActive.length > maxNonActive) {
+          const toPrune = nonActive.slice(maxNonActive);
+          for (const cp of toPrune) {
+            await this.remove(cp.id);
+          }
+        }
+      }
+
+      // Clean up orphaned .tmp files older than 60 seconds
+      const entries = await fs.readdir(this.storageDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isFile() && entry.name.endsWith(".tmp")) {
+          const tmpPath = path.join(this.storageDir, entry.name);
+          try {
+            const stat = await fs.stat(tmpPath);
+            if (Date.now() - stat.mtimeMs > 60000) {
+              await fs.unlink(tmpPath).catch(() => {});
+            }
+          } catch {
+            // ignore
+          }
+        }
       }
     } catch {
       // Ignore pruning errors

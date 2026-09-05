@@ -512,6 +512,11 @@ export class DefaultPlanExecutor implements PlanExecutor {
             timestamp: Date.now()
           };
 
+          const backoff = this.retryPolicy.getBackoffMs ? this.retryPolicy.getBackoffMs(attempt) : 0;
+          if (backoff > 0) {
+            await new Promise((resolve) => setTimeout(resolve, backoff));
+          }
+
           attempt++;
         } else {
           // Non-retryable failure or attempts exhausted

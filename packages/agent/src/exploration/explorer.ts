@@ -285,15 +285,30 @@ export class DefaultRepositoryExplorer implements RepositoryExplorer {
     try {
       const entries = await fs.readdir(currentDir, { withFileTypes: true });
 
-      // Sort entries deterministically
-      entries.sort((a, b) => a.name.localeCompare(b.name));
+      // Sort entries deterministically, prioritizing priorityDirs
+      entries.sort((a, b) => {
+        if (a.isDirectory() && b.isDirectory()) {
+          const aPrio = priorityDirs.includes(a.name) ? 1 : 0;
+          const bPrio = priorityDirs.includes(b.name) ? 1 : 0;
+          if (bPrio !== aPrio) {
+            return bPrio - aPrio;
+          }
+        }
+        return a.name.localeCompare(b.name);
+      });
 
       for (const entry of entries) {
         if (signal?.aborted) return;
 
         const name = entry.name;
+        const lowerName = name.toLowerCase();
         if (entry.isDirectory()) {
-          if (isIgnoredDirectory(name) || name.startsWith(".")) {
+          if (
+            isIgnoredDirectory(name) ||
+            isIgnoredDirectory(lowerName) ||
+            lowerName === "node_modules" ||
+            name.startsWith(".")
+          ) {
             continue;
           }
           const fullPath = path.join(currentDir, name);
@@ -304,10 +319,11 @@ export class DefaultRepositoryExplorer implements RepositoryExplorer {
         } else if (entry.isFile()) {
           if (
             isIgnoredFile(name) ||
-            name.startsWith(".env") ||
-            name.endsWith(".pem") ||
-            name.endsWith(".lock") ||
-            name === "id_rsa"
+            isIgnoredFile(lowerName) ||
+            lowerName.startsWith(".env") ||
+            lowerName.endsWith(".pem") ||
+            lowerName.endsWith(".lock") ||
+            lowerName === "id_rsa"
           ) {
             continue;
           }

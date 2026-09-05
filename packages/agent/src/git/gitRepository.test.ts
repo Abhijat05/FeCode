@@ -65,4 +65,40 @@ describe("DefaultGitRepository — Phase 5F", () => {
     expect(status.branch).toBe("feature/auth");
     expect(status.files.length).toBe(1);
   });
+
+  it("handles initial commits and unborn HEAD gracefully", async () => {
+    const mockRunner: GitCommandRunner = async (args) => {
+      if (args[0] === "rev-parse" && args[1] === "--is-inside-work-tree") {
+        return { stdout: "true\n", stderr: "", exitCode: 0 };
+      }
+      if (args[0] === "rev-parse" && args[1] === "--show-toplevel") {
+        return { stdout: "D:/projects/newrepo\n", stderr: "", exitCode: 0 };
+      }
+      // branch --show-current fails or returns empty on older git for unborn head
+      if (args[0] === "branch" && args[1] === "--show-current") {
+        return { stdout: "", stderr: "", exitCode: 0 };
+      }
+      // symbolic-ref returns default branch
+      if (args[0] === "symbolic-ref" && args[1] === "--short" && args[2] === "HEAD") {
+        return { stdout: "main\n", stderr: "", exitCode: 0 };
+      }
+      if (args[0] === "status") {
+        return {
+          stdout: "## No commits yet on main\n?? index.ts\n",
+          stderr: "",
+          exitCode: 0
+        };
+      }
+      return { stdout: "", stderr: "", exitCode: 0 };
+    };
+
+    const repo = new DefaultGitRepository(mockRunner);
+    const branch = await repo.getBranch("/test");
+    expect(branch).toBe("main");
+
+    const status = await repo.getStatus("/test");
+    expect(status.isRepository).toBe(true);
+    expect(status.branch).toBe("main");
+    expect(status.files.length).toBe(1);
+  });
 });

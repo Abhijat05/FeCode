@@ -72,4 +72,14 @@ describe("DefaultStepRetryPolicy — Phase 5S", () => {
     expect(policy.requiresFreshRiskAssessment).toBe(true);
     expect(policy.requiresFreshPermission).toBe(true);
   });
+
+  it("calculates exponential backoff when backoffMs is configured", () => {
+    const backoffPolicy = new DefaultStepRetryPolicy({ maxAttempts: 3, backoffMs: 100 });
+    expect(backoffPolicy.getBackoffMs(1)).toBe(100);
+    expect(backoffPolicy.getBackoffMs(2)).toBe(200);
+    expect(backoffPolicy.getBackoffMs(3)).toBe(400);
+
+    const defaultPolicy = new DefaultStepRetryPolicy();
+    expect(defaultPolicy.getBackoffMs(1)).toBe(0);
+  });
 });

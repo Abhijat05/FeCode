@@ -397,6 +397,8 @@ export interface StepRetryPolicy {
   retryableFailures: ExecutionFeedbackKind[];
   requiresFreshRiskAssessment: boolean;
   requiresFreshPermission: boolean;
+  backoffMs?: number;
+  getBackoffMs?(attempt: number): number;
   canRetry(
     step: PlanStep,
     attemptCount: number,

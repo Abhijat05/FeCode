@@ -15,7 +15,14 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
 }) => {
   if (suggestions.length === 0) return null;
 
-  const visible = suggestions.slice(0, MAX_VISIBLE);
+  const clampedIndex = Math.max(0, Math.min(selectedIndex, suggestions.length - 1));
+  const startIndex =
+    clampedIndex >= MAX_VISIBLE
+      ? Math.min(clampedIndex - MAX_VISIBLE + 1, Math.max(0, suggestions.length - MAX_VISIBLE))
+      : 0;
+
+  const visible = suggestions.slice(startIndex, startIndex + MAX_VISIBLE);
+  const remaining = suggestions.length - (startIndex + visible.length);
 
   return (
     <Box
@@ -26,7 +33,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       marginBottom={0}
     >
       {visible.map((cmd, idx) => {
-        const isSelected = idx === selectedIndex;
+        const isSelected = startIndex + idx === clampedIndex;
         return (
           <Box key={cmd.command}>
             <Text color="cyan" bold>{isSelected ? "› " : "  "}</Text>
@@ -39,9 +46,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           </Box>
         );
       })}
-      {suggestions.length > MAX_VISIBLE && (
+      {remaining > 0 && (
         <Box>
-          <Text color="gray" dimColor>  …{suggestions.length - MAX_VISIBLE} more</Text>
+          <Text color="gray" dimColor>  …{remaining} more</Text>
         </Box>
       )}
     </Box>

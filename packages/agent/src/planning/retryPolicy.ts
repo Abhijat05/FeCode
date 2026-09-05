@@ -16,6 +16,7 @@ export interface StepRetryPolicyOptions {
   retryableFailures?: ExecutionFeedbackKind[];
   requiresFreshRiskAssessment?: boolean;
   requiresFreshPermission?: boolean;
+  backoffMs?: number;
 }
 
 export class DefaultStepRetryPolicy implements StepRetryPolicy {
@@ -23,6 +24,7 @@ export class DefaultStepRetryPolicy implements StepRetryPolicy {
   public readonly retryableFailures: ExecutionFeedbackKind[];
   public readonly requiresFreshRiskAssessment: boolean;
   public readonly requiresFreshPermission: boolean;
+  public readonly backoffMs: number;
 
   constructor(options: StepRetryPolicyOptions = {}) {
     this.maxAttempts = options.maxAttempts ?? 2;
@@ -34,6 +36,14 @@ export class DefaultStepRetryPolicy implements StepRetryPolicy {
     this.requiresFreshRiskAssessment =
       options.requiresFreshRiskAssessment ?? true;
     this.requiresFreshPermission = options.requiresFreshPermission ?? true;
+    this.backoffMs = options.backoffMs ?? 0;
+  }
+
+  public getBackoffMs(attempt: number): number {
+    if (this.backoffMs > 0) {
+      return Math.min(this.backoffMs * Math.pow(2, Math.max(0, attempt - 1)), 10000);
+    }
+    return 0;
   }
 
   public isDestructive(step: PlanStep, opType?: string): boolean {

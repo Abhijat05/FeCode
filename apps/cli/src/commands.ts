@@ -31,7 +31,7 @@ export const COMMANDS: CommandDef[] = [
  * `prefix` should include the leading `/` e.g. "/he"
  */
 export function filterCommands(prefix: string): CommandDef[] {
-  if (!prefix.startsWith("/")) return [];
-  const lower = prefix.toLowerCase();
-  return COMMANDS.filter((c) => c.command.startsWith(lower));
+  if (!prefix || !prefix.trim().startsWith("/")) return [];
+  const lower = prefix.trim().toLowerCase();
+  return COMMANDS.filter((c) => c.command.toLowerCase().startsWith(lower));
 }
