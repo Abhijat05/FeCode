@@ -202,6 +202,8 @@ export class DefaultCodeContextSelector implements CodeContextSelector {
       return;
     }
 
+    this.explorer.invalidate(filePath);
+
     const normalized = filePath.replace(/\\/g, "/").replace(/^\.\//, "");
     for (const [key, result] of Array.from(this.cache.entries())) {
       if (
@@ -212,7 +214,8 @@ export class DefaultCodeContextSelector implements CodeContextSelector {
             normalized.endsWith("/" + rNorm) ||
             rNorm.endsWith("/" + normalized) ||
             rNorm.includes(normalized) ||
-            normalized.includes(rNorm)
+            normalized.includes(rNorm) ||
+            path.resolve(rNorm) === path.resolve(normalized)
           );
         })
       ) {
@@ -223,6 +226,7 @@ export class DefaultCodeContextSelector implements CodeContextSelector {
 
   public clearCache(): void {
     this.cache.clear();
+    this.explorer.clearCache();
   }
 
   private mergeRanges(rawRanges: RawRange[], maxLinesPerRegion: number): RawRange[] {
