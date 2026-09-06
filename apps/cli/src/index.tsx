@@ -51,7 +51,7 @@ async function main(): Promise<void> {
         initialSessionData = {
           version: 1,
           sessionId: runRecord.runId,
-          workingDirectory: process.cwd(),
+          workingDirectory: runRecord.cwd || process.cwd(),
           provider: "gemini",
           model: "gemini-2.5-flash",
           startedAt: new Date(runRecord.startedAt).toISOString(),

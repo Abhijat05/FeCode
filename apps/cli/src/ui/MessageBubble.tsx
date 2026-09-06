@@ -24,7 +24,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         </Box>
         {/* Message content — indented, bright white bold */}
         <Box marginLeft={2}>
-          <Text color="whiteBright" bold>{content}</Text>
+          <Text color="whiteBright" bold wrap="wrap">{content}</Text>
         </Box>
       </Box>
     );
@@ -48,14 +48,14 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
           flexDirection="column"
         >
           <Text bold color="red">✗ Error</Text>
-          <Text color="red">{error}</Text>
+          <Text color="red" wrap="wrap">{error}</Text>
         </Box>
       ) : content ? (
         <Box flexDirection="column">
           {content.split("\n").map((line, i) => (
             <Box key={`line-${i}`}>
               <Text color="cyan" dimColor>│ </Text>
-              <Text color="white">{line}</Text>
+              <Text color="white" wrap="wrap">{line}</Text>
             </Box>
           ))}
         </Box>

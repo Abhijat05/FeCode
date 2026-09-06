@@ -845,5 +845,42 @@ describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
       expect(frame).toContain("[c] Continue [r] Replan [v] Re-check [x] Cancel");
     });
   });
+
+  describe("DiagnosticsView", () => {
+    it("renders diagnostics summary with computed duration and plan steps", () => {
+      const summary = {
+        runId: "run-diag-test-123",
+        startedAt: 10000,
+        completedAt: 15000,
+        finalStatus: "completed",
+        userRequestSummary: "Test diagnostics view",
+        totalPlanSteps: 4,
+        completedPlanSteps: 4,
+        activeSkills: ["frontend-design"]
+      };
+      const { lastFrame } = render(<DiagnosticsView summary={summary} />);
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("run-diag-test-123");
+      expect(frame).toContain("completed");
+      expect(frame).toContain("Duration: 5s");
+      expect(frame).toContain("Plan Steps: ");
+      expect(frame).toContain("4/4 completed");
+      expect(frame).toContain("frontend-design");
+    });
+
+    it("renders fallback message when summary is missing", () => {
+      const { lastFrame } = render(<DiagnosticsView />);
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("No diagnostic information available");
+    });
+
+    it("renders custom formattedOutput string", () => {
+      const { lastFrame } = render(
+        <DiagnosticsView formattedOutput="Custom formatted telemetry dump" />
+      );
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("Custom formatted telemetry dump");
+    });
+  });
 });
 

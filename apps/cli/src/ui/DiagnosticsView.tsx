@@ -19,6 +19,8 @@ export interface DiagnosticsViewProps {
     maxVerificationAttempts?: number;
     recoveryAttempts?: number;
     maxRecoveryAttempts?: number;
+    totalPlanSteps?: number;
+    completedPlanSteps?: number;
     tools?: Array<{ toolName: string; count?: number; calls?: number }>;
     commands?: Array<{ command: string; exitCode?: number | null }>;
     files?: { modified?: string[]; created?: string[]; deleted?: string[] };
@@ -62,6 +64,13 @@ export const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({
     );
   }
 
+  const duration =
+    summary.durationMs !== undefined
+      ? summary.durationMs
+      : summary.completedAt && summary.startedAt
+        ? summary.completedAt - summary.startedAt
+        : undefined;
+
   return (
     <Box
       flexDirection="column"
@@ -89,10 +98,19 @@ export const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({
         >
           {summary.finalStatus || "running"}
         </Text>
-        {summary.durationMs !== undefined && (
-          <Text color="gray"> | Duration: {Math.round(summary.durationMs / 1000)}s</Text>
+        {duration !== undefined && (
+          <Text color="gray"> | Duration: {Math.max(0, Math.round(duration / 1000))}s</Text>
         )}
       </Box>
+
+      {summary.totalPlanSteps !== undefined && (
+        <Box marginTop={0}>
+          <Text color="gray">Plan Steps: </Text>
+          <Text color="white">
+            {summary.completedPlanSteps ?? 0}/{summary.totalPlanSteps} completed
+          </Text>
+        </Box>
+      )}
 
       {summary.userRequestSummary && (
         <Box marginTop={0}>
