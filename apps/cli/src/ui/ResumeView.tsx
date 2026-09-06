@@ -84,14 +84,14 @@ export const ResumeView: React.FC<ResumeViewProps> = ({
       {originalRequest && (
         <Box marginTop={0} flexDirection="column">
           <Text color="gray">Original request:</Text>
-          <Text color="white">{originalRequest}</Text>
+          <Text color="white" wrap="wrap">{originalRequest}</Text>
         </Box>
       )}
 
       {failureReason && (
         <Box marginTop={0} flexDirection="column">
           <Text color="gray">Failure reason:</Text>
-          <Text color="red">{failureReason}</Text>
+          <Text color="red" wrap="wrap">{failureReason}</Text>
         </Box>
       )}
 
@@ -99,7 +99,7 @@ export const ResumeView: React.FC<ResumeViewProps> = ({
         <Box flexDirection="column" marginTop={0}>
           <Text color="gray">Workspace drift:</Text>
           {workspaceDrift.map((d, i) => (
-            <Text key={`drift-${i}`} color="yellow">
+            <Text key={`drift-${i}`} color="yellow" wrap="wrap">
               {"  "}⚠ {d}
             </Text>
           ))}

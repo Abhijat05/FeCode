@@ -157,11 +157,14 @@ export function replanTask(
 
   let maxId = 0;
   for (const step of plan.steps) {
-    const match = step.id.match(/\d+/);
-    if (match) {
-      const num = parseInt(match[0], 10);
-      if (num > maxId) maxId = num;
+    const matches = step.id.match(/\d+/g);
+    if (matches && matches.length > 0) {
+      const num = parseInt(matches[matches.length - 1], 10);
+      if (!isNaN(num) && num > maxId) maxId = num;
     }
+  }
+  if (maxId === 0 && plan.steps.length > 0) {
+    maxId = plan.steps.length;
   }
 
   const taskSteps: TaskStep[] = newSteps.map((s, idx) => {

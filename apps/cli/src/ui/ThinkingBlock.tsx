@@ -12,10 +12,13 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({
   tokenCount,
   summary
 }) => {
-  if (durationMs <= 0) return null;
+  if (!durationMs || isNaN(durationMs) || durationMs <= 0) return null;
 
   const seconds = (durationMs / 1000).toFixed(1);
-  const tokenText = tokenCount !== undefined ? `, ${tokenCount} tokens` : "";
+  const tokenText =
+    typeof tokenCount === "number" && !isNaN(tokenCount) && tokenCount > 0
+      ? `, ${tokenCount} tokens`
+      : "";
   const header = `Thought for ${seconds}s${tokenText}`;
 
   return (
@@ -26,7 +29,9 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({
       </Box>
       {summary && (
         <Box marginLeft={2}>
-          <Text color="gray" dimColor italic>{summary}</Text>
+          <Text color="gray" dimColor italic wrap="wrap">
+            {summary.split("\n")[0]}
+          </Text>
         </Box>
       )}
     </Box>

@@ -301,7 +301,23 @@ export const App: React.FC<AppProps> = ({
         const state = (
           agent as { getState?: () => { messages?: ModelMessage[] } }
         )?.getState?.();
-        const messages = state?.messages || [];
+        const rawMessages = state?.messages || [];
+
+        // Sanitize messages and summaries to avoid persisting empty records
+        const validSummaries = summaries.filter(
+          (s) => s && (s.request || s.status || s.taskId)
+        );
+        const validMessages = rawMessages.filter((m) => {
+          if (!m) return false;
+          if (typeof m.content === "string") {
+            return (
+              m.content.trim().length > 0 ||
+              Boolean(m.toolCalls && m.toolCalls.length > 0)
+            );
+          }
+          return true;
+        });
+
         await store.save({
           version: 1,
           sessionId,
@@ -313,8 +329,8 @@ export const App: React.FC<AppProps> = ({
           taskCount:
             explicitTaskCount !== undefined ? explicitTaskCount : taskCount,
           status,
-          completedTaskSummaries: summaries,
-          messages
+          completedTaskSummaries: validSummaries,
+          messages: validMessages
         });
       } catch {
         // Silently catch persistence error

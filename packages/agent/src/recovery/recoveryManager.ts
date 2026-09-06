@@ -223,8 +223,11 @@ export class DefaultRecoveryManager implements RecoveryManager {
           throw new Error("Recovery cancelled during execution.");
         }
 
+        const normalizedRel = relPath.replace(/\\/g, "/");
         const fullPath = path.resolve(options.cwd, relPath);
-        const currEntry = currentStatus?.files.find((f) => f.path === relPath);
+        const currEntry = currentStatus?.files.find(
+          (f) => f.path.replace(/\\/g, "/") === normalizedRel
+        );
 
         if (
           currEntry?.indexStatus === "?" ||
@@ -237,16 +240,16 @@ export class DefaultRecoveryManager implements RecoveryManager {
           } catch {
             // Ignore if already deleted
           }
-        } else if (isGit) {
+        } else if (isGit && currEntry) {
           // Tracked file modified/deleted by FeCode: checkout specific file only
           const checkoutRes = await this.runner(
-            ["checkout", "HEAD", "--", relPath],
+            ["checkout", "HEAD", "--", normalizedRel],
             options.cwd,
             options.signal
           );
           if (checkoutRes.exitCode !== 0) {
             throw new Error(
-              `Failed to checkout file ${relPath}: ${checkoutRes.stderr}`
+              `Failed to checkout file ${normalizedRel}: ${checkoutRes.stderr}`
             );
           }
         }
