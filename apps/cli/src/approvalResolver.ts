@@ -97,7 +97,7 @@ export class InteractiveApprovalResolver implements ApprovalResolver {
     });
   }
 
-  submitDecision(input: string | boolean): void {
+  submitDecision(input: string | boolean | ApprovalDecision): void {
     if (!this.pendingResolver) {
       return;
     }
@@ -115,7 +115,12 @@ export class InteractiveApprovalResolver implements ApprovalResolver {
       return;
     }
 
-    const normalized = input.trim().toLowerCase();
+    if (typeof input === "object" && input !== null) {
+      resolve(input);
+      return;
+    }
+
+    const normalized = typeof input === "string" ? input.trim().toLowerCase() : "";
     if (normalized === "y" || normalized === "yes") {
       resolve({ approved: true });
     } else {

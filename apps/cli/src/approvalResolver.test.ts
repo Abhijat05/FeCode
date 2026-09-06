@@ -36,6 +36,28 @@ describe("InteractiveApprovalResolver", () => {
     expect(decision).toEqual({ approved: true });
   });
 
+  it("approves when user submits structured ApprovalDecision object", async () => {
+    const promise = resolver.resolve(sampleRequest);
+    resolver.submitDecision({ approved: true });
+    const decision = await promise;
+    expect(decision).toEqual({ approved: true });
+
+    const promise2 = resolver.resolve(sampleRequest);
+    resolver.submitDecision({ approved: false, reason: "Manual denial" });
+    const decision2 = await promise2;
+    expect(decision2).toEqual({ approved: false, reason: "Manual denial" });
+  });
+
+  it("handles synchronous resolution inside onRequest without hanging", async () => {
+    resolver.onRequest = () => {
+      resolver.submitDecision(true);
+    };
+
+    const decision = await resolver.resolve(sampleRequest);
+    expect(decision).toEqual({ approved: true });
+    expect(resolver.pendingRequest).toBeUndefined();
+  });
+
   it("denies when user submits 'n', 'no', or empty string (Enter key)", async () => {
     const promise1 = resolver.resolve(sampleRequest);
     resolver.submitDecision("n");

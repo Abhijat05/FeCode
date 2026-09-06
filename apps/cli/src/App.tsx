@@ -1284,7 +1284,7 @@ export const App: React.FC<AppProps> = ({
       }
 
       if (cmd === "/exit" || cmd === "/quit") {
-        handleExit();
+        await handleExit();
         return;
       }
 
