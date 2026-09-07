@@ -4,7 +4,7 @@ export interface CommandPolicyOptions {
   allowedExecutables?: string[];
 }
 
-const DEFAULT_ALLOWED = ["npm", "npx", "pnpm", "yarn", "bun", "node"];
+const DEFAULT_ALLOWED = ["npm", "npx", "pnpm", "yarn", "bun", "node", "git"];
 
 export function hasUnquotedForbiddenChars(commandStr: string): boolean {
   let inQuotes = false;
@@ -134,10 +134,22 @@ export class DefaultCommandPolicy implements CommandPolicy {
 
     const executable = tokens[0];
     if (!this.allowedExecutables.has(executable)) {
+      let hint = "";
+      const lowerExec = executable.toLowerCase();
+      if (["cat", "head", "tail", "more", "less", "type"].includes(lowerExec)) {
+        hint = " To read file contents, use the 'read_file' tool directly.";
+      } else if (["find", "dir"].includes(lowerExec)) {
+        hint = " To search for files or list directories, use the 'search_files' or 'list_directory' tool directly.";
+      } else if (["ls"].includes(lowerExec)) {
+        hint = " To list directory contents, use the 'list_directory' tool directly.";
+      } else if (["grep"].includes(lowerExec)) {
+        hint = " To search for patterns in files, use the 'search_files' tool directly.";
+      }
+
       return {
         type: "denied",
         executable,
-        reason: `Executable '${executable}' is not permitted by command policy.`,
+        reason: `Executable '${executable}' is not permitted by command policy.${hint}`,
         code: "COMMAND_NOT_ALLOWED"
       };
     }

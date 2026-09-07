@@ -156,4 +156,63 @@ describe("Command Execution Architecture Integration Tests", () => {
       expect(resultEvent.result.error?.code).toBe("PERMISSION_DENIED");
     }
   });
+
+  it("pre-validates command policy before prompting for approval and denies disallowed executables immediately", async () => {
+    const provider = new MockCommandModelProvider();
+    const mockExecutor = new MockCommandExecutor();
+    const registry = createDefaultToolRegistry();
+    registry.register(new ExecuteCommandTool(mockExecutor));
+
+    let resolverCalled = false;
+    const resolver = {
+      resolve: async () => {
+        resolverCalled = true;
+        return { approved: true };
+      }
+    };
+
+    let turn = 0;
+    provider.generateFn = async function* () {
+      turn++;
+      if (turn === 1) {
+        yield {
+          type: "tool_call",
+          call: {
+            id: "call-cmd-disallowed",
+            name: "execute_command",
+            arguments: { command: "cat package.json" }
+          }
+        };
+        yield { type: "completed" };
+      } else {
+        yield { type: "text_delta", content: "Done" };
+        yield { type: "completed" };
+      }
+    };
+
+    const runtime = new AgentRuntime(provider, {
+      registry,
+      approvalResolver: resolver
+    });
+
+    const events: AgentEvent[] = [];
+    for await (const event of runtime.run({
+      message: "Inspect package.json with cat",
+      cwd: tmpDir
+    })) {
+      events.push(event);
+    }
+
+    // User was NOT asked to approve because policy immediately rejected it
+    expect(resolverCalled).toBe(false);
+    expect(mockExecutor.executedCommands).toHaveLength(0);
+
+    const resultEvent = events.find((e) => e.type === "tool_result");
+    expect(resultEvent).toBeDefined();
+    if (resultEvent && resultEvent.type === "tool_result") {
+      expect(resultEvent.result.success).toBe(false);
+      expect(resultEvent.result.error?.code).toBe("COMMAND_NOT_ALLOWED");
+      expect(resultEvent.result.error?.message).toContain("read_file");
+    }
+  });
 });

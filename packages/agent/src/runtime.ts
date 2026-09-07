@@ -38,6 +38,8 @@ import {
 } from "./editing/changeReview.js";
 import type { ProductRuntime } from "./product/types.js";
 import { DefaultProductRuntime } from "./product/productRuntime.js";
+import { DefaultCommandPolicy } from "./commands/policy.js";
+import type { CommandPolicy } from "./commands/types.js";
 
 export type AgentStatus =
   | "idle"
@@ -222,6 +224,7 @@ export class AgentRuntime implements Agent {
   private readonly maxReplanDepth: number;
   private readonly completionTracker: TaskCompletionTracker = new TaskCompletionTracker();
   private readonly safeEditValidator: SafeEditValidator = new SafeEditValidator();
+  private readonly commandPolicy: CommandPolicy = new DefaultCommandPolicy();
   private currentRunStateMachine?: AgentRunStateMachine;
   private currentParentRunId?: string;
   private currentResumeDepth?: number;
@@ -1699,6 +1702,30 @@ export class AgentRuntime implements Agent {
                     diff: validated.diff
                   };
                   changeReview = createChangeReview([fileReview]);
+                }
+              } else if (call.name === "execute_command") {
+                const cmd = ((call.arguments || {}) as { command?: string }).command;
+                if (!cmd || typeof cmd !== "string" || !cmd.trim()) {
+                  skipApproval = true;
+                  result = {
+                    success: false,
+                    error: {
+                      message: "The 'command' argument is required for execute_command.",
+                      code: "INVALID_ARGUMENT"
+                    }
+                  };
+                } else {
+                  const cmdDecision = this.commandPolicy.validate(cmd);
+                  if (cmdDecision.type === "denied") {
+                    skipApproval = true;
+                    result = {
+                      success: false,
+                      error: {
+                        message: `${cmdDecision.code}: ${cmdDecision.reason}`,
+                        code: cmdDecision.code || "COMMAND_NOT_ALLOWED"
+                      }
+                    };
+                  }
                 }
               }
 

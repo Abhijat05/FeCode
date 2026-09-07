@@ -11,13 +11,14 @@ export class ExecuteCommandTool
   public readonly name = "execute_command";
   public readonly permissionCategory = "execute";
   public readonly description =
-    "Execute a controlled development command within the project workspace after user approval.";
+    "Execute a controlled development command (npm, npx, pnpm, yarn, bun, node, git) within the project workspace after user approval. DO NOT use this tool to inspect, read, or search files; use read_file, list_directory, or search_files instead.";
   public readonly inputSchema = {
     type: "object",
     properties: {
       command: {
         type: "string",
-        description: "The command to execute (e.g. 'npm test', 'npx tsc --noEmit')."
+        description:
+          "The command to execute (e.g. 'npm test', 'npx tsc --noEmit', 'git status'). Only permitted development tools are allowed."
       }
     },
     required: ["command"]

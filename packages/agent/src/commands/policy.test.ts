@@ -22,9 +22,14 @@ describe("DefaultCommandPolicy", () => {
     const resBun = policy.validate("bun run dev");
     expect(resBun.type).toBe("allowed");
     expect(resBun.executable).toBe("bun");
+
+    const resGit = policy.validate("git status");
+    expect(resGit.type).toBe("allowed");
+    expect(resGit.executable).toBe("git");
+    expect(resGit.args).toEqual(["status"]);
   });
 
-  it("rejects unknown executables and prefixed names like npm-malicious", () => {
+  it("rejects unknown executables and provides redirection hints for file utilities", () => {
     const resMalicious = policy.validate("npm-malicious test");
     expect(resMalicious.type).toBe("denied");
     expect(resMalicious.code).toBe("COMMAND_NOT_ALLOWED");
@@ -32,6 +37,16 @@ describe("DefaultCommandPolicy", () => {
     const resBash = policy.validate("bash -c 'echo hi'");
     expect(resBash.type).toBe("denied");
     expect(resBash.code).toBe("COMMAND_NOT_ALLOWED");
+
+    const resCat = policy.validate("cat package.json");
+    expect(resCat.type).toBe("denied");
+    expect(resCat.code).toBe("COMMAND_NOT_ALLOWED");
+    expect(resCat.reason).toContain("use the 'read_file' tool directly");
+
+    const resFind = policy.validate("find . -name '*.ts'");
+    expect(resFind.type).toBe("denied");
+    expect(resFind.code).toBe("COMMAND_NOT_ALLOWED");
+    expect(resFind.reason).toContain("use the 'search_files' or 'list_directory' tool directly");
   });
 
   it("rejects shell chaining operators (; && ||)", () => {
