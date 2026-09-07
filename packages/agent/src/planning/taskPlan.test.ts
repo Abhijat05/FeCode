@@ -244,5 +244,41 @@ describe("Task Plan Contracts & Lifecycle — Phase 5P", () => {
       expect(summary.highestRisk).toBe("normal");
       expect(summary.requiresApproval).toBe(true);
     });
+
+    it("rejects circular dependencies in createTaskPlan", () => {
+      const cyclicSteps: PlanStep[] = [
+        {
+          stepId: "step-1",
+          order: 1,
+          title: "Step 1",
+          objective: "Step 1",
+          type: "inspect",
+          dependencies: ["step-2"],
+          riskLevel: "low",
+          verificationRequired: false,
+          status: "pending"
+        },
+        {
+          stepId: "step-2",
+          order: 2,
+          title: "Step 2",
+          objective: "Step 2",
+          type: "modify",
+          dependencies: ["step-1"],
+          riskLevel: "low",
+          verificationRequired: false,
+          status: "pending"
+        }
+      ];
+
+      expect(() =>
+        createTaskPlan({
+          runId: "run-101",
+          userRequestSummary: "Cyclic",
+          objective: "Cyclic",
+          steps: cyclicSteps
+        })
+      ).toThrow(/Circular dependency detected in plan/);
+    });
   });
 });

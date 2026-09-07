@@ -546,7 +546,7 @@ export class DefaultRunDiagnosticsManager implements RunDiagnosticsManager {
     const record = summary.tools.find((t) => t.callId === callId);
     if (record) {
       record.completedAt = Date.now();
-      record.durationMs = record.completedAt - record.startedAt;
+      record.durationMs = Math.max(0, record.completedAt - record.startedAt);
       record.success = success;
       record.errorCode = errorCode;
       record.permissionOutcome = permissionOutcome;
@@ -587,7 +587,7 @@ export class DefaultRunDiagnosticsManager implements RunDiagnosticsManager {
 
     if (record) {
       record.completedAt = Date.now();
-      record.durationMs = record.completedAt - record.startedAt;
+      record.durationMs = Math.max(0, record.completedAt - record.startedAt);
       record.succeeded = succeeded;
       record.exitCode = exitCode;
       record.timedOut = timedOut;
@@ -633,7 +633,7 @@ export class DefaultRunDiagnosticsManager implements RunDiagnosticsManager {
 
     if (record) {
       record.completedAt = Date.now();
-      record.durationMs = record.completedAt - record.startedAt;
+      record.durationMs = Math.max(0, record.completedAt - record.startedAt);
       record.success = success;
       record.recoveredFiles = recoveredFiles ? [...recoveredFiles] : [];
       record.preservedFiles = preservedFiles ? [...preservedFiles] : [];

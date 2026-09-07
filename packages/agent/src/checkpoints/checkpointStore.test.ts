@@ -93,4 +93,28 @@ describe("DefaultCheckpointStore — Phase 5G", () => {
       "checkpoint-demo-3"
     ]);
   });
+
+  it("safely skips corrupted JSON files and orphaned .tmp files during list()", async () => {
+    const store = new DefaultCheckpointStore(tmpDir, 10);
+    const validCp: Checkpoint = {
+      id: "checkpoint-valid-1",
+      createdAt: new Date().toISOString(),
+      repositoryRoot: "/repo",
+      branch: "main",
+      files: [],
+      totalFiles: 0,
+      status: "ready",
+      isGit: true
+    };
+    await store.save(validCp);
+
+    // Create a corrupted JSON file
+    await fs.writeFile(path.join(tmpDir, "checkpoint-corrupt.json"), "{ invalid json");
+    // Create an orphaned .tmp file
+    await fs.writeFile(path.join(tmpDir, "checkpoint-orphaned.json.tmp"), '{"id":"temp"}');
+
+    const list = await store.list();
+    expect(list.length).toBe(1);
+    expect(list[0].id).toBe("checkpoint-valid-1");
+  });
 });

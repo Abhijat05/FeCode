@@ -49,4 +49,13 @@ describe("resolveSafePath", () => {
       expect(res.error.code).toBe("PATH_OUT_OF_BOUNDS");
     }
   });
+
+  it("allows valid files starting with double-dots inside working directory", () => {
+    const res = resolveSafePath(cwd, "..config.json");
+    expect("error" in res).toBe(false);
+    if (!("error" in res)) {
+      expect(res.targetPath).toBe(path.resolve(cwd, "..config.json"));
+      expect(res.displayPath).toBe(path.normalize("..config.json"));
+    }
+  });
 });

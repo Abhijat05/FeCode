@@ -1253,9 +1253,9 @@ export const App: React.FC<AppProps> = ({
     // Slash command processing
     if (trimmed.startsWith("/")) {
       setQuery("");
-      const parts = trimmed.split(" ");
-      const cmd = parts[0].toLowerCase();
-      const arg = parts.slice(1).join(" ").trim();
+      const [rawCmd, ...rawArgs] = trimmed.split(/\s+/);
+      const cmd = (rawCmd ?? "").toLowerCase();
+      const arg = rawArgs.join(" ").trim();
 
       if (cmd === "/help") {
         setActiveView("help");

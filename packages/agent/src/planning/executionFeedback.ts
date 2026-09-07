@@ -215,7 +215,9 @@ export class DefaultExecutionFeedbackManager implements ExecutionFeedbackManager
       canRetry,
       canAdapt,
       feedback: planFeedback,
-      affectedSteps: Array.from(affectedStepsSet),
+      affectedSteps: Array.from(affectedStepsSet).sort((a, b) =>
+        a.localeCompare(b)
+      ),
       currentRiskLevel: highestRisk,
       requiresUserConfirmation,
       recommendedAction
