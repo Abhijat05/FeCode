@@ -58,7 +58,17 @@ export class DefaultSessionStore implements SessionStore {
         encoding: "utf-8",
         mode: 0o600
       });
-      await fs.rename(tempFile, targetFile);
+      try {
+        await fs.rename(tempFile, targetFile);
+      } catch (renameErr: unknown) {
+        const code = (renameErr as { code?: string })?.code;
+        if (code === "EPERM" || code === "EEXIST" || code === "EBUSY") {
+          await fs.copyFile(tempFile, targetFile);
+          await fs.unlink(tempFile);
+        } else {
+          throw renameErr;
+        }
+      }
     } catch (err: unknown) {
       // Clean up temp file on failure
       try {

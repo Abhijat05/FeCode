@@ -63,7 +63,7 @@ export class DefaultRunDiagnosticsManager implements RunDiagnosticsManager {
       startedAt: Date.now(),
       finalStatus: "idle",
       cwd: params.cwd,
-      userRequestSummary: sanitizeString(params.userRequest.slice(0, 300)),
+      userRequestSummary: sanitizeString((params.userRequest ?? "").slice(0, 300)),
       activeSkills: params.activeSkills ? [...params.activeSkills] : [],
       initialRiskLevel: params.riskLevel || "low",
       riskReasons: params.riskReasons ? [...params.riskReasons] : [],

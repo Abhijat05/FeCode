@@ -31,7 +31,17 @@ export async function writeAtomic(
       throw new Error("CANCELLED");
     }
 
-    await fs.rename(tempPath, targetPath);
+    try {
+      await fs.rename(tempPath, targetPath);
+    } catch (renameErr: unknown) {
+      const code = (renameErr as { code?: string })?.code;
+      if (code === "EPERM" || code === "EEXIST" || code === "EBUSY") {
+        await fs.copyFile(tempPath, targetPath);
+        await fs.unlink(tempPath);
+      } else {
+        throw renameErr;
+      }
+    }
     tempCreated = false;
   } catch (err: unknown) {
     if (tempCreated) {

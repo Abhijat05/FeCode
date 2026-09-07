@@ -150,7 +150,7 @@ export class OpenAIModelProvider implements ModelProvider {
 
         if (delta?.tool_calls) {
           for (const tcDelta of delta.tool_calls) {
-            const index = tcDelta.index;
+            const index = typeof tcDelta.index === "number" ? tcDelta.index : 0;
             const existing = accumulatedToolCalls.get(index) || {
               id: "",
               name: "",
@@ -187,7 +187,9 @@ export class OpenAIModelProvider implements ModelProvider {
         }
 
         const call: ToolCall = {
-          id: callData.id,
+          id:
+            callData.id ||
+            `call_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
           name: callData.name,
           arguments: parsedArgs
         };
