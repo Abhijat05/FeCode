@@ -288,10 +288,18 @@ export class DefaultRunHistoryStore implements RunHistoryStore {
     return lineage;
   }
 
-  public async listRuns(options: {
-    projectId?: string;
-    limit?: number;
-  } = {}): Promise<DurableRunRecord[]> {
+  public async listRuns(
+    optionsOrProjectId?:
+      | {
+          projectId?: string;
+          limit?: number;
+        }
+      | string
+  ): Promise<DurableRunRecord[]> {
+    const options =
+      typeof optionsOrProjectId === "string"
+        ? { projectId: optionsOrProjectId }
+        : optionsOrProjectId || {};
     try {
       await fs.mkdir(this.storageDir, { recursive: true, mode: 0o700 });
       const entries = await fs.readdir(this.storageDir, { withFileTypes: true });

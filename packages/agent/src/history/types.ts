@@ -164,7 +164,7 @@ export interface RunHistoryStore {
   listRuns(options?: {
     projectId?: string;
     limit?: number;
-  }): Promise<DurableRunRecord[]>;
+  } | string): Promise<DurableRunRecord[]>;
   deleteRun(runId: string): Promise<boolean>;
   clearRuns(projectId?: string): Promise<void>;
   prune(maxRuns?: number, maxSizeBytes?: number): Promise<number>;

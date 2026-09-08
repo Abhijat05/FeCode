@@ -13,7 +13,7 @@ const SECRET_PATTERNS: Array<{ pattern: RegExp; replacement: string }> = [
   },
   {
     // GitHub personal/app tokens
-    pattern: /(?:ghp|gho|ghu|ghs|ghr)_[a-zA-Z0-9]{36,}/g,
+    pattern: /(?:ghp|gho|ghu|ghs|ghr)_[a-zA-Z0-9]{20,}/g,
     replacement: "[REDACTED_TOKEN]"
   },
   {
@@ -34,7 +34,7 @@ const SECRET_PATTERNS: Array<{ pattern: RegExp; replacement: string }> = [
   {
     // Generic API Key / Token / Secret / Password in assignment or env var format
     pattern:
-      /(?:OPENAI_API_KEY|GEMINI_API_KEY|ANTHROPIC_API_KEY|DEEPSEEK_API_KEY|GROQ_API_KEY|GITHUB_TOKEN|AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|SECRET_KEY|PASSWORD|TOKEN)\s*[:=]\s*[^\s,;"']+/gi,
+      /(?:OPENAI_API_KEY|GEMINI_API_KEY|ANTHROPIC_API_KEY|DEEPSEEK_API_KEY|GROQ_API_KEY|GITHUB_TOKEN|AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|SECRET_KEY|API_KEY|PASSWORD|PASS|TOKEN)\s*[:=]\s*[^\s,;"']+/gi,
     replacement: "[REDACTED_ENV_VAR]"
   }
 ];

@@ -367,6 +367,19 @@ export class DefaultCheckpointManager implements CheckpointManager {
       };
     }
 
+    // Check expiration TTL
+    if (record.expiresAt && Date.now() > record.expiresAt) {
+      record.status = "invalidated";
+      record.invalidationReason = `Checkpoint approval has expired. A fresh approval is required.`;
+      return {
+        valid: false,
+        status: "invalidated",
+        checkpointId,
+        reason: record.invalidationReason,
+        invalidated: true
+      };
+    }
+
     // Check Run ID binding
     if (record.runId !== context.runId) {
       record.status = "invalidated";

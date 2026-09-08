@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import { Box, useApp, useInput } from "ink";
+import { Box, Text, useApp, useInput } from "ink";
 import {
   DefaultSessionStore,
   SessionHistoryFormatter,
@@ -457,8 +457,7 @@ export const App: React.FC<AppProps> = ({
   };
 
   const handleSubmit = async (value: string) => {
-    const trimmed = value.trim();
-    if (!trimmed) return;
+    let trimmed = value.trim();
 
     // Queue the prompt if agent is currently running and no modal is active
     const modalActive =
@@ -468,6 +467,17 @@ export const App: React.FC<AppProps> = ({
       Boolean(pendingRecoveryContinuation) ||
       Boolean(pendingReplan) ||
       Boolean(pendingResume);
+
+    if (!trimmed && !modalActive) return;
+
+    // Apply safe defaults for modals when user hits Enter with empty input
+    if (!trimmed && modalActive) {
+      if (pendingPlanBlocked) {
+        trimmed = "x";
+      } else {
+        trimmed = "n";
+      }
+    }
 
     if (isGenerating && !modalActive) {
       setPendingQuery(trimmed);
@@ -2694,6 +2704,25 @@ export const App: React.FC<AppProps> = ({
         />
       }
     >
+      {/* Configuration Error Banner */}
+      {configError && (
+        <Box
+          flexDirection="column"
+          borderStyle="single"
+          borderColor="red"
+          paddingX={1}
+          marginY={1}
+        >
+          <Text bold color="red">
+            ⚠ Configuration Error
+          </Text>
+          <Text color="white">{configError}</Text>
+          <Text color="gray">
+            Please check your environment variables (.env) or configuration file.
+          </Text>
+        </Box>
+      )}
+
       {/* Content Area */}
       {activeView === "help" && <HelpView />}
 

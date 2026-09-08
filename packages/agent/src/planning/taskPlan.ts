@@ -152,6 +152,19 @@ export function canExecuteStep(
     return { canExecute: false, reason: `Step ${stepId} is ${step.status}` };
   }
 
+  if (
+    plan.status === "blocked" ||
+    plan.status === "completed" ||
+    plan.status === "failed" ||
+    plan.status === "cancelled" ||
+    plan.status === "superseded"
+  ) {
+    return {
+      canExecute: false,
+      reason: `Cannot start step in plan with status '${plan.status}'`
+    };
+  }
+
   for (const depId of step.dependencies) {
     const depStep = plan.steps.find((s) => s.stepId === depId);
     if (!depStep) {
