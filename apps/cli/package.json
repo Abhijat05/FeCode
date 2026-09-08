@@ -1,9 +1,19 @@
 {
   "name": "@fecode/cli",
-  "version": "0.1.0",
+  "version": "1.0.0-rc.1",
+  "description": "FeCode - Interactive Terminal Coding Assistant",
   "type": "module",
   "bin": {
-    "fe": "./dist/index.js"
+    "fe": "./dist/index.js",
+    "fecode": "./dist/index.js"
+  },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "!dist/**/*.map"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
   },
   "scripts": {
     "fe": "tsx src/index.tsx",
