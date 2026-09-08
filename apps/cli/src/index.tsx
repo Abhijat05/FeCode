@@ -27,11 +27,51 @@ async function main(): Promise<void> {
   let projectContext: ProjectContext | undefined;
   let initialSessionData: PersistedSessionData | undefined;
 
+  const args = process.argv.slice(2);
+
+  // Check --version / -v
+  if (args.includes("--version") || args.includes("-v")) {
+    console.log("1.0.0-rc.1");
+    process.exit(0);
+  }
+
+  // Check --help / -h
+  if (args.includes("--help") || args.includes("-h")) {
+    console.log(`FeCode - Interactive Terminal Coding Assistant (v1.0.0-rc.1)
+
+Usage:
+  fe [options]
+  fecode [options]
+
+Options:
+  -v, --version       Display FeCode version
+  -h, --help          Display this help message
+  -r, --resume <id>   Resume a previous session or historical run by ID
+
+Environment Variables:
+  FE_PROVIDER         LLM provider ('gemini', 'openai', 'ollama') [default: gemini]
+  FE_MODEL            Model name [default: gemini-2.5-flash / gpt-4o / qwen2.5-coder]
+  GEMINI_API_KEY      API key for Google Gemini provider
+  OPENAI_API_KEY      API key for OpenAI provider
+  OLLAMA_BASE_URL     Base URL for Ollama provider [default: http://localhost:11434/v1]
+
+Interactive Commands (inside TUI):
+  /help               Show in-terminal command list
+  /plan [id]          Display active plan or details for a run
+  /replan             Trigger plan re-evaluation and adaptation
+  /resume <id>        Prepare resume for historical run
+  /diagnostics [id]   Show diagnostics and telemetry for active/specified run
+  /runs [limit]       List historical runs for current project
+  /git                Inspect Git workspace status and modified files
+  /clear              Clear conversation turns
+  /exit               Exit FeCode`);
+    process.exit(0);
+  }
+
   const sessionStore = new DefaultSessionStore();
   let cwd = process.cwd();
 
   // Parse --resume / -r argument
-  const args = process.argv.slice(2);
   let resumeId: string | undefined;
   for (let i = 0; i < args.length; i++) {
     if ((args[i] === "--resume" || args[i] === "-r") && i + 1 < args.length) {
@@ -167,6 +207,12 @@ async function main(): Promise<void> {
         initialSessionId: initialSessionData?.sessionId
       })
     : undefined;
+
+  // Ensure TTY before launching interactive Ink TUI
+  if (!process.stdin.isTTY && !process.env.VITEST && !process.env.CI_TEST_MODE) {
+    console.error("✗ FeCode requires an interactive terminal (TTY).\nRun with --help for available options.");
+    process.exit(1);
+  }
 
   render(
     <App
