@@ -116,4 +116,14 @@ describe("NodeCommandExecutor", () => {
     expect(pathPresent).toBe("true");
     expect(keyPresent).toBe("false");
   });
+
+  it("successfully executes npm command on Windows and other platforms without ENOENT", async () => {
+    const res = await executor.execute("npm --version", {
+      cwd: tmpDir
+    });
+
+    expect(res.exitCode).toBe(0);
+    expect(res.stdout.trim()).toMatch(/^\d+\.\d+\.\d+/);
+    expect(res.error).toBeUndefined();
+  });
 });

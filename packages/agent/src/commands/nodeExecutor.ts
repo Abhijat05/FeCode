@@ -88,11 +88,16 @@ export class NodeCommandExecutor implements CommandExecutor {
       let stdoutBytes = 0;
       let stderrBytes = 0;
 
+      const BATCH_EXECUTABLES = new Set(["npm", "npx", "pnpm", "yarn", "bun"]);
+      const useShell =
+        process.platform === "win32" && BATCH_EXECUTABLES.has(executable.toLowerCase());
+
       try {
         child = spawn(executable, args, {
           cwd: options.cwd,
           env: childEnv,
-          shell: false
+          shell: useShell,
+          windowsHide: true
         });
       } catch (err: unknown) {
         const errorMsg = err instanceof Error ? err.message : String(err);

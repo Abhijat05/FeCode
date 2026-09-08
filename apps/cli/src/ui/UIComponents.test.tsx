@@ -223,6 +223,19 @@ describe("MessageBubble", () => {
     expect(frame).toContain("✗ Error");
     expect(frame).toContain("Connection refused");
   });
+
+  it("renders code blocks in a bordered box with language badge and no raw backtick fences", () => {
+    const markdownWithCode = "Here is the code:\n```typescript\nconst message = 'hello';\n```\nDone!";
+    const { lastFrame } = render(
+      <MessageBubble role="agent" content={markdownWithCode} />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("[typescript]");
+    expect(frame).toContain("const message = 'hello';");
+    expect(frame).not.toContain("```");
+    expect(frame).toContain("Here is the code:");
+    expect(frame).toContain("Done!");
+  });
 });
 
 describe("ThinkingIndicator", () => {

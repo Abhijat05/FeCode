@@ -33,7 +33,7 @@ const KEYWORD_BOOST: Array<{ keywords: string[]; skillName: string; bonus: numbe
   // build/create/design/implement → frontend-design
   { keywords: ["build", "create", "design", "redesign", "implement", "make", "add", "write", "polished", "new", "settings", "dashboard"], skillName: "frontend-design", bonus: 15 },
   // review/audit/assess/evaluate → ui-review
-  { keywords: ["review", "audit", "assess", "evaluate", "critique", "check"], skillName: "ui-review", bonus: 15 },
+  { keywords: ["review", "audit", "assess", "evaluate", "critique"], skillName: "ui-review", bonus: 15 },
   // responsive/mobile/viewport/layout/breakpoint → responsive-design
   { keywords: ["responsive", "mobile", "viewport", "breakpoint", "narrow", "screen", "widths"], skillName: "responsive-design", bonus: 15 },
   // fix/debug/broken/error/bug/doesn't work/failing → frontend-debugging
@@ -121,6 +121,17 @@ function scoreSkill(
 
   if (isFrameworkCategory && !hasNameMention && !isProjectFrameworkMatch) {
     return 0; // Exclude framework skills when neither context nor request references them
+  }
+
+  if (skill.name === "ui-review") {
+    const isCodeAudit =
+      requestTokens.has("codebase") ||
+      requestTokens.has("repo") ||
+      requestTokens.has("repository") ||
+      ((requestTokens.has("bug") || requestTokens.has("bugs")) && !requestTokens.has("ui"));
+    if (isCodeAudit) {
+      return 0;
+    }
   }
 
   // ── Strong-signal keyword boost ────────────────────────────────────────────
