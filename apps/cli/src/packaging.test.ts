@@ -143,16 +143,34 @@ describe("FeCode Packaging & Distribution Verification (Phase 5AH)", () => {
   });
 
   it("Distribution tarballs: generated release tarballs contain zero secrets or git files", () => {
-    const tgzFiles = fs.readdirSync(repoRoot).filter((f) => f.endsWith(".tgz"));
-    expect(tgzFiles.length).toBeGreaterThanOrEqual(4);
+    const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+    const packages = ["packages/agent", "packages/models", "packages/shared", "apps/cli"];
+    const generatedTarballs: string[] = [];
 
-    for (const tgz of tgzFiles) {
-      const tgzPath = path.resolve(repoRoot, tgz);
-      const list = execSync(`tar -tzf "${tgzPath}"`, { encoding: "utf-8" });
-      expect(list).not.toContain(".env");
-      expect(list).not.toContain(".git");
-      expect(list).not.toContain(".npmrc");
-      expect(list).not.toContain("id_rsa");
+    try {
+      for (const workspace of packages) {
+        const output = execSync(
+          `${npmCommand} pack --workspace=${workspace} --pack-destination="${repoRoot}" --json`,
+          { cwd: repoRoot, encoding: "utf-8" }
+        );
+        const [result] = JSON.parse(output) as Array<{ filename: string }>;
+        generatedTarballs.push(result.filename);
+      }
+
+      expect(generatedTarballs.length).toBeGreaterThanOrEqual(4);
+
+      for (const tgz of generatedTarballs) {
+        const tgzPath = path.resolve(repoRoot, tgz);
+        const list = execSync(`tar -tzf "${tgzPath}"`, { encoding: "utf-8" });
+        expect(list).not.toContain(".env");
+        expect(list).not.toContain(".git");
+        expect(list).not.toContain(".npmrc");
+        expect(list).not.toContain("id_rsa");
+      }
+    } finally {
+      for (const tgz of generatedTarballs) {
+        fs.rmSync(path.resolve(repoRoot, tgz), { force: true });
+      }
     }
   });
 
