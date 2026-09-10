@@ -11,6 +11,7 @@ export interface OllamaProviderOptions {
   baseUrl?: string;
   model?: string;
   client?: OpenAI;
+  maxContextTokens?: number;
 }
 
 export class OllamaModelProvider implements ModelProvider {
@@ -19,12 +20,7 @@ export class OllamaModelProvider implements ModelProvider {
   public readonly model: string;
   private readonly delegate: OpenAIModelProvider;
 
-  public readonly capabilities: ModelCapabilities = {
-    streaming: true,
-    toolCalling: true,
-    vision: false,
-    maxContextTokens: 32768
-  };
+  public readonly capabilities: ModelCapabilities;
 
   constructor(options: OllamaProviderOptions = {}) {
     this.baseUrl =
@@ -32,6 +28,17 @@ export class OllamaModelProvider implements ModelProvider {
       process.env.OLLAMA_BASE_URL ||
       "http://localhost:11434/v1";
     this.model = options.model || process.env.FE_MODEL || "qwen2.5-coder";
+
+    const envCtx = process.env.OLLAMA_NUM_CTX || process.env.FE_MAX_CONTEXT_TOKENS;
+    const maxContextTokens =
+      options.maxContextTokens || (envCtx ? parseInt(envCtx, 10) : 16384);
+
+    this.capabilities = {
+      streaming: true,
+      toolCalling: true,
+      vision: false,
+      maxContextTokens
+    };
 
     const client =
       options.client ||
@@ -43,7 +50,12 @@ export class OllamaModelProvider implements ModelProvider {
     this.delegate = new OpenAIModelProvider({
       apiKey: "ollama",
       model: this.model,
-      client
+      client,
+      extraBody: {
+        options: {
+          num_ctx: maxContextTokens
+        }
+      }
     });
   }
 

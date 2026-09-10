@@ -230,4 +230,54 @@ describe("OpenAIModelProvider (offline unit tests)", () => {
       }
     ]);
   });
+
+  it("streams reasoning chunks wrapped in <think> tags", async () => {
+    async function* mockReasoningStream() {
+      yield {
+        choices: [{ delta: { reasoning: "Analyzing request" } }]
+      };
+      yield {
+        choices: [{ delta: { reasoning: " and planning" } }]
+      };
+      yield {
+        choices: [{ delta: { content: "Here is the result." } }]
+      };
+      yield {
+        choices: [],
+        usage: { prompt_tokens: 5, completion_tokens: 10, total_tokens: 15 }
+      };
+    }
+
+    const mockClient = {
+      chat: {
+        completions: {
+          create: vi.fn().mockResolvedValue(mockReasoningStream())
+        }
+      }
+    } as unknown as OpenAI;
+
+    const provider = new OpenAIModelProvider({
+      apiKey: "sk-fake-key",
+      client: mockClient
+    });
+
+    const events: ModelEvent[] = [];
+    for await (const event of provider.generate({
+      messages: [{ role: "user", content: "Hello" }]
+    })) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([
+      { type: "text_delta", content: "<think>" },
+      { type: "text_delta", content: "Analyzing request" },
+      { type: "text_delta", content: " and planning" },
+      { type: "text_delta", content: "</think>" },
+      { type: "text_delta", content: "Here is the result." },
+      {
+        type: "completed",
+        usage: { inputTokens: 5, outputTokens: 10, totalTokens: 15 }
+      }
+    ]);
+  });
 });

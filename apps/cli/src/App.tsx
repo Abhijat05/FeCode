@@ -2114,19 +2114,31 @@ export const App: React.FC<AppProps> = ({
           accumulatedRawText += chunk;
           const elapsed = Date.now() - turnStartMs;
 
-          const thinkingMatch = accumulatedRawText.match(/<thinking>([\s\S]*?)<\/thinking>/);
-          const inProgressThinking = !thinkingMatch && accumulatedRawText.includes("<thinking>");
+          const thinkingMatch = accumulatedRawText.match(/<(?:think|thinking)>([\s\S]*?)<\/(?:think|thinking)>/);
+          const inProgressThinking =
+            !thinkingMatch &&
+            (accumulatedRawText.includes("<think>") ||
+              accumulatedRawText.includes("<thinking>") ||
+              accumulatedRawText.startsWith("<think"));
 
           if (thinkingMatch) {
             const thinkingContent = thinkingMatch[1].trim();
             const firstLine = thinkingContent.split("\n")[0]?.trim() || "";
-            const cleanContent = accumulatedRawText.replace(/<thinking>[\s\S]*?<\/thinking>/g, "").trim();
+            const cleanContent = accumulatedRawText
+              .replace(/<(?:think|thinking)>[\s\S]*?<\/(?:think|thinking)>/g, "")
+              .replace(/<\/?(?:think|thinking)>/g, "")
+              .trim();
             setTurns((prev) =>
               prev.map((t) =>
                 t.id === turnId
                   ? {
                       ...t,
-                      thinkingMs: t.thinkingMs !== undefined ? t.thinkingMs : elapsed > 0 ? elapsed : 1000,
+                      thinkingMs:
+                        t.thinkingMs !== undefined
+                          ? t.thinkingMs
+                          : elapsed > 0
+                            ? elapsed
+                            : 1000,
                       thinkingSummary: firstLine,
                       response: initialResponse ? initialResponse + cleanContent : cleanContent
                     }
@@ -2134,7 +2146,7 @@ export const App: React.FC<AppProps> = ({
               )
             );
           } else if (inProgressThinking) {
-            const partialThinking = accumulatedRawText.replace(/[\s\S]*<thinking>/, "").trim();
+            const partialThinking = accumulatedRawText.replace(/[\s\S]*<(?:think|thinking)>/, "").trim();
             const firstLine = partialThinking.split("\n")[0]?.trim() || "Thinking...";
             setTurns((prev) =>
               prev.map((t) =>
@@ -2151,6 +2163,7 @@ export const App: React.FC<AppProps> = ({
             setTurns((prev) => {
               const turn = prev.find((t) => t.id === turnId);
               const isFirstToken = !turn?.response || turn.response === initialResponse;
+              const sanitizedChunk = chunk.replace(/<\/?(?:think|thinking)>/g, "");
               return prev.map((t) =>
                 t.id === turnId
                   ? {
@@ -2161,7 +2174,7 @@ export const App: React.FC<AppProps> = ({
                           : isFirstToken && elapsed > 500
                             ? elapsed
                             : undefined,
-                      response: t.response + chunk
+                      response: t.response + sanitizedChunk
                     }
                   : t
               );
@@ -2566,7 +2579,16 @@ export const App: React.FC<AppProps> = ({
         } else if (event.type === "done") {
           setTurns((prev) =>
             prev.map((t) =>
-              t.id === turnId ? { ...t, status: "done" } : t
+              t.id === turnId
+                ? {
+                    ...t,
+                    status: "done",
+                    response:
+                      t.response && t.response.trim().length > 0
+                        ? t.response
+                        : "Completed (no output returned by the model)."
+                  }
+                : t
             )
           );
         }

@@ -5,6 +5,8 @@ import { resolveSafePath } from "./pathUtils.js";
 
 export interface ReadFileInput {
   path: string;
+  startLine?: number;
+  endLine?: number;
 }
 
 export interface ReadFileOutput {
@@ -17,6 +19,7 @@ export interface ReadFileOutput {
 
 export interface ReadFileToolOptions {
   maxBytes?: number;
+  maxDefaultLines?: number;
 }
 
 const BINARY_EXTENSIONS = new Set([
@@ -74,7 +77,7 @@ export class ReadFileTool
   public readonly name = "read_file";
   public readonly permissionCategory = "read";
   public readonly description =
-    "Read the text contents of a file within the project workspace.";
+    "Read the text contents of a file within the project workspace. Use startLine and endLine to inspect specific sections of large files.";
   public readonly inputSchema = {
     type: "object",
     properties: {
@@ -82,15 +85,27 @@ export class ReadFileTool
         type: "string",
         description:
           "Relative or absolute file path to read within the project workspace."
+      },
+      startLine: {
+        type: "number",
+        description:
+          "Optional 1-indexed line number to start reading from."
+      },
+      endLine: {
+        type: "number",
+        description:
+          "Optional 1-indexed line number to end reading at (inclusive)."
       }
     },
     required: ["path"]
   };
 
   private readonly maxBytes: number;
+  private readonly maxDefaultLines: number;
 
   constructor(options: ReadFileToolOptions = {}) {
     this.maxBytes = options.maxBytes ?? 100 * 1024; // 100 KB default
+    this.maxDefaultLines = options.maxDefaultLines ?? 400;
   }
 
   async execute(
@@ -158,17 +173,55 @@ export class ReadFileTool
         }
 
         const bytesToRead = Math.min(stats.size, this.maxBytes);
-        const truncated = stats.size > this.maxBytes;
+        const isByteTruncated = stats.size > this.maxBytes;
         const contentBuf = Buffer.alloc(bytesToRead);
 
         if (bytesToRead > 0) {
           await handle.read(contentBuf, 0, bytesToRead, 0);
         }
 
-        const content = contentBuf.toString("utf-8");
-        const lines = content ? content.split("\n") : [];
-        const startLine = 1;
-        const endLine = lines.length > 0 ? lines.length : 1;
+        const rawContent = contentBuf.toString("utf-8");
+        const lines = rawContent.split(/\r?\n/);
+        const totalLines = lines.length;
+
+        let content = rawContent;
+        let startLine = 1;
+        let endLine = totalLines > 0 ? totalLines : 1;
+        let truncated = isByteTruncated;
+
+        const hasLineRange =
+          typeof input.startLine === "number" || typeof input.endLine === "number";
+
+        if (hasLineRange) {
+          const reqStart = Math.max(1, input.startLine ?? 1);
+          const reqEnd = Math.min(
+            totalLines,
+            input.endLine !== undefined ? input.endLine : totalLines
+          );
+
+          if (reqStart > totalLines) {
+            content = "";
+            startLine = reqStart;
+            endLine = reqStart;
+          } else {
+            const clampedEnd = Math.max(reqStart, reqEnd);
+            const sliced = lines.slice(reqStart - 1, clampedEnd);
+            content = sliced.join("\n");
+            startLine = reqStart;
+            endLine = clampedEnd;
+          }
+
+          if (input.endLine !== undefined && input.endLine < totalLines) {
+            truncated = true;
+          }
+        } else if (totalLines > this.maxDefaultLines) {
+          const sliced = lines.slice(0, this.maxDefaultLines);
+          const notice = `\n\n... [File has ${totalLines} lines. Showing lines 1-${this.maxDefaultLines}. To view other sections, specify startLine and endLine (e.g. { path: "${input.path}", startLine: ${this.maxDefaultLines + 1}, endLine: ${Math.min(totalLines, this.maxDefaultLines * 2)} }) or use search_files.]`;
+          content = sliced.join("\n") + notice;
+          startLine = 1;
+          endLine = this.maxDefaultLines;
+          truncated = true;
+        }
 
         return {
           success: true,

@@ -203,4 +203,80 @@ describe("AgentRuntime Tool Loop", () => {
     expect(toolResultEvent?.result.success).toBe(false);
     expect(toolResultEvent?.result.error?.message).toContain("Tool not found");
   });
+
+  it("nudges model when it returns empty response immediately after tool execution instead of stopping prematurely", async () => {
+    const provider = new MockToolModelProvider();
+    const registry = new DefaultToolRegistry();
+    registry.register(new MockEchoTool());
+
+    let turnCount = 0;
+    const receivedRequests: ModelRequest[] = [];
+
+    provider.generateFn = async function* (request: ModelRequest) {
+      turnCount++;
+      receivedRequests.push(request);
+
+      if (turnCount === 1) {
+        yield {
+          type: "tool_call",
+          call: {
+            id: "call-1",
+            name: "echo",
+            arguments: { message: "hello" }
+          }
+        };
+        yield { type: "completed" };
+      } else if (turnCount === 2) {
+        // Model returns empty content and no tool calls
+        yield { type: "completed" };
+      } else {
+        yield {
+          type: "text_delta",
+          content: "Here is the explanation after the nudge."
+        };
+        yield { type: "completed" };
+      }
+    };
+
+    const runtime = new AgentRuntime(provider, { registry });
+    const events: AgentEvent[] = [];
+
+    for await (const event of runtime.run({ message: "Inspect and explain", cwd: "/test" })) {
+      events.push(event);
+    }
+
+    expect(receivedRequests).toHaveLength(3);
+    const lastUserMsg = receivedRequests[2].messages[receivedRequests[2].messages.length - 1];
+    expect(lastUserMsg.role).toBe("user");
+    expect(lastUserMsg.content).toContain("Please provide your analysis and answer");
+
+    const textEvents = events.filter((e) => e.type === "text");
+    expect(textEvents).toHaveLength(1);
+    if (textEvents[0].type === "text") {
+      expect(textEvents[0].content).toBe("Here is the explanation after the nudge.");
+    }
+  });
+
+  it("emits informative fallback message when model returns empty response on user prompt even after nudge", async () => {
+    const provider = new MockToolModelProvider();
+    const registry = new DefaultToolRegistry();
+
+    // Provider consistently returns 0 text tokens and 0 tool calls
+    provider.generateFn = async function* () {
+      yield { type: "completed" };
+    };
+
+    const runtime = new AgentRuntime(provider, { registry });
+    const events: AgentEvent[] = [];
+
+    for await (const event of runtime.run({ message: "Hello?", cwd: "/test" })) {
+      events.push(event);
+    }
+
+    const textEvents = events.filter((e) => e.type === "text");
+    expect(textEvents).toHaveLength(1);
+    if (textEvents[0].type === "text") {
+      expect(textEvents[0].content).toContain("I didn't receive a response from the model");
+    }
+  });
 });

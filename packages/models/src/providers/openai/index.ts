@@ -12,6 +12,7 @@ export interface OpenAIProviderOptions {
   apiKey?: string;
   model?: string;
   client?: OpenAI;
+  extraBody?: Record<string, unknown>;
 }
 
 interface AccumulatedToolCall {
@@ -25,6 +26,7 @@ export class OpenAIModelProvider implements ModelProvider {
   public readonly model: string;
   private readonly apiKey: string;
   private readonly client: OpenAI;
+  private readonly extraBody?: Record<string, unknown>;
 
   public readonly capabilities: ModelCapabilities = {
     streaming: true,
@@ -40,6 +42,7 @@ export class OpenAIModelProvider implements ModelProvider {
     }
     this.apiKey = apiKey;
     this.model = options.model || process.env.FE_MODEL || "gpt-4o";
+    this.extraBody = options.extraBody;
     this.client =
       options.client ||
       new OpenAI({
@@ -130,12 +133,14 @@ export class OpenAIModelProvider implements ModelProvider {
           stream: true,
           stream_options: {
             include_usage: true
-          }
-        },
+          },
+          ...(this.extraBody || {})
+        } as unknown as OpenAI.Chat.ChatCompletionCreateParamsStreaming,
         { signal }
       );
 
       let usage: TokenUsage | undefined;
+      let isThinking = false;
       const accumulatedToolCalls = new Map<number, AccumulatedToolCall>();
 
       for await (const chunk of stream) {
@@ -144,11 +149,36 @@ export class OpenAIModelProvider implements ModelProvider {
         }
 
         const delta = chunk.choices[0]?.delta;
+        const deltaAny = delta as
+          | (typeof delta & {
+              reasoning?: string;
+              reasoning_content?: string;
+            })
+          | undefined;
+        const reasoningChunk =
+          deltaAny?.reasoning || deltaAny?.reasoning_content;
+
+        if (reasoningChunk) {
+          if (!isThinking) {
+            isThinking = true;
+            yield { type: "text_delta", content: "<think>" };
+          }
+          yield { type: "text_delta", content: reasoningChunk };
+        }
+
         if (delta?.content) {
+          if (isThinking) {
+            isThinking = false;
+            yield { type: "text_delta", content: "</think>" };
+          }
           yield { type: "text_delta", content: delta.content };
         }
 
         if (delta?.tool_calls) {
+          if (isThinking) {
+            isThinking = false;
+            yield { type: "text_delta", content: "</think>" };
+          }
           for (const tcDelta of delta.tool_calls) {
             const index = typeof tcDelta.index === "number" ? tcDelta.index : 0;
             const existing = accumulatedToolCalls.get(index) || {
@@ -174,6 +204,11 @@ export class OpenAIModelProvider implements ModelProvider {
             totalTokens: chunk.usage.total_tokens
           };
         }
+      }
+
+      if (isThinking) {
+        isThinking = false;
+        yield { type: "text_delta", content: "</think>" };
       }
 
       for (const [, callData] of accumulatedToolCalls) {

@@ -59,6 +59,8 @@ export interface AgentState {
 
 import type { RepositoryExplorer, ExplorationResult } from "./exploration/types.js";
 import type { CodeContextSelector, CodeContextResult } from "./context/types.js";
+import { prepareModelMessages } from "./context/messageOptimizer.js";
+import { estimateTokens } from "./optimization/estimator.js";
 import type { AgentExecutionStrategy } from "./strategy/types.js";
 import { DefaultAgentExecutionStrategy } from "./strategy/executionStrategy.js";
 import { TaskCompletionTracker } from "./completion/tracker.js";
@@ -1297,6 +1299,7 @@ export class AgentRuntime implements Agent {
     }
 
     let turnCount = 0;
+    let emptyToolNudgeSent = false;
     try {
       while (turnCount < this.maxTurns) {
         turnCount++;
@@ -1311,9 +1314,22 @@ export class AgentRuntime implements Agent {
           inputSchema: t.inputSchema
         }));
 
+        const maxContext =
+          this.modelProvider.capabilities.maxContextTokens || 32768;
+        const systemTokens = estimateTokens(activeSystemPrompt);
+        const outputReserve = 2048;
+        const maxBudgetTokens = Math.max(
+          2048,
+          maxContext - outputReserve - systemTokens
+        );
+        const modelMessages = prepareModelMessages(
+          this.state.messages,
+          maxBudgetTokens
+        );
+
         const request: ModelRequest = {
           system: activeSystemPrompt,
-          messages: [...this.state.messages],
+          messages: modelMessages,
           tools: toolDefinitions.length ? toolDefinitions : undefined
         };
 
@@ -1371,13 +1387,46 @@ export class AgentRuntime implements Agent {
           break;
         }
 
+        const cleanAssistantContent = accumulatedText
+          ? accumulatedText
+              .replace(/<(?:think|thinking)>[\s\S]*?<\/(?:think|thinking)>/g, "")
+              .trim()
+          : "";
+
         this.state.messages.push({
           role: "assistant",
-          content: accumulatedText || undefined,
+          content: cleanAssistantContent || undefined,
           toolCalls: toolCallsForTurn.length ? toolCallsForTurn : undefined
         });
 
         if (toolCallsForTurn.length === 0) {
+          const msgCount = this.state.messages.length;
+          const priorMsg = msgCount >= 2 ? this.state.messages[msgCount - 2] : undefined;
+          const isAfterToolResult = priorMsg?.role === "tool";
+          const hasNoContent = !accumulatedText || accumulatedText.trim().length === 0;
+
+          if (hasNoContent && !emptyToolNudgeSent) {
+            emptyToolNudgeSent = true;
+            const nudgePrompt = isAfterToolResult
+              ? "Please provide your analysis and answer based on the tool results above, and proceed with any remaining steps."
+              : "Please provide a clear and helpful response to the request.";
+            this.state.messages.push({
+              role: "user",
+              content: nudgePrompt
+            });
+            continue;
+          }
+
+          if (hasNoContent) {
+            const fallbackMessage =
+              "I didn't receive a response from the model. Context limits may have been reached or the model returned an empty response. Please try rephrasing your request or narrowing the scope.";
+            yield { type: "text", content: fallbackMessage };
+            this.state.messages.push({
+              role: "assistant",
+              content: fallbackMessage
+            });
+          }
+
           if (
             this.currentRunStateMachine &&
             !this.currentRunStateMachine.isTerminal()
@@ -1846,11 +1895,20 @@ export class AgentRuntime implements Agent {
             }
           }
 
+          let toolResultContent = JSON.stringify(result);
+          const MAX_STORED_TOOL_CHARS = 16000;
+          if (toolResultContent.length > MAX_STORED_TOOL_CHARS) {
+            const head = toolResultContent.slice(0, 10000);
+            const tail = toolResultContent.slice(toolResultContent.length - 4000);
+            const omitted = toolResultContent.length - 14000;
+            toolResultContent = `${head}\n... [stored tool output truncated: ${omitted} characters omitted] ...\n${tail}`;
+          }
+
           this.state.messages.push({
             role: "tool",
             toolCallId: call.id,
             name: call.name,
-            content: JSON.stringify(result)
+            content: toolResultContent
           });
 
           // Invalidate repository exploration & code context caches if file was modified

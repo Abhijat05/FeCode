@@ -2383,6 +2383,28 @@ describe("CLI App Component", () => {
       // Only initial task was executed
       expect(executedTasks).toEqual(["initial task"]);
     });
+
+    it("properly captures <think> tags into thinking block and does not leak </think> into response", async () => {
+      const mockAgent = new MockAgent();
+      mockAgent.runFn = async function* () {
+        yield {
+          type: "text",
+          content: "<think>\nAnalyzing the project structure...\nAll good.\n</think>\nHere is the architecture overview."
+        };
+        yield { type: "done" };
+      };
+
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      await typeAndSubmit(stdin, "Explain architecture");
+      await delay(200);
+
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("Here is the architecture overview.");
+      expect(frame).not.toContain("</think>");
+      expect(frame).not.toContain("<think>");
+    });
   });
 });
 

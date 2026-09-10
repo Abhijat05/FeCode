@@ -51,4 +51,10 @@ describe("DEFAULT_SYSTEM_PROMPT", () => {
     expect(DEFAULT_SYSTEM_PROMPT).toContain("Stay in workspace");
     expect(DEFAULT_SYSTEM_PROMPT).toContain("Respect denials");
   });
+
+  it("enforces multi-part completion and post-tool response rules", () => {
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("COMPLETE ALL PARTS OF THE REQUEST");
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("ALWAYS RESPOND AFTER TOOL EXECUTION");
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("NO DRIFT OR TRIVIAL QUESTIONS");
+  });
 });

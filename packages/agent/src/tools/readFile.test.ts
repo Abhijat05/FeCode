@@ -116,4 +116,30 @@ describe("ReadFileTool", () => {
     expect(result.output?.startLine).toBe(1);
     expect(result.output?.endLine).toBeGreaterThanOrEqual(1);
   });
+
+  it("supports reading a specific line range using startLine and endLine", async () => {
+    const multiLineContent = Array.from({ length: 50 }, (_, i) => `Line ${i + 1}`).join("\n");
+    await fs.writeFile(path.join(tmpDir, "multiline.txt"), multiLineContent);
+
+    const result = await tool.execute({ path: "multiline.txt", startLine: 10, endLine: 15 }, context);
+    expect(result.success).toBe(true);
+    expect(result.output?.startLine).toBe(10);
+    expect(result.output?.endLine).toBe(15);
+    expect(result.output?.content).toBe("Line 10\nLine 11\nLine 12\nLine 13\nLine 14\nLine 15");
+    expect(result.output?.truncated).toBe(true);
+  });
+
+  it("truncates files exceeding maxDefaultLines when no line range is requested", async () => {
+    const multiLineContent = Array.from({ length: 20 }, (_, i) => `Line ${i + 1}`).join("\n");
+    await fs.writeFile(path.join(tmpDir, "lines.txt"), multiLineContent);
+
+    const lineLimitedTool = new ReadFileTool({ maxDefaultLines: 5 });
+    const result = await lineLimitedTool.execute({ path: "lines.txt" }, context);
+    expect(result.success).toBe(true);
+    expect(result.output?.truncated).toBe(true);
+    expect(result.output?.startLine).toBe(1);
+    expect(result.output?.endLine).toBe(5);
+    expect(result.output?.content).toContain("Line 1\nLine 2\nLine 3\nLine 4\nLine 5");
+    expect(result.output?.content).toContain("File has 20 lines. Showing lines 1-5");
+  });
 });
