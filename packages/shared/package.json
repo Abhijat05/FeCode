@@ -23,10 +23,10 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@types/dotenv": "^6.1.1",
     "dotenv": "^16.6.1"
   },
   "devDependencies": {
+    "@types/dotenv": "^6.1.1",
     "typescript": "^5.7.2"
   }
 }
