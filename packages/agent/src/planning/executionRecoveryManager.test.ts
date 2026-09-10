@@ -401,7 +401,6 @@ describe("DefaultExecutionRecoveryManager — Phase 5V", () => {
       strategy: "recheck"
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     for await (const _ev of recoveryManager.executeRecovery(plan, assessment, {
       cwd: tmpDir,
       approved: true

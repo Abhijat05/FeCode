@@ -76,7 +76,7 @@ export class SkillContextFormatter {
     
     const steps = [
       // Drop redundant examples
-      ...representations.map((rep, index) => () => {
+      ...representations.map((_rep, index) => () => {
         // Reverse order (lowest priority first) -> actual index is (length - 1 - index)
         const target = representations[representations.length - 1 - index];
         if (target.examples.length > 1) {
@@ -88,7 +88,7 @@ export class SkillContextFormatter {
         return false;
       }),
       // Drop ALL examples
-      ...representations.map((rep, index) => () => {
+      ...representations.map((_rep, index) => () => {
         const target = representations[representations.length - 1 - index];
         if (target.examples.length > 0) {
           target.examples = [];
@@ -98,7 +98,7 @@ export class SkillContextFormatter {
         return false;
       }),
       // Drop description
-      ...representations.map((rep, index) => () => {
+      ...representations.map((_rep, index) => () => {
         const target = representations[representations.length - 1 - index];
         if (target.description) {
           target.description = "";
@@ -108,7 +108,7 @@ export class SkillContextFormatter {
         return false;
       }),
       // Drop instructions
-      ...representations.map((rep, index) => () => {
+      ...representations.map((_rep, index) => () => {
         const target = representations[representations.length - 1 - index];
         if (target.instructions.length > 0) {
           target.instructions = [];

@@ -88,7 +88,7 @@ describe("Phase 5AC — DefaultProductRuntime Facade Unit Tests", () => {
     });
 
     const notifications: string[] = [];
-    const unsubscribe = productRuntime.subscribe((state, event) => {
+    const unsubscribe = productRuntime.subscribe((_state, event) => {
       if (event) {
         notifications.push(event.type);
       }

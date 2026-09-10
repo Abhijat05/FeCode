@@ -169,7 +169,6 @@ describe("Explicit Resume Execution & Workspace Reconciliation — Phase 5O", ()
 
     let errorThrown: Error | null = null;
     try {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       for await (const _ of runtime.resumeRun("run-no-approval", {
         cwd: tmpDir,
         approved: false // Explicitly not approved
@@ -216,7 +215,6 @@ describe("Explicit Resume Execution & Workspace Reconciliation — Phase 5O", ()
 
     let errorThrown: Error | null = null;
     try {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       for await (const _ of runtime.resumeRun("run-foreign-proj", {
         cwd: tmpDir,
         approved: true

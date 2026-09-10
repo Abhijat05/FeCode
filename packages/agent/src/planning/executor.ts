@@ -1,13 +1,10 @@
-import type { ToolCall } from "@fecode/models";
 import type { AgentEvent } from "../index.js";
 import type {
   ExecutionFeedbackKind,
   ExecutionFeedbackManager,
-  ExecutionIntent,
   PlanExecutor,
   PlanExecutorContext,
   PlanExecutorOptions,
-  PlanStep,
   PlanStepExecutionResult,
   PlanVerificationResult,
   StepRetryPolicy,
@@ -884,110 +881,5 @@ export class DefaultPlanExecutor implements PlanExecutor {
       isResume: true,
       resumedFromStepId: options.resumedFromStepId
     });
-  }
-
-  /**
-   * Helper to translate ExecutionIntent into standard tool calls.
-   */
-  private translateIntentToToolCall(
-    step: PlanStep
-  ): ToolCall | null {
-    const intent: ExecutionIntent | undefined = step.intent;
-    const callId = `call-${step.stepId}-${Date.now()}`;
-
-    if (!intent) {
-      if (step.type === "inspect") {
-        return {
-          id: callId,
-          name: "read_file",
-          arguments: {
-            path: step.expectedFiles?.[0] || "README.md"
-          }
-        };
-      }
-      if (step.type === "test" || step.type === "verify") {
-        return {
-          id: callId,
-          name: "execute_command",
-          arguments: {
-            command: "npm test"
-          }
-        };
-      }
-      return null;
-    }
-
-    switch (intent.type) {
-      case "inspect_file":
-        return {
-          id: callId,
-          name: "read_file",
-          arguments: {
-            path: intent.target || step.expectedFiles?.[0] || ""
-          }
-        };
-
-      case "inspect_directory":
-        return {
-          id: callId,
-          name: "list_directory",
-          arguments: {
-            path: intent.target || "."
-          }
-        };
-
-      case "search_code":
-        return {
-          id: callId,
-          name: "search_files",
-          arguments: {
-            query: intent.reason || step.title
-          }
-        };
-
-      case "modify_file":
-        return {
-          id: callId,
-          name: "edit_file",
-          arguments: {
-            path: intent.target || step.expectedFiles?.[0] || "",
-            oldText: "",
-            newText: ""
-          }
-        };
-
-      case "create_file":
-        return {
-          id: callId,
-          name: "write_file",
-          arguments: {
-            path: intent.target || step.expectedFiles?.[0] || "",
-            content: ""
-          }
-        };
-
-      case "delete_file":
-        return {
-          id: callId,
-          name: "delete_file",
-          arguments: {
-            path: intent.target || step.expectedFiles?.[0] || ""
-          }
-        };
-
-      case "execute_command":
-      case "run_tests":
-      case "verify_changes":
-        return {
-          id: callId,
-          name: "execute_command",
-          arguments: {
-            command: intent.command || "npm test"
-          }
-        };
-
-      default:
-        return null;
-    }
   }
 }

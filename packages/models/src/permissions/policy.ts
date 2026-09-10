@@ -9,8 +9,7 @@ import type {
 } from "./types.js";
 
 export class DefaultPermissionPolicy implements PermissionPolicy {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  checkPermission(tool: Tool, context: ToolContext): PermissionDecision {
+  checkPermission(tool: Tool, _context: ToolContext): PermissionDecision {
     const category = tool.permissionCategory || "read";
 
     if (category === "read") {
@@ -37,15 +36,13 @@ export class DefaultPermissionManager implements PermissionManager {
 }
 
 export class AutoApproveResolver implements ApprovalResolver {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async resolve(request: ApprovalRequest): Promise<ApprovalDecision> {
+  async resolve(_request: ApprovalRequest): Promise<ApprovalDecision> {
     return { approved: true };
   }
 }
 
 export class AutoDenyResolver implements ApprovalResolver {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async resolve(request: ApprovalRequest): Promise<ApprovalDecision> {
+  async resolve(_request: ApprovalRequest): Promise<ApprovalDecision> {
     return { approved: false, reason: "Tool execution was denied by policy." };
   }
 }

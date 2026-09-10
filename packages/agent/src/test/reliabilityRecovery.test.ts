@@ -782,7 +782,7 @@ describe("FeCode Phase 4K — Real-World Agent Reliability & Recovery", () => {
   // 13. Cancellation Recovery
   it("Cancellation Recovery: cancels mid-run cleanly and leaves runtime ready for next turn", async () => {
     const provider = new MockProvider();
-    provider.generateHandler = async function* (req, signal) {
+    provider.generateHandler = async function* (_req, signal) {
       if (signal?.aborted) {
         throw new Error("Aborted");
       }

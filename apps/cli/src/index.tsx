@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import React from "react";
 import { render } from "ink";
 import { loadConfig } from "@fecode/shared";
 import { createModelProvider } from "@fecode/models";

@@ -545,7 +545,7 @@ describe("FeCode Phase 4L — Autonomous Task Completion", () => {
   // 8. Cancellation
   it("Cancellation: reports cancelled status without claiming completion", async () => {
     const provider = new MockProvider();
-    provider.generateHandler = async function* (req, signal) {
+    provider.generateHandler = async function* (_req, signal) {
       if (signal?.aborted) {
         throw new Error("Aborted");
       }

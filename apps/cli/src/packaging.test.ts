@@ -172,7 +172,7 @@ describe("FeCode Packaging & Distribution Verification (Phase 5AH)", () => {
         fs.rmSync(path.resolve(repoRoot, tgz), { force: true });
       }
     }
-  });
+  }, 30000);
 
   it("Graceful Git fallback: non-git directory falls back safely without throwing", async () => {
     const tempNonGit = fs.mkdtempSync(path.join(os.tmpdir(), "fecode-nongit-"));

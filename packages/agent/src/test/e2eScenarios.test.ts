@@ -496,7 +496,7 @@ describe("FeCode End-to-End Scenarios", () => {
 
   it("Scenario J — Cancellation: cancels generation cleanly via AbortController", async () => {
     const provider = new MockProvider();
-    provider.generateHandler = async function* (req, signal) {
+    provider.generateHandler = async function* (_req, signal) {
       if (signal?.aborted) {
         throw new Error("Generation aborted");
       }

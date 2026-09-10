@@ -188,7 +188,6 @@ describe("edit_file Integration Tests with Permission Approval Pipeline", () => 
     await fs.writeFile(path.join(tmpDir, targetFile), initialContent);
 
     const cancellingResolver = {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       async resolve(_request: ApprovalRequest): Promise<ApprovalDecision> {
         return { approved: false, reason: "Cancelled via Ctrl+C." };
       }

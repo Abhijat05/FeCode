@@ -105,7 +105,6 @@ const FRAMEWORK_CATEGORIES = new Set(["framework", "styling"]);
 function scoreSkill(
   skill: Skill,
   requestTokens: Set<string>,
-  normalisedRequest: string,
   projectContext?: ProjectContext
 ): number {
   let score = 0;
@@ -215,13 +214,12 @@ function scoreSkill(
 
 export function recommendSkillsFromRequest(options: RecommendSkillsOptions): SkillRecommendation[] {
   const { request, registry, projectContext, maxResults = MAX_DEFAULT } = options;
-  const normRequest = normalise(request);
   const requestTokens = tokenize(request);
 
   const scored: SkillRecommendation[] = [];
 
   for (const skill of registry.list()) {
-    const score = scoreSkill(skill, requestTokens, normRequest, projectContext);
+    const score = scoreSkill(skill, requestTokens, projectContext);
     if (score > 0) {
       scored.push({ skill, score });
     }

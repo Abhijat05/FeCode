@@ -26,8 +26,7 @@ export class MockWriteTool implements Tool<MockWriteInput, MockWriteOutput> {
 
   async execute(
     input: MockWriteInput,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    context: ToolContext
+    _context: ToolContext
   ): Promise<ToolResult<MockWriteOutput>> {
     return {
       success: true,

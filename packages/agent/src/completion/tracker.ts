@@ -63,6 +63,10 @@ export class TaskCompletionTracker {
     return this.baselineSnapshot;
   }
 
+  public getPostTaskSnapshot(): import("../git/types.js").RepositorySnapshot | undefined {
+    return this.postTaskSnapshot;
+  }
+
   public setRequest(request: string): void {
     this.request = request;
     if (!this.startedAt) {
