@@ -29,7 +29,7 @@ describe("FeCode Packaging & Distribution Verification (Phase 5AH)", () => {
       cwd: cliDir
     }).trim();
 
-    expect(output).toBe("1.0.0-rc.1");
+    expect(output).toBe("1.0.0");
   });
 
   it("Version flag: -v shorthand prints version and exits 0 cleanly", () => {
@@ -38,7 +38,7 @@ describe("FeCode Packaging & Distribution Verification (Phase 5AH)", () => {
       cwd: cliDir
     }).trim();
 
-    expect(output).toBe("1.0.0-rc.1");
+    expect(output).toBe("1.0.0");
   });
 
   it("Help flag: --help prints comprehensive CLI usage and exits 0 cleanly", () => {
