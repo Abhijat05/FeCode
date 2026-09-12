@@ -142,4 +142,22 @@ describe("ReadFileTool", () => {
     expect(result.output?.content).toContain("Line 1\nLine 2\nLine 3\nLine 4\nLine 5");
     expect(result.output?.content).toContain("File has 20 lines. Showing lines 1-5");
   });
+
+  it("successfully reads line range from a file that exceeds maxBytes limit", async () => {
+    // Generate a file with 100 lines (~1500 bytes)
+    const longContent = Array.from({ length: 100 }, (_, i) => `Line ${i + 1}: ${"x".repeat(15)}`).join("\n");
+    await fs.writeFile(path.join(tmpDir, "huge.txt"), longContent);
+
+    // Limit maxBytes to 200 bytes (which only covers first ~12 lines)
+    const byteLimitedTool = new ReadFileTool({ maxBytes: 200 });
+
+    // Request lines 50 to 55 (well beyond the first 200 bytes)
+    const result = await byteLimitedTool.execute({ path: "huge.txt", startLine: 50, endLine: 55 }, context);
+    expect(result.success).toBe(true);
+    expect(result.output?.startLine).toBe(50);
+    expect(result.output?.endLine).toBe(55);
+    expect(result.output?.content).toBe(
+      Array.from({ length: 6 }, (_, i) => `Line ${50 + i}: ${"x".repeat(15)}`).join("\n")
+    );
+  });
 });
