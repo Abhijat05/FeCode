@@ -170,6 +170,10 @@ describe("Context-Aware Safe Editing", () => {
     expect(isSecretFile(".env.local")).toBe(true);
     expect(isSecretFile("id_rsa")).toBe(true);
     expect(isSecretFile("src/App.tsx")).toBe(false);
+    expect(isSecretFile(".env.example")).toBe(false);
+    expect(isSecretFile(".env.sample")).toBe(false);
+    expect(isSecretFile(".env.template")).toBe(false);
+    expect(isSecretFile(".env.dist")).toBe(false);
 
     const editTool = new EditFileTool();
     const writeTool = new WriteFileTool();
