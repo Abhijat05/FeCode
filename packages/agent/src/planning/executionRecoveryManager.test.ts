@@ -148,6 +148,121 @@ describe("DefaultExecutionRecoveryManager — Phase 5V", () => {
     expect(assessment.requiresExplicitApproval).toBe(true);
   });
 
+  it("does not write human intent descriptions into repair file contents", async () => {
+    const plan = createTaskPlan({
+      planId: "plan-5v-intent",
+      runId: "run-5v-intent",
+      userRequestSummary: "Create auth.ts",
+      objective: "Create auth file",
+      steps: [
+        {
+          stepId: "step-1",
+          order: 1,
+          title: "Create src/auth.ts",
+          objective: "Create file",
+          type: "modify",
+          dependencies: [],
+          riskLevel: "normal",
+          verificationRequired: false,
+          status: "pending",
+          expectedFiles: ["src/auth.ts"],
+          intent: {
+            type: "create_file",
+            target: "src/auth.ts",
+            expectedChange: "Add export statement for UserAuth helper interface",
+            reason: "Create file",
+            requiresApproval: false,
+            estimatedRisk: "normal"
+          }
+        }
+      ]
+    });
+
+    const reconciliationResult: FinalReconciliationResult = {
+      reconciliationId: "recon-intent",
+      runId: "run-5v-intent",
+      planId: "plan-5v-intent",
+      status: "inconsistent",
+      checkedAt: Date.now(),
+      expectedFiles: ["src/auth.ts"],
+      modifiedFiles: [],
+      unexpectedFiles: [],
+      missingFiles: ["src/auth.ts"],
+      changedFiles: [],
+      branchChanged: false,
+      workspaceChanged: false,
+      verificationPassed: true,
+      consistent: false,
+      failureReason: "Missing expected files: src/auth.ts"
+    };
+
+    const assessment = await recoveryManager.assessRecovery(plan, {
+      cwd: tmpDir,
+      reconciliationResult
+    });
+
+    expect(assessment.strategy).toBe("repair");
+    // Repair action MUST NOT contain the natural language intent description
+    expect(assessment.repairActions?.[0].content).not.toBe("Add export statement for UserAuth helper interface");
+    expect(assessment.repairActions?.[0].content).toBe("");
+  });
+
+  it("forces replan when missing file was from a modify_file step", async () => {
+    const plan = createTaskPlan({
+      planId: "plan-5v-mod",
+      runId: "run-5v-mod",
+      userRequestSummary: "Modify existing file",
+      objective: "Modify file",
+      steps: [
+        {
+          stepId: "step-1",
+          order: 1,
+          title: "Modify src/config.ts",
+          objective: "Modify config",
+          type: "modify",
+          dependencies: [],
+          riskLevel: "normal",
+          verificationRequired: false,
+          status: "pending",
+          expectedFiles: ["src/config.ts"],
+          intent: {
+            type: "modify_file",
+            target: "src/config.ts",
+            reason: "Update config",
+            requiresApproval: false,
+            estimatedRisk: "normal"
+          }
+        }
+      ]
+    });
+
+    const reconciliationResult: FinalReconciliationResult = {
+      reconciliationId: "recon-mod",
+      runId: "run-5v-mod",
+      planId: "plan-5v-mod",
+      status: "inconsistent",
+      checkedAt: Date.now(),
+      expectedFiles: ["src/config.ts"],
+      modifiedFiles: [],
+      unexpectedFiles: [],
+      missingFiles: ["src/config.ts"],
+      changedFiles: [],
+      branchChanged: false,
+      workspaceChanged: false,
+      verificationPassed: true,
+      consistent: false,
+      failureReason: "Missing expected files: src/config.ts"
+    };
+
+    const assessment = await recoveryManager.assessRecovery(plan, {
+      cwd: tmpDir,
+      reconciliationResult
+    });
+
+    // Modifying a file that doesn't exist cannot be automatically repaired; it requires replanning
+    expect(assessment.strategy).toBe("replan");
+  });
+
   it("assesses replan strategy when unexpected files or branch drift occur", async () => {
     const plan = createTaskPlan({
       planId: "plan-5v-drift",

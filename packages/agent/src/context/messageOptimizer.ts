@@ -95,14 +95,15 @@ export function prepareModelMessages(
     }
   }
 
-  // If there is only one user message (or none), we can't drop earlier turns
+  // If there is only one user message (or none), we can't drop earlier turns.
+  // Compact older tool results in the active turn if over budget.
   if (lastUserIdx <= 0) {
-    return cleanedMessages;
+    return compactOlderToolResults(cleanedMessages, maxBudgetTokens, estimateMessageTokens);
   }
 
-  // Identify turn boundaries (indices of all messages with role: "user")
+  // Identify turn boundaries (indices of all messages with role: "user" except index 0)
   const userIndices: number[] = [];
-  for (let i = 0; i < lastUserIdx; i++) {
+  for (let i = 1; i < lastUserIdx; i++) {
     if (cleanedMessages[i].role === "user") {
       userIndices.push(i);
     }
@@ -141,5 +142,60 @@ export function prepareModelMessages(
     ...cleanedMessages.slice(lastUserIdx)
   ];
 
+  if (estimateMessageTokens(finalActiveTurn) > maxBudgetTokens) {
+    return compactOlderToolResults(finalActiveTurn, maxBudgetTokens, estimateMessageTokens);
+  }
+
   return finalActiveTurn;
+}
+
+/**
+ * Compacts older tool results in an active turn or message list when token budget is exceeded.
+ * Strictly preserves tool call and tool result message pairings to satisfy API requirements,
+ * while replacing bloated older tool outputs with concise notices.
+ */
+function compactOlderToolResults(
+  msgs: ModelMessage[],
+  maxBudgetTokens: number,
+  estimateFn: (msgs: ModelMessage[]) => number
+): ModelMessage[] {
+  let currentTokens = estimateFn(msgs);
+  if (currentTokens <= maxBudgetTokens) {
+    return msgs;
+  }
+
+  const result = msgs.map((m) => ({ ...m }));
+  const toolIndices: number[] = [];
+  for (let i = 0; i < result.length; i++) {
+    if (result[i].role === "tool" && result[i].content) {
+      toolIndices.push(i);
+    }
+  }
+
+  // Compact older tool results from oldest to newest.
+  // Preserve the latest tool result untouched if possible so the model has recent context.
+  const limit = Math.max(0, toolIndices.length - 1);
+  for (let i = 0; i < limit; i++) {
+    const idx = toolIndices[i];
+    const msg = result[idx];
+    if (!msg.content || msg.content.includes("omitted for context budget")) {
+      continue;
+    }
+    const preview = msg.content.slice(0, 100).trim();
+    const compacted = preview
+      ? `${preview}\n... [earlier tool output omitted for context budget; tool execution completed]`
+      : `[earlier tool output omitted for context budget; tool execution completed]`;
+
+    result[idx] = {
+      ...msg,
+      content: compacted
+    };
+
+    currentTokens = estimateFn(result);
+    if (currentTokens <= maxBudgetTokens) {
+      break;
+    }
+  }
+
+  return result;
 }

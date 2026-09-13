@@ -286,4 +286,35 @@ describe("DefaultRecoveryManager — Phase 5H", () => {
     const updatedCp = await store.get("checkpoint-test-lifecycle");
     expect(updatedCp?.status).toBe("restored");
   });
+
+  it("rejects recovery with failure status in non-Git workspaces", async () => {
+    const store = new DefaultCheckpointStore(tmpStoreDir);
+    const cp: Checkpoint = {
+      id: "checkpoint-test-nongit",
+      createdAt: new Date().toISOString(),
+      repositoryRoot: tmpWorkDir.replace(/\\/g, "/"),
+      branch: null,
+      files: [{ path: "src/NewFile.ts", status: "added" }],
+      totalFiles: 1,
+      status: "ready",
+      isGit: false
+    };
+    await store.save(cp);
+
+    const mockRunner: GitCommandRunner = async () => {
+      return { stdout: "", stderr: "fatal: not a git repository", exitCode: 128 };
+    };
+
+    const gitRepo = new DefaultGitRepository(mockRunner);
+    const manager = new DefaultRecoveryManager(store, gitRepo, mockRunner);
+
+    const result = await manager.recover("checkpoint-test-nongit", {
+      cwd: tmpWorkDir,
+      approved: true
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe("blocked");
+    expect(result.error).toContain("Git repositories");
+  });
 });

@@ -126,4 +126,13 @@ describe("NodeCommandExecutor", () => {
     expect(res.stdout.trim()).toMatch(/^\d+\.\d+\.\d+/);
     expect(res.error).toBeUndefined();
   });
+
+  it("executes batch commands with flags and arguments without throwing DEP0190 or errors", async () => {
+    const res = await executor.execute("npm help --help", {
+      cwd: tmpDir
+    });
+
+    expect(res.exitCode).toBe(0);
+    expect(res.error).toBeUndefined();
+  });
 });

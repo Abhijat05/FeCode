@@ -129,6 +129,7 @@ export class SearchFilesTool
     const queryStr = input.query.trim();
     const queryLower = queryStr.toLowerCase();
     const maxResults = input.maxResults ?? this.defaultMaxResults;
+    const maxCollect = Math.max(maxResults * 10, 1000);
 
     const pathRes = resolveSafePath(context.cwd, input.path);
     if ("error" in pathRes) {
@@ -150,7 +151,8 @@ export class SearchFilesTool
           displayPath,
           queryLower,
           allMatches,
-          context.signal
+          context.signal,
+          maxCollect
         );
       } else if (stats.isDirectory()) {
         await this.searchDirectory(
@@ -158,7 +160,8 @@ export class SearchFilesTool
           rootDir,
           queryLower,
           allMatches,
-          context.signal
+          context.signal,
+          maxCollect
         );
       } else {
         return {
@@ -228,9 +231,10 @@ export class SearchFilesTool
     rootDir: string,
     queryLower: string,
     matches: SearchMatch[],
-    signal: AbortSignal
+    signal: AbortSignal,
+    maxCollect: number
   ): Promise<void> {
-    if (signal.aborted) return;
+    if (signal.aborted || matches.length >= maxCollect) return;
 
     let entries: fsSync.Dirent[];
     try {
@@ -240,7 +244,7 @@ export class SearchFilesTool
     }
 
     for (const entry of entries) {
-      if (signal.aborted) return;
+      if (signal.aborted || matches.length >= maxCollect) return;
 
       const fullPath = path.join(dirPath, entry.name);
       const relPath = path.relative(rootDir, fullPath);
@@ -254,7 +258,8 @@ export class SearchFilesTool
           rootDir,
           queryLower,
           matches,
-          signal
+          signal,
+          maxCollect
         );
       } else if (entry.isFile()) {
         if (isIgnoredFile(entry.name)) {
@@ -270,7 +275,8 @@ export class SearchFilesTool
           relPath,
           queryLower,
           matches,
-          signal
+          signal,
+          maxCollect
         );
       }
     }
@@ -281,9 +287,10 @@ export class SearchFilesTool
     displayPath: string,
     queryLower: string,
     matches: SearchMatch[],
-    signal: AbortSignal
+    signal: AbortSignal,
+    maxCollect: number
   ): Promise<void> {
-    if (signal.aborted) return;
+    if (signal.aborted || matches.length >= maxCollect) return;
 
     try {
       const handle = await fs.open(filePath, "r");
@@ -305,7 +312,7 @@ export class SearchFilesTool
 
       let lineNum = 0;
       for await (const line of rl) {
-        if (signal.aborted) {
+        if (signal.aborted || matches.length >= maxCollect) {
           rl.close();
           fileStream.destroy();
           return;
@@ -316,6 +323,12 @@ export class SearchFilesTool
         let startIndex = 0;
 
         while (startIndex < lineLower.length) {
+          if (matches.length >= maxCollect) {
+            rl.close();
+            fileStream.destroy();
+            return;
+          }
+
           const matchIndex = lineLower.indexOf(queryLower, startIndex);
           if (matchIndex === -1) break;
 

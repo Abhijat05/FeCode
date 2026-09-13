@@ -118,16 +118,11 @@ export class DefaultExecutionRecoveryManager implements ExecutionRecoveryManager
                 s.expectedFiles?.includes(missingFile) ||
                 s.intent?.target === missingFile
             );
-            if (step) {
+            if (step && step.intent?.type === "create_file") {
               repairActions.push({
                 target: missingFile,
-                operation:
-                  step.intent?.type === "create_file"
-                    ? "create_file"
-                    : step.intent?.type === "modify_file"
-                      ? "modify_file"
-                      : "restore_file",
-                content: step.intent?.expectedChange || "",
+                operation: "create_file",
+                content: "",
                 reason: `Repair missing expected file: ${missingFile}`
               });
             } else {

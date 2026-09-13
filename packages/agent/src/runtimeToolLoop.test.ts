@@ -278,5 +278,20 @@ describe("AgentRuntime Tool Loop", () => {
     if (textEvents[0].type === "text") {
       expect(textEvents[0].content).toContain("I didn't receive a response from the model");
     }
+
+    const msgs = runtime.getState().messages;
+    // Verify no consecutive assistant messages
+    for (let i = 1; i < msgs.length; i++) {
+      if (msgs[i].role === "assistant" && msgs[i - 1].role === "assistant") {
+        expect.fail(`Found duplicate consecutive assistant messages at indices ${i - 1} and ${i}`);
+      }
+    }
+    // Verify no assistant message has undefined content when toolCalls is empty
+    for (const m of msgs) {
+      if (m.role === "assistant" && (!m.toolCalls || m.toolCalls.length === 0)) {
+        expect(typeof m.content).toBe("string");
+        expect(m.content?.trim().length).toBeGreaterThan(0);
+      }
+    }
   });
 });

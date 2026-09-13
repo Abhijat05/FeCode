@@ -30,8 +30,17 @@ export class OllamaModelProvider implements ModelProvider {
     this.model = options.model || process.env.FE_MODEL || "qwen2.5-coder";
 
     const envCtx = process.env.OLLAMA_NUM_CTX || process.env.FE_MAX_CONTEXT_TOKENS;
+    let parsedEnvCtx: number | undefined;
+    if (envCtx) {
+      const parsed = parseInt(envCtx, 10);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        parsedEnvCtx = parsed;
+      }
+    }
     const maxContextTokens =
-      options.maxContextTokens || (envCtx ? parseInt(envCtx, 10) : 16384);
+      typeof options.maxContextTokens === "number" && options.maxContextTokens > 0
+        ? options.maxContextTokens
+        : (parsedEnvCtx ?? 16384);
 
     this.capabilities = {
       streaming: true,

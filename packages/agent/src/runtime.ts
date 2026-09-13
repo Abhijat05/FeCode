@@ -1393,40 +1393,47 @@ export class AgentRuntime implements Agent {
               .trim()
           : "";
 
-        this.state.messages.push({
-          role: "assistant",
-          content: cleanAssistantContent || undefined,
-          toolCalls: toolCallsForTurn.length ? toolCallsForTurn : undefined
-        });
+        const hasNoContent = !accumulatedText || accumulatedText.trim().length === 0;
 
-        if (toolCallsForTurn.length === 0) {
+        if (toolCallsForTurn.length > 0) {
+          this.state.messages.push({
+            role: "assistant",
+            content: cleanAssistantContent || undefined,
+            toolCalls: toolCallsForTurn
+          });
+        } else if (!hasNoContent) {
+          this.state.messages.push({
+            role: "assistant",
+            content: cleanAssistantContent
+          });
+        } else if (!emptyToolNudgeSent) {
+          this.state.messages.push({
+            role: "assistant",
+            content: "(acknowledged)"
+          });
+          emptyToolNudgeSent = true;
           const msgCount = this.state.messages.length;
           const priorMsg = msgCount >= 2 ? this.state.messages[msgCount - 2] : undefined;
           const isAfterToolResult = priorMsg?.role === "tool";
-          const hasNoContent = !accumulatedText || accumulatedText.trim().length === 0;
+          const nudgePrompt = isAfterToolResult
+            ? "Please provide your analysis and answer based on the tool results above, and proceed with any remaining steps."
+            : "Please provide a clear and helpful response to the request.";
+          this.state.messages.push({
+            role: "user",
+            content: nudgePrompt
+          });
+          continue;
+        } else {
+          const fallbackMessage =
+            "I didn't receive a response from the model. Context limits may have been reached or the model returned an empty response. Please try rephrasing your request or narrowing the scope.";
+          yield { type: "text", content: fallbackMessage };
+          this.state.messages.push({
+            role: "assistant",
+            content: fallbackMessage
+          });
+        }
 
-          if (hasNoContent && !emptyToolNudgeSent) {
-            emptyToolNudgeSent = true;
-            const nudgePrompt = isAfterToolResult
-              ? "Please provide your analysis and answer based on the tool results above, and proceed with any remaining steps."
-              : "Please provide a clear and helpful response to the request.";
-            this.state.messages.push({
-              role: "user",
-              content: nudgePrompt
-            });
-            continue;
-          }
-
-          if (hasNoContent) {
-            const fallbackMessage =
-              "I didn't receive a response from the model. Context limits may have been reached or the model returned an empty response. Please try rephrasing your request or narrowing the scope.";
-            yield { type: "text", content: fallbackMessage };
-            this.state.messages.push({
-              role: "assistant",
-              content: fallbackMessage
-            });
-          }
-
+        if (toolCallsForTurn.length === 0) {
           if (
             this.currentRunStateMachine &&
             !this.currentRunStateMachine.isTerminal()

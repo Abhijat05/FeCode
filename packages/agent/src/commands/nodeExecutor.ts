@@ -93,12 +93,25 @@ export class NodeCommandExecutor implements CommandExecutor {
         process.platform === "win32" && BATCH_EXECUTABLES.has(executable.toLowerCase());
 
       try {
-        child = spawn(executable, args, {
-          cwd: options.cwd,
-          env: childEnv,
-          shell: useShell,
-          windowsHide: true
-        });
+        if (useShell) {
+          // On Windows, batch executables (npm, npx, pnpm, yarn, bun) require the shell.
+          // In Node 22+, passing an args array to spawn with shell: true triggers [DEP0190].
+          // Node's official deprecation guidance is to pass the full command string with arguments
+          // directly as the command parameter and an empty args array.
+          child = spawn(command.trim(), [], {
+            cwd: options.cwd,
+            env: childEnv,
+            shell: true,
+            windowsHide: true
+          });
+        } else {
+          child = spawn(executable, args, {
+            cwd: options.cwd,
+            env: childEnv,
+            shell: false,
+            windowsHide: true
+          });
+        }
       } catch (err: unknown) {
         const errorMsg = err instanceof Error ? err.message : String(err);
         resolve({

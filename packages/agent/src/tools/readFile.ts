@@ -1,5 +1,7 @@
 import * as fs from "fs/promises";
+import * as fsSync from "fs";
 import * as path from "path";
+import * as readline from "readline";
 import type { Tool, ToolContext, ToolResult } from "@fecode/models";
 import { resolveSafePath } from "./pathUtils.js";
 
@@ -171,13 +173,86 @@ export class ReadFileTool
             };
           }
         }
+      } finally {
+        await handle.close();
+      }
 
+      const hasLineRange =
+        typeof input.startLine === "number" || typeof input.endLine === "number";
+
+      if (hasLineRange) {
+        const reqStart = Math.max(1, input.startLine ?? 1);
+        const reqEnd =
+          input.endLine !== undefined
+            ? Math.max(reqStart, input.endLine)
+            : reqStart + this.maxDefaultLines - 1;
+
+        const fileStream = fsSync.createReadStream(targetPath, {
+          encoding: "utf-8"
+        });
+        const rl = readline.createInterface({
+          input: fileStream,
+          crlfDelay: Infinity
+        });
+
+        const collected: string[] = [];
+        let currentLine = 0;
+        let bytesCollected = 0;
+        let byteTruncated = false;
+
+        for await (const line of rl) {
+          if (context.signal?.aborted) {
+            rl.close();
+            fileStream.destroy();
+            throw new Error("Read file aborted");
+          }
+          currentLine++;
+          if (currentLine >= reqStart && currentLine <= reqEnd) {
+            const lineBytes = Buffer.byteLength(line, "utf-8") + 1;
+            if (bytesCollected + lineBytes > this.maxBytes && collected.length > 0) {
+              byteTruncated = true;
+              break;
+            }
+            collected.push(line);
+            bytesCollected += lineBytes;
+          }
+          if (currentLine >= reqEnd) {
+            break;
+          }
+        }
+        rl.close();
+        fileStream.destroy();
+
+        const content = collected.join("\n");
+        const startLine = reqStart;
+        const endLine =
+          collected.length > 0 ? reqStart + collected.length - 1 : reqStart;
+        const truncated =
+          byteTruncated ||
+          (input.endLine !== undefined && currentLine >= reqEnd) ||
+          (input.startLine !== undefined && reqStart > 1);
+
+        return {
+          success: true,
+          output: {
+            path: displayPath,
+            content,
+            startLine,
+            endLine,
+            truncated
+          }
+        };
+      }
+
+      // No line range requested: read up to maxBytes and clamp to maxDefaultLines
+      const contentHandle = await fs.open(targetPath, "r");
+      try {
         const bytesToRead = Math.min(stats.size, this.maxBytes);
         const isByteTruncated = stats.size > this.maxBytes;
         const contentBuf = Buffer.alloc(bytesToRead);
 
         if (bytesToRead > 0) {
-          await handle.read(contentBuf, 0, bytesToRead, 0);
+          await contentHandle.read(contentBuf, 0, bytesToRead, 0);
         }
 
         const rawContent = contentBuf.toString("utf-8");
@@ -189,32 +264,7 @@ export class ReadFileTool
         let endLine = totalLines > 0 ? totalLines : 1;
         let truncated = isByteTruncated;
 
-        const hasLineRange =
-          typeof input.startLine === "number" || typeof input.endLine === "number";
-
-        if (hasLineRange) {
-          const reqStart = Math.max(1, input.startLine ?? 1);
-          const reqEnd = Math.min(
-            totalLines,
-            input.endLine !== undefined ? input.endLine : totalLines
-          );
-
-          if (reqStart > totalLines) {
-            content = "";
-            startLine = reqStart;
-            endLine = reqStart;
-          } else {
-            const clampedEnd = Math.max(reqStart, reqEnd);
-            const sliced = lines.slice(reqStart - 1, clampedEnd);
-            content = sliced.join("\n");
-            startLine = reqStart;
-            endLine = clampedEnd;
-          }
-
-          if (input.endLine !== undefined && input.endLine < totalLines) {
-            truncated = true;
-          }
-        } else if (totalLines > this.maxDefaultLines) {
+        if (totalLines > this.maxDefaultLines) {
           const sliced = lines.slice(0, this.maxDefaultLines);
           const notice = `\n\n... [File has ${totalLines} lines. Showing lines 1-${this.maxDefaultLines}. To view other sections, specify startLine and endLine (e.g. { path: "${input.path}", startLine: ${this.maxDefaultLines + 1}, endLine: ${Math.min(totalLines, this.maxDefaultLines * 2)} }) or use search_files.]`;
           content = sliced.join("\n") + notice;
@@ -234,7 +284,7 @@ export class ReadFileTool
           }
         };
       } finally {
-        await handle.close();
+        await contentHandle.close();
       }
     } catch (err: unknown) {
       const error = err as NodeJS.ErrnoException;

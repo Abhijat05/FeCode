@@ -120,4 +120,18 @@ describe("SearchFilesTool", () => {
       }
     }
   });
+
+  it("bounds memory by capping match collection on high-frequency queries", async () => {
+    // Create a large file with 2500 matching lines
+    const bigLines = Array.from({ length: 2500 }, (_, i) => `Line ${i}: target query match keyword`).join("\n");
+    await fs.writeFile(path.join(tmpDir, "src", "bigMatches.txt"), bigLines);
+
+    const result = await tool.execute({ query: "keyword", maxResults: 50 }, context);
+    expect(result.success).toBe(true);
+    expect(result.output?.matches).toHaveLength(50);
+    expect(result.output?.truncated).toBe(true);
+    expect(result.output?.totalMatches).toBeDefined();
+    // Total matches should be bounded by collection cap (<= 1000), not full 2500
+    expect(result.output!.totalMatches!).toBeLessThanOrEqual(1000);
+  });
 });

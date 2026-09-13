@@ -18,6 +18,18 @@ function countOccurrences(str: string, searchStr: string): number {
 
 export function isSecretFile(filePath: string): boolean {
   const basename = path.basename(filePath).toLowerCase();
+
+  // Template and example env files are non-sensitive and permitted
+  if (
+    basename === ".env.example" ||
+    basename === ".env.sample" ||
+    basename === ".env.template" ||
+    basename === ".env.dist" ||
+    basename === ".env.schema"
+  ) {
+    return false;
+  }
+
   if (
     basename.startsWith(".env") ||
     basename.endsWith(".pem") ||
