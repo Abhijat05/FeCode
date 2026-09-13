@@ -101,4 +101,45 @@ describe("OllamaModelProvider (offline unit tests)", () => {
       expect(events[0].error.message).toContain("ollama pull qwen2.5-coder");
     }
   });
+
+  describe("maxContextTokens resolution", () => {
+    it("uses default 16384 when no option or env var is set", () => {
+      const provider = new OllamaModelProvider();
+      expect(provider.capabilities.maxContextTokens).toBe(16384);
+    });
+
+    it("uses options.maxContextTokens when provided", () => {
+      const provider = new OllamaModelProvider({ maxContextTokens: 8192 });
+      expect(provider.capabilities.maxContextTokens).toBe(8192);
+    });
+
+    it("parses OLLAMA_NUM_CTX environment variable", () => {
+      process.env.OLLAMA_NUM_CTX = "32768";
+      const provider = new OllamaModelProvider();
+      expect(provider.capabilities.maxContextTokens).toBe(32768);
+    });
+
+    it("parses FE_MAX_CONTEXT_TOKENS environment variable", () => {
+      process.env.FE_MAX_CONTEXT_TOKENS = "4096";
+      const provider = new OllamaModelProvider();
+      expect(provider.capabilities.maxContextTokens).toBe(4096);
+    });
+
+    it("falls back to default 16384 when env variable is non-numeric or invalid", () => {
+      process.env.OLLAMA_NUM_CTX = "not-a-number";
+      const provider = new OllamaModelProvider();
+      expect(provider.capabilities.maxContextTokens).toBe(16384);
+      expect(Number.isNaN(provider.capabilities.maxContextTokens)).toBe(false);
+    });
+
+    it("falls back to default 16384 when env variable is zero or negative", () => {
+      process.env.OLLAMA_NUM_CTX = "0";
+      const provider = new OllamaModelProvider();
+      expect(provider.capabilities.maxContextTokens).toBe(16384);
+
+      process.env.OLLAMA_NUM_CTX = "-100";
+      const providerNegative = new OllamaModelProvider();
+      expect(providerNegative.capabilities.maxContextTokens).toBe(16384);
+    });
+  });
 });
