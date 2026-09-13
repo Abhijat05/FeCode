@@ -216,7 +216,10 @@ export class DefaultRecoveryManager implements RecoveryManager {
 
     try {
       const isGit = await this.gitRepo.isRepository(options.cwd);
-      let currentStatus = isGit ? await this.gitRepo.getStatus(options.cwd) : null;
+      if (!isGit) {
+        throw new Error("Automatic file recovery requires a Git repository.");
+      }
+      let currentStatus = await this.gitRepo.getStatus(options.cwd);
 
       for (const relPath of safety.affectedFiles) {
         if (options.signal?.aborted) {
