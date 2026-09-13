@@ -103,6 +103,17 @@ export class GeminiModelProvider implements ModelProvider {
             )
           ) {
             (last.parts as Array<Record<string, unknown>>).push({ text: msg.content || "" });
+          } else if (last && last.role === "user") {
+            // Last was a user turn with functionResponse (tool result), but Gemini requires
+            // strict alternation between user and model. Insert a model acknowledgment turn!
+            geminiContents.push({
+              role: "model",
+              parts: [{ text: "(acknowledged)" }] as unknown as Content["parts"]
+            });
+            geminiContents.push({
+              role: "user",
+              parts: [{ text: msg.content || "" }]
+            });
           } else {
             geminiContents.push({
               role: "user",
@@ -137,6 +148,16 @@ export class GeminiModelProvider implements ModelProvider {
               role: "model",
               parts: parts as unknown as Content["parts"]
             });
+          } else {
+            // An assistant message without content and without tool calls:
+            // Do not drop the model turn if the previous turn was "user" to maintain alternation.
+            const last = geminiContents[geminiContents.length - 1];
+            if (last && last.role === "user") {
+              geminiContents.push({
+                role: "model",
+                parts: [{ text: "(acknowledged)" }] as unknown as Content["parts"]
+              });
+            }
           }
         } else if (msg.role === "tool") {
           let parsedResponse: unknown = msg.content;

@@ -206,4 +206,59 @@ describe("GeminiModelProvider (offline unit tests)", () => {
     expect(contents[2].parts[0].functionResponse).toBeDefined();
     expect(contents[2].parts[1].functionResponse).toBeDefined();
   });
+
+  it("preserves strict user-model alternation when empty assistant turns are followed by user nudge", async () => {
+    let capturedContents: unknown = null;
+    const mockClient = {
+      models: {
+        generateContentStream: vi.fn().mockImplementation((req: { contents: unknown }) => {
+          capturedContents = req.contents;
+          return (async function* () {
+            yield { text: "Analysis completed" };
+          })();
+        })
+      }
+    } as unknown as GoogleGenAI;
+
+    const provider = new GeminiModelProvider({
+      apiKey: "fake-gemini-key",
+      client: mockClient
+    });
+
+    for await (const _ of provider.generate({
+      messages: [
+        { role: "user", content: "Inspect codebase" },
+        {
+          role: "assistant",
+          toolCalls: [{ id: "call-1", name: "list_directory", arguments: {} }]
+        },
+        {
+          role: "tool",
+          toolCallId: "call-1",
+          name: "list_directory",
+          content: JSON.stringify({ success: true, output: { path: ".", entries: [] } })
+        },
+        // Model returned 0 tokens, so an empty assistant turn was stored:
+        {
+          role: "assistant",
+          content: undefined
+        },
+        // Nudge prompt sent as user turn:
+        {
+          role: "user",
+          content: "Please provide your analysis and answer based on the tool results above."
+        }
+      ]
+    })) {
+      // consume stream
+    }
+
+    expect(Array.isArray(capturedContents)).toBe(true);
+    const contents = capturedContents as Array<{ role: string; parts: Array<Record<string, unknown>> }>;
+
+    // Verify that contents strictly alternate between user and model (no consecutive duplicate roles)
+    for (let i = 1; i < contents.length; i++) {
+      expect(contents[i].role).not.toBe(contents[i - 1].role);
+    }
+  });
 });
