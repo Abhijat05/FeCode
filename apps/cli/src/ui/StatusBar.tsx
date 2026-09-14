@@ -10,6 +10,7 @@ export interface StatusBarProps {
   hasModal?: boolean;
   modalType?: "approval" | "blocked" | "recovery" | "replan" | "resume" | string;
   customMessage?: string;
+  isReconciliation?: boolean;
 }
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -30,7 +31,8 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   isGenerating = false,
   hasModal = false,
   modalType,
-  customMessage
+  customMessage,
+  isReconciliation = false
 }) => {
   const [frame, setFrame] = useState(0);
   const isAnimating = isGenerating || ACTIVE_STATUSES.has(status.toLowerCase());
@@ -123,11 +125,22 @@ export const StatusBar: React.FC<StatusBarProps> = ({
         );
       }
       if (modalType === "blocked") {
+        if (isReconciliation) {
+          return (
+            <Box>
+              <Text color="yellow">[r]</Text>
+              <Text color="gray"> Recover </Text>
+              <Text color="cyan">[p]</Text>
+              <Text color="gray"> Replan </Text>
+              <Text color="gray">[x] Cancel</Text>
+            </Box>
+          );
+        }
         return (
           <Box>
-            <Text color="yellow">[r]</Text>
-            <Text color="gray"> Recover </Text>
-            <Text color="cyan">[p]</Text>
+            <Text color="green">[c]</Text>
+            <Text color="gray"> Continue </Text>
+            <Text color="cyan">[r]</Text>
             <Text color="gray"> Replan </Text>
             <Text color="gray">[x] Cancel</Text>
           </Box>

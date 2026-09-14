@@ -2710,6 +2710,7 @@ export const App: React.FC<AppProps> = ({
           status={uiState?.status || lastTaskStatus}
           isGenerating={isGenerating}
           hasModal={hasModal}
+          isReconciliation={Boolean(pendingPlanBlocked?.reconciliationResult)}
           modalType={
             pendingApproval
               ? "approval"

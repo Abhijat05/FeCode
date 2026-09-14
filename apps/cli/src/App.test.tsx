@@ -1435,6 +1435,7 @@ describe("CLI App Component", () => {
     expect(frame).toContain("[c] Continue — resume incomplete steps after fresh safety checks");
     expect(frame).toContain("[r] Replan  — create a new plan from the current workspace");
     expect(frame).toContain("[x] Cancel  — stop execution");
+    expect(frame).toContain("[c] Continue [r] Replan [x] Cancel");
     expect(frame).toContain("Choice [x]:");
 
     // Respond with 'c' to continue

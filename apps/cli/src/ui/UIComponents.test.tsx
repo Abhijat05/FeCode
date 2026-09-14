@@ -833,12 +833,26 @@ describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
       expect(frame).toContain("[y] Approve [n] Reject [Esc] Cancel");
     });
 
-    it("renders blocked modal shortcuts when blocked modal is active", () => {
+    it("renders continue/replan shortcuts when blocked modal is active for execution block (non-reconciliation)", () => {
       const { lastFrame } = render(
         <StatusBar
           status="blocked"
           hasModal={true}
           modalType="blocked"
+          isReconciliation={false}
+        />
+      );
+      const frame = lastFrame();
+      expect(frame).toContain("[c] Continue [r] Replan [x] Cancel");
+    });
+
+    it("renders recover/replan shortcuts when blocked modal is active for reconciliation block", () => {
+      const { lastFrame } = render(
+        <StatusBar
+          status="blocked"
+          hasModal={true}
+          modalType="blocked"
+          isReconciliation={true}
         />
       );
       const frame = lastFrame();
