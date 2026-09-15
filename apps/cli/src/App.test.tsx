@@ -1799,6 +1799,7 @@ describe("CLI App Component", () => {
     expect(frame).toContain("Recovery assessment");
     expect(frame).toContain("Strategy: repair");
     expect(frame).toContain("Proceed with recovery? [y/N]:");
+    expect(frame).toContain("[y] Proceed [n] Cancel [Esc] Cancel");
 
     // Approve with "y"
     await typeAndSubmit(stdin, "y");
@@ -2075,9 +2076,10 @@ describe("CLI App Component", () => {
     let frame = lastFrame();
     expect(frame).toContain("Recovery outcome: RECOVERED");
     expect(frame).toContain("Continue remaining plan steps? [y/N]:");
+    expect(frame).toContain("[y] Continue [n] Cancel [Esc] Cancel");
 
-    // Approve continuation with "y"
-    await typeAndSubmit(stdin, "y");
+    // Approve continuation with "c" (Continue)
+    await typeAndSubmit(stdin, "c");
     await delay(150);
 
     frame = lastFrame();

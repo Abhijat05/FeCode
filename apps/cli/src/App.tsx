@@ -494,7 +494,12 @@ export const App: React.FC<AppProps> = ({
       setPendingRecoveryContinuation(null);
 
       const choice = trimmed.toLowerCase();
-      if (choice === "y" || choice === "yes") {
+      if (
+        choice === "y" ||
+        choice === "yes" ||
+        choice === "c" ||
+        choice === "continue"
+      ) {
         const contTurnId = `turn-${Date.now()}`;
         setTurns((prev) => [
           ...prev,
@@ -627,7 +632,12 @@ export const App: React.FC<AppProps> = ({
       setPendingRecovery(null);
 
       const choice = trimmed.toLowerCase();
-      if (choice === "y" || choice === "yes") {
+      if (
+        choice === "y" ||
+        choice === "yes" ||
+        choice === "p" ||
+        choice === "proceed"
+      ) {
         const recTurnId = `turn-${Date.now()}`;
         setTurns((prev) => [
           ...prev,
@@ -2711,6 +2721,13 @@ export const App: React.FC<AppProps> = ({
           isGenerating={isGenerating}
           hasModal={hasModal}
           isReconciliation={Boolean(pendingPlanBlocked?.reconciliationResult)}
+          recoveryMode={
+            pendingRecoveryContinuation
+              ? "continuation"
+              : pendingRecovery
+                ? "confirm"
+                : undefined
+          }
           modalType={
             pendingApproval
               ? "approval"

@@ -859,16 +859,43 @@ describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
       expect(frame).toContain("[r] Recover [p] Replan [x] Cancel");
     });
 
-    it("renders recovery modal shortcuts when recovery modal is active", () => {
+    it("renders proceed/cancel shortcuts when recovery confirmation modal is active", () => {
       const { lastFrame } = render(
         <StatusBar
           status="recovering"
           hasModal={true}
           modalType="recovery"
+          recoveryMode="confirm"
         />
       );
       const frame = lastFrame();
-      expect(frame).toContain("[c] Continue [r] Replan [v] Re-check [x] Cancel");
+      expect(frame).toContain("[y] Proceed [n] Cancel [Esc] Cancel");
+    });
+
+    it("renders continue/cancel shortcuts when recovery continuation modal is active", () => {
+      const { lastFrame } = render(
+        <StatusBar
+          status="recovering"
+          hasModal={true}
+          modalType="recovery"
+          recoveryMode="continuation"
+        />
+      );
+      const frame = lastFrame();
+      expect(frame).toContain("[y] Continue [n] Cancel [Esc] Cancel");
+    });
+
+    it("renders replan/recheck shortcuts when recovery still_blocked modal is active", () => {
+      const { lastFrame } = render(
+        <StatusBar
+          status="recovering"
+          hasModal={true}
+          modalType="recovery"
+          recoveryMode="still_blocked"
+        />
+      );
+      const frame = lastFrame();
+      expect(frame).toContain("[r] Replan [c] Re-check [x] Cancel");
     });
   });
 

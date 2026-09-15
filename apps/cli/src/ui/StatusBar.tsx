@@ -11,6 +11,7 @@ export interface StatusBarProps {
   modalType?: "approval" | "blocked" | "recovery" | "replan" | "resume" | string;
   customMessage?: string;
   isReconciliation?: boolean;
+  recoveryMode?: "confirm" | "continuation" | "still_blocked" | string;
 }
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -32,7 +33,8 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   hasModal = false,
   modalType,
   customMessage,
-  isReconciliation = false
+  isReconciliation = false,
+  recoveryMode = "confirm"
 }) => {
   const [frame, setFrame] = useState(0);
   const isAnimating = isGenerating || ACTIVE_STATUSES.has(status.toLowerCase());
@@ -147,15 +149,35 @@ export const StatusBar: React.FC<StatusBarProps> = ({
         );
       }
       if (modalType === "recovery") {
+        if (recoveryMode === "still_blocked") {
+          return (
+            <Box>
+              <Text color="cyan">[r]</Text>
+              <Text color="gray"> Replan </Text>
+              <Text color="green">[c]</Text>
+              <Text color="gray"> Re-check </Text>
+              <Text color="gray">[x] Cancel</Text>
+            </Box>
+          );
+        }
+        if (recoveryMode === "continuation") {
+          return (
+            <Box>
+              <Text color="green">[y]</Text>
+              <Text color="gray"> Continue </Text>
+              <Text color="yellow">[n]</Text>
+              <Text color="gray"> Cancel </Text>
+              <Text color="gray">[Esc] Cancel</Text>
+            </Box>
+          );
+        }
         return (
           <Box>
-            <Text color="green">[c]</Text>
-            <Text color="gray"> Continue </Text>
-            <Text color="cyan">[r]</Text>
-            <Text color="gray"> Replan </Text>
-            <Text color="yellow">[v]</Text>
-            <Text color="gray"> Re-check </Text>
-            <Text color="gray">[x] Cancel</Text>
+            <Text color="green">[y]</Text>
+            <Text color="gray"> Proceed </Text>
+            <Text color="yellow">[n]</Text>
+            <Text color="gray"> Cancel </Text>
+            <Text color="gray">[Esc] Cancel</Text>
           </Box>
         );
       }
