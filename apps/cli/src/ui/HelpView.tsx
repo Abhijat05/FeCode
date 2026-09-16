@@ -26,11 +26,11 @@ export const HelpView: React.FC = () => {
 
   const shortcuts = [
     { key: "Ctrl+C", desc: "Cancel active generation / approval or exit" },
-    { key: "[p]", desc: "Toggle Plan View" },
-    { key: "[r]", desc: "Toggle Run History View" },
-    { key: "[d]", desc: "Toggle Diagnostics View" },
-    { key: "[?]", desc: "Toggle Help View" },
-    { key: "Esc", desc: "Return to Main Execution View" }
+    { key: "[p]", desc: "Toggle Plan View (in view navigation)" },
+    { key: "[r]", desc: "Toggle Run History View (in view navigation)" },
+    { key: "[d]", desc: "Toggle Diagnostics View (in view navigation)" },
+    { key: "[?]", desc: "Toggle Help View (or '?' on empty prompt)" },
+    { key: "Esc", desc: "Return to Main Execution View / dismiss modal" }
   ];
 
   return (

@@ -12,6 +12,7 @@ export interface StatusBarProps {
   customMessage?: string;
   isReconciliation?: boolean;
   recoveryMode?: "confirm" | "continuation" | "still_blocked" | string;
+  activeView?: string;
 }
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -34,7 +35,8 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   modalType,
   customMessage,
   isReconciliation = false,
-  recoveryMode = "confirm"
+  recoveryMode = "confirm",
+  activeView = "main"
 }) => {
   const [frame, setFrame] = useState(0);
   const isAnimating = isGenerating || ACTIVE_STATUSES.has(status.toLowerCase());
@@ -192,17 +194,42 @@ export const StatusBar: React.FC<StatusBarProps> = ({
       );
     }
 
+    if (activeView && activeView !== "main") {
+      return (
+        <Box>
+          <Text color="gray">[Esc] Main </Text>
+          <Text color="cyan">[p]</Text>
+          <Text color="gray"> Plan </Text>
+          <Text color="cyan">[r]</Text>
+          <Text color="gray"> Runs </Text>
+          <Text color="cyan">[d]</Text>
+          <Text color="gray"> Diagnostics </Text>
+          <Text color="cyan">[?]</Text>
+          <Text color="gray"> Help</Text>
+        </Box>
+      );
+    }
+
+    if (isGenerating) {
+      return (
+        <Box>
+          <Text color="cyan">[Ctrl+C]</Text>
+          <Text color="gray"> Cancel</Text>
+        </Box>
+      );
+    }
+
     return (
       <Box>
-        <Text color="cyan">[c]</Text>
-        <Text color="gray"> Cancel </Text>
-        <Text color="cyan">[p]</Text>
+        <Text color="cyan">[Ctrl+C]</Text>
+        <Text color="gray"> Exit </Text>
+        <Text color="cyan">/plan</Text>
         <Text color="gray"> Plan </Text>
-        <Text color="cyan">[r]</Text>
+        <Text color="cyan">/runs</Text>
         <Text color="gray"> Runs </Text>
-        <Text color="cyan">[d]</Text>
+        <Text color="cyan">/debug</Text>
         <Text color="gray"> Diagnostics </Text>
-        <Text color="cyan">[?]</Text>
+        <Text color="cyan">/help</Text>
         <Text color="gray"> Help</Text>
       </Box>
     );

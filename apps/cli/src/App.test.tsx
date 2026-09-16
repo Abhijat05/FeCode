@@ -2676,6 +2676,55 @@ describe("CLI App Component", () => {
       expect(frame).toContain("✗ Resume cancelled by user.");
       expect(exited).toBe(false);
     });
+
+    it("toggles help view on '?' when query is empty and navigates between views using hotkeys", async () => {
+      const mockAgent = new MockAgent();
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      // Press '?' on empty prompt
+      stdin.write("?");
+      await delay(100);
+
+      let frame = lastFrame() ?? "";
+      expect(frame).toContain("Available Commands:"); // HelpView is active
+
+      // Press 'r' while in HelpView to switch to Runs view
+      stdin.write("r");
+      await delay(100);
+
+      frame = lastFrame() ?? "";
+      expect(frame).toContain("Recent Runs"); // RunHistoryView is active
+
+      // Press 'd' while in RunHistoryView to switch to Diagnostics view
+      stdin.write("d");
+      await delay(100);
+
+      frame = lastFrame() ?? "";
+      expect(frame).toContain("No diagnostic information available"); // DiagnosticsView is active
+
+      // Press 'Esc' to return to Main view
+      stdin.write("\u001B");
+      await delay(100);
+
+      frame = lastFrame() ?? "";
+      expect(frame).not.toContain("No diagnostic information available");
+      expect(frame).toContain("Describe task or type /help...");
+    });
+
+    it("allows typing normal prompts starting with 'p', 'r', or 'd' without triggering hotkey navigation", async () => {
+      const mockAgent = new MockAgent();
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      // Type "please check"
+      await typeAndSubmit(stdin, "please check");
+      await delay(150);
+
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("please check");
+      expect(frame).not.toContain("Available Commands:");
+    });
   });
 });
 

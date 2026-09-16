@@ -192,11 +192,6 @@ export const App: React.FC<AppProps> = ({
   const [pendingQuery, setPendingQuery] = useState<string | null>(null);
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const prevIsGeneratingRef = useRef(false);
-
-  const handleQueryChange = (val: string) => {
-    setQuery(val);
-    setSelectedSuggestion(0);
-  };
   const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(
     null
   );
@@ -240,6 +235,44 @@ export const App: React.FC<AppProps> = ({
     !isGenerating && !hasModal && query.startsWith("/")
       ? filterCommands(query)
       : [];
+
+  const handleQueryChange = (val: string) => {
+    if (!hasModal && !isGenerating && activeView === "main" && query === "" && val === "?") {
+      setActiveView("help");
+      setQuery("");
+      setSelectedSuggestion(0);
+      return;
+    }
+    if (!hasModal && !isGenerating && activeView !== "main" && !val.startsWith("/") && val.length === 1) {
+      const char = val.toLowerCase();
+      if (char === "p") {
+        setActiveView(activeView === "plan" ? "main" : "plan");
+        setQuery("");
+        setSelectedSuggestion(0);
+        return;
+      }
+      if (char === "r") {
+        setActiveView(activeView === "runs" ? "main" : "runs");
+        setQuery("");
+        setSelectedSuggestion(0);
+        return;
+      }
+      if (char === "d") {
+        setActiveView(activeView === "diagnostics" ? "main" : "diagnostics");
+        setQuery("");
+        setSelectedSuggestion(0);
+        return;
+      }
+      if (char === "?" || char === "h") {
+        setActiveView(activeView === "help" ? "main" : "help");
+        setQuery("");
+        setSelectedSuggestion(0);
+        return;
+      }
+    }
+    setQuery(val);
+    setSelectedSuggestion(0);
+  };
 
   // Subscribe to ProductRuntime event stream
   const [uiState, setUiState] = useState<UIState | undefined>(() =>
@@ -542,12 +575,44 @@ export const App: React.FC<AppProps> = ({
         return;
       }
 
+      // Non-main view navigation shortcuts: p, r, d, ?, Esc (only when not typing a slash command)
+      if (!hasModal && !isGenerating && activeView !== "main" && !query.startsWith("/")) {
+        if (input === "p" || input === "P") {
+          setActiveView(activeView === "plan" ? "main" : "plan");
+          setQuery("");
+          return;
+        }
+        if (input === "r" || input === "R") {
+          setActiveView(activeView === "runs" ? "main" : "runs");
+          setQuery("");
+          return;
+        }
+        if (input === "d" || input === "D") {
+          setActiveView(activeView === "diagnostics" ? "main" : "diagnostics");
+          setQuery("");
+          return;
+        }
+        if (input === "?" || input === "h" || input === "H") {
+          setActiveView(activeView === "help" ? "main" : "help");
+          setQuery("");
+          return;
+        }
+      }
+
+      // Quick help shortcut from empty query on main view
+      if (!hasModal && !isGenerating && activeView === "main" && query === "" && input === "?") {
+        setActiveView("help");
+        setQuery("");
+        return;
+      }
+
       // Escape returns to main view or cancels active modal
       if (key.escape) {
         if (cancelActiveModal()) {
           return;
         }
         setActiveView("main");
+        setQuery("");
         return;
       }
     },
@@ -2827,6 +2892,7 @@ export const App: React.FC<AppProps> = ({
           status={uiState?.status || lastTaskStatus}
           isGenerating={isGenerating}
           hasModal={hasModal}
+          activeView={activeView}
           isReconciliation={Boolean(pendingPlanBlocked?.reconciliationResult)}
           recoveryMode={
             pendingRecoveryContinuation

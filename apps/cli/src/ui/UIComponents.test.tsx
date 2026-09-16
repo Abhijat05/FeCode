@@ -272,7 +272,7 @@ describe("Phase 5AD: Modular UI Components", () => {
     );
     const frame = lastFrame();
     expect(frame).toContain("○ Ready for task");
-    expect(frame).toContain("[c] Cancel [p] Plan [r] Runs [d] Diagnostics [?] Help");
+    expect(frame).toContain("[Ctrl+C] Exit /plan Plan /runs Runs /debug Diagnostics /help Help");
   });
 
   it("renders StatusBar with spinner in executing and active states", () => {
@@ -896,6 +896,31 @@ describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
       );
       const frame = lastFrame();
       expect(frame).toContain("[r] Replan [c] Re-check [x] Cancel");
+    });
+
+    it("renders cancel shortcut when task is actively generating without modal", () => {
+      const { lastFrame } = render(
+        <StatusBar
+          status="executing"
+          isGenerating={true}
+          hasModal={false}
+        />
+      );
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("[Ctrl+C] Cancel");
+    });
+
+    it("renders return to main and view switch shortcuts when in a secondary view", () => {
+      const { lastFrame } = render(
+        <StatusBar
+          status="idle"
+          isGenerating={false}
+          hasModal={false}
+          activeView="help"
+        />
+      );
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("[Esc] Main [p] Plan [r] Runs [d] Diagnostics [?] Help");
     });
   });
 
