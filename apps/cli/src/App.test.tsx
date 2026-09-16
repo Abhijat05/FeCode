@@ -2408,6 +2408,274 @@ describe("CLI App Component", () => {
       expect(frame).not.toContain("</think>");
       expect(frame).not.toContain("<think>");
     });
+
+    it("dismisses pendingPlanBlocked modal on Ctrl+C without exiting", async () => {
+      let exited = false;
+      const mockAgent = new MockAgent();
+      mockAgent.getTaskPlan = () => ({
+        planId: "plan-blocked-ctrl-c",
+        runId: "run-blocked-ctrl-c",
+        createdAt: Date.now(),
+        userRequestSummary: "Refactor database",
+        objective: "Refactor database models",
+        status: "blocked",
+        steps: [],
+        risks: []
+      });
+
+      mockAgent.runFn = async function* () {
+        yield {
+          type: "plan_blocked",
+          runId: "run-blocked-ctrl-c",
+          planId: "plan-blocked-ctrl-c",
+          blockedStepId: "step-1",
+          reason: "Workspace drifted",
+          affectedSteps: ["step-1"],
+          recommendedAction: "replan",
+          timestamp: Date.now()
+        };
+      };
+
+      const { lastFrame, stdin } = render(
+        <App agent={mockAgent} cwd="/test/dir" onExit={() => (exited = true)} />
+      );
+      await delay(50);
+
+      await typeAndSubmit(stdin, "Run migration");
+      await delay(200);
+
+      let frame = lastFrame() ?? "";
+      expect(frame).toContain("⚠ PLAN EXECUTION BLOCKED");
+
+      // Press Ctrl+C while blocked modal is active
+      stdin.write("\x03");
+      await delay(150);
+
+      frame = lastFrame() ?? "";
+      expect(frame).not.toContain("⚠ PLAN EXECUTION BLOCKED");
+      expect(frame).toContain("✓ Plan cancelled");
+      expect(exited).toBe(false);
+    });
+
+    it("dismisses pendingResume modal on Ctrl+C without exiting", async () => {
+      let exited = false;
+      const mockAgent = new MockAgent();
+      mockAgent.prepareResume = async (id: string) => ({
+        canResume: true,
+        originalRun: {
+          schemaVersion: 1,
+          runId: id,
+          projectId: "proj-test",
+          cwd: "/test",
+          userRequestSummary: "Test resume Ctrl+C",
+          startedAt: Date.now() - 10000,
+          finalStatus: "failed",
+          executionState: "failed",
+          activeSkills: [],
+          initialRiskLevel: "normal",
+          riskReasons: [],
+          requiresCheckpoint: false,
+          requiresExplicitApproval: false,
+          verificationAttempts: 1,
+          maxVerificationAttempts: 3,
+          recoveryAttempts: 0,
+          maxRecoveryAttempts: 1,
+          tools: [],
+          commands: [],
+          files: { modified: [], created: [], deleted: [] },
+          lifecycleTransitions: []
+        },
+        suggestedParentRunId: id,
+        newRunId: "run-resume-ctrl-c-123",
+        resumeDepth: 1,
+        workspaceChanged: false,
+        workspaceDiffReasons: [],
+        reassessedRisk: {
+          level: "normal",
+          reasons: [],
+          affectedFiles: 0,
+          requiresCheckpoint: false,
+          requiresExplicitApproval: false
+        },
+        reassessedSkills: [],
+        requiresUserConfirmation: false,
+        explanation: `Resuming task from run ${id}`
+      });
+
+      const { lastFrame, stdin } = render(
+        <App agent={mockAgent} cwd="/test" onExit={() => (exited = true)} />
+      );
+      await delay(50);
+
+      await typeAndSubmit(stdin, "/resume run-to-cancel");
+      await delay(100);
+      expect(lastFrame() ?? "").toContain("Resume this task as a new run? [y/N]");
+
+      // Press Ctrl+C while resume modal is active
+      stdin.write("\x03");
+      await delay(150);
+
+      const frame = lastFrame() ?? "";
+      expect(frame).not.toContain("Resume this task as a new run? [y/N]");
+      expect(frame).toContain("✗ Resume cancelled by user.");
+      expect(exited).toBe(false);
+    });
+
+    it("dismisses pendingRecovery modal on Ctrl+C without exiting", async () => {
+      let exited = false;
+      const mockAgent = new MockAgent();
+      mockAgent.getTaskPlan = () => ({
+        planId: "plan-recon-rec-ctrl-c",
+        runId: "run-recon-rec-ctrl-c",
+        createdAt: Date.now(),
+        userRequestSummary: "Create auth files",
+        objective: "Auth files",
+        status: "blocked",
+        steps: [],
+        risks: []
+      });
+
+      (mockAgent as unknown as { assessExecutionRecovery: () => Promise<unknown> }).assessExecutionRecovery = async () => ({
+        eligible: true,
+        strategy: "repair",
+        riskLevel: "elevated",
+        riskReasons: ["File modification required"],
+        workspaceDrift: false,
+        affectedSteps: ["step-1"],
+        affectedFiles: ["src/auth.ts"],
+        requiresExplicitApproval: true,
+        reason: "Missing expected file: src/auth.ts",
+        recoveryDepth: 0,
+        maxRecoveryDepth: 5,
+        isLimitReached: false
+      });
+
+      mockAgent.runFn = async function* () {
+        yield {
+          type: "final_reconciliation_failed",
+          result: {
+            reconciliationId: "recon-1",
+            runId: "run-recon-rec-ctrl-c",
+            planId: "plan-recon-rec-ctrl-c",
+            status: "inconsistent",
+            checkedAt: Date.now(),
+            expectedFiles: ["src/auth.ts"],
+            modifiedFiles: [],
+            unexpectedFiles: [],
+            missingFiles: ["src/auth.ts"],
+            changedFiles: [],
+            branchChanged: false,
+            workspaceChanged: false,
+            verificationPassed: true,
+            consistent: false,
+            failureReason: "Missing expected file: src/auth.ts"
+          },
+          timestamp: Date.now()
+        };
+      };
+
+      const { lastFrame, stdin } = render(
+        <App agent={mockAgent} cwd="/test/dir" onExit={() => (exited = true)} />
+      );
+      await delay(50);
+
+      await typeAndSubmit(stdin, "Run auth");
+      await delay(200);
+
+      // Choose [r] to recover
+      await typeAndSubmit(stdin, "r");
+      await delay(150);
+
+      let frame = lastFrame() ?? "";
+      expect(frame).toContain("Proceed with recovery? [y/N]:");
+
+      // Press Ctrl+C while recovery modal is active
+      stdin.write("\x03");
+      await delay(150);
+
+      frame = lastFrame() ?? "";
+      expect(frame).not.toContain("Recovery (repair)");
+      expect(frame).toContain("✓ Recovery cancelled");
+      expect(exited).toBe(false);
+    });
+
+    it("calls onExit when Ctrl+C is pressed while idle with no active modals", async () => {
+      let exited = false;
+      const mockAgent = new MockAgent();
+      const { stdin } = render(
+        <App agent={mockAgent} cwd="/test" onExit={() => (exited = true)} />
+      );
+      await delay(50);
+
+      stdin.write("\x03");
+      await delay(100);
+
+      expect(exited).toBe(true);
+    });
+
+    it("dismisses active modal on Escape key without exiting", async () => {
+      let exited = false;
+      const mockAgent = new MockAgent();
+      mockAgent.prepareResume = async (id: string) => ({
+        canResume: true,
+        originalRun: {
+          schemaVersion: 1,
+          runId: id,
+          projectId: "proj-test",
+          cwd: "/test",
+          userRequestSummary: "Test resume Escape",
+          startedAt: Date.now() - 10000,
+          finalStatus: "failed",
+          executionState: "failed",
+          activeSkills: [],
+          initialRiskLevel: "normal",
+          riskReasons: [],
+          requiresCheckpoint: false,
+          requiresExplicitApproval: false,
+          verificationAttempts: 1,
+          maxVerificationAttempts: 3,
+          recoveryAttempts: 0,
+          maxRecoveryAttempts: 1,
+          tools: [],
+          commands: [],
+          files: { modified: [], created: [], deleted: [] },
+          lifecycleTransitions: []
+        },
+        suggestedParentRunId: id,
+        newRunId: "run-resume-escape-123",
+        resumeDepth: 1,
+        workspaceChanged: false,
+        workspaceDiffReasons: [],
+        reassessedRisk: {
+          level: "normal",
+          reasons: [],
+          affectedFiles: 0,
+          requiresCheckpoint: false,
+          requiresExplicitApproval: false
+        },
+        reassessedSkills: [],
+        requiresUserConfirmation: false,
+        explanation: `Resuming task from run ${id}`
+      });
+
+      const { lastFrame, stdin } = render(
+        <App agent={mockAgent} cwd="/test" onExit={() => (exited = true)} />
+      );
+      await delay(50);
+
+      await typeAndSubmit(stdin, "/resume run-to-cancel");
+      await delay(100);
+      expect(lastFrame() ?? "").toContain("Resume this task as a new run? [y/N]");
+
+      // Press Escape while resume modal is active
+      stdin.write("\u001B");
+      await delay(150);
+
+      const frame = lastFrame() ?? "";
+      expect(frame).not.toContain("Resume this task as a new run? [y/N]");
+      expect(frame).toContain("✗ Resume cancelled by user.");
+      expect(exited).toBe(false);
+    });
   });
 });
 

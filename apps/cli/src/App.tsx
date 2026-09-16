@@ -386,6 +386,115 @@ export const App: React.FC<AppProps> = ({
         return;
       }
 
+      const cancelActiveModal = (): boolean => {
+        if (pendingApproval) {
+          if (approvalResolver) {
+            approvalResolver.cancelPending("Approval request cancelled via Ctrl+C");
+          }
+          setPendingApproval(null);
+          setApprovalInput("");
+          return true;
+        }
+
+        if (pendingPlanBlocked) {
+          const pb = pendingPlanBlocked;
+          setPendingPlanBlocked(null);
+          setBlockedInput("");
+          try {
+            if (agent && "resolveExecutionDecision" in agent) {
+              void (
+                agent as {
+                  resolveExecutionDecision: (
+                    id: string,
+                    d: string,
+                    opts?: { cwd: string }
+                  ) => Promise<unknown>;
+                }
+              )
+                .resolveExecutionDecision(pb.plan.planId, "cancel", { cwd })
+                .catch(() => {});
+            }
+            if (agent && "cancel" in agent) {
+              void agent.cancel().catch(() => {});
+            }
+          } catch {
+            // ignore
+          }
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: "",
+              response: `${PlanFormatter.formatCancelNotice()}\n`,
+              status: "done"
+            }
+          ]);
+          return true;
+        }
+
+        if (pendingRecovery) {
+          setPendingRecovery(null);
+          setRecoveryInput("");
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: "",
+              response: "✓ Recovery cancelled\n",
+              status: "done"
+            }
+          ]);
+          return true;
+        }
+
+        if (pendingRecoveryContinuation) {
+          setPendingRecoveryContinuation(null);
+          setRecoveryInput("");
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: "",
+              response: "Continuation cancelled.\n",
+              status: "done"
+            }
+          ]);
+          return true;
+        }
+
+        if (pendingReplan) {
+          setPendingReplan(null);
+          setReplanInput("");
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: "",
+              response: "Replanning cancelled.\n",
+              status: "done"
+            }
+          ]);
+          return true;
+        }
+
+        if (pendingResume) {
+          setPendingResume(null);
+          setResumeInput("");
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: "",
+              response: "✗ Resume cancelled by user.\n",
+              status: "done"
+            }
+          ]);
+          return true;
+        }
+
+        return false;
+      };
+
       // Ctrl+C cancellation
       if (key.ctrl && input === "c") {
         if (pendingQuery) {
@@ -393,12 +502,7 @@ export const App: React.FC<AppProps> = ({
           return;
         }
 
-        if (pendingApproval) {
-          if (approvalResolver) {
-            approvalResolver.cancelPending("Approval request cancelled via Ctrl+C");
-          }
-          setPendingApproval(null);
-          setApprovalInput("");
+        if (cancelActiveModal()) {
           return;
         }
 
@@ -438,8 +542,11 @@ export const App: React.FC<AppProps> = ({
         return;
       }
 
-      // Escape returns to main view
+      // Escape returns to main view or cancels active modal
       if (key.escape) {
+        if (cancelActiveModal()) {
+          return;
+        }
         setActiveView("main");
         return;
       }
