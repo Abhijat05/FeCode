@@ -8,3 +8,4 @@ docs
 dist-release/
 *.tgz
 apps/cli/skills/
+apps/cli/README.md

@@ -17,6 +17,18 @@ if (fs.existsSync(srcSkills)) {
   fs.cpSync(srcSkills, destSkills, { recursive: true });
 }
 
+// Ensure README.md is present with resolved image assets for npm
+const rootReadme = path.resolve(repoRoot, "README.md");
+const cliReadme = path.resolve(cliDir, "README.md");
+if (fs.existsSync(rootReadme)) {
+  let content = fs.readFileSync(rootReadme, "utf-8");
+  content = content.replaceAll(
+    'src="assets/fecode-banner.jpg"',
+    'src="https://raw.githubusercontent.com/Abhijat05/FeCode/master/assets/fecode-banner.jpg"'
+  );
+  fs.writeFileSync(cliReadme, content, "utf-8");
+}
+
 await build({
   configFile: false,
   build: {

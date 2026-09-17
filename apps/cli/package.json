@@ -1,6 +1,6 @@
 {
   "name": "fecode-cli",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "FeCode - Interactive Terminal Coding Assistant",
   "type": "module",
   "bin": {

@@ -24,21 +24,23 @@ describe("FeCode Packaging & Distribution Verification (Phase 5AH)", () => {
   });
 
   it("Version flag: --version prints version and exits 0 cleanly", () => {
+    const pkg = JSON.parse(fs.readFileSync(path.resolve(cliDir, "package.json"), "utf-8"));
     const output = execSync(`node "${cliDist}" --version`, {
       encoding: "utf-8",
       cwd: cliDir
     }).trim();
 
-    expect(output).toBe("1.0.0");
+    expect(output).toBe(pkg.version);
   });
 
   it("Version flag: -v shorthand prints version and exits 0 cleanly", () => {
+    const pkg = JSON.parse(fs.readFileSync(path.resolve(cliDir, "package.json"), "utf-8"));
     const output = execSync(`node "${cliDist}" -v`, {
       encoding: "utf-8",
       cwd: cliDir
     }).trim();
 
-    expect(output).toBe("1.0.0");
+    expect(output).toBe(pkg.version);
   });
 
   it("Help flag: --help prints comprehensive CLI usage and exits 0 cleanly", () => {

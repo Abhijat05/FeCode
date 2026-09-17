@@ -30,13 +30,13 @@ async function main(): Promise<void> {
 
   // Check --version / -v
   if (args.includes("--version") || args.includes("-v")) {
-    console.log("1.0.0");
+    console.log("1.0.1");
     process.exit(0);
   }
 
   // Check --help / -h
   if (args.includes("--help") || args.includes("-h")) {
-    console.log(`FeCode - Interactive Terminal Coding Assistant (v1.0.0)
+    console.log(`FeCode - Interactive Terminal Coding Assistant (v1.0.1)
 
 Usage:
   fe [options]
