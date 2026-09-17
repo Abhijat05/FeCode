@@ -9,7 +9,13 @@ import { resolveSafePath } from "../tools/pathUtils.js";
 export class SkillLoader {
   getBuiltinSkillsDir(): string {
     const currentDir = path.dirname(fileURLToPath(import.meta.url));
-    return path.resolve(currentDir, "../../skills");
+    const candidate1 = path.resolve(currentDir, "../../skills");
+    if (fsSync.existsSync(candidate1)) return candidate1;
+    const candidate2 = path.resolve(currentDir, "../skills");
+    if (fsSync.existsSync(candidate2)) return candidate2;
+    const candidate3 = path.resolve(currentDir, "./skills");
+    if (fsSync.existsSync(candidate3)) return candidate3;
+    return candidate1;
   }
 
   loadSkillFromFileSync(filePath: string, rootDir?: string): Skill {

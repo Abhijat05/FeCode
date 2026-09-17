@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/@fecode/cli"><img src="https://img.shields.io/badge/npm-@fecode/cli-red.svg" alt="npm package" /></a>
+  <a href="https://www.npmjs.com/package/fecode-cli"><img src="https://img.shields.io/badge/npm-fecode--cli-red.svg" alt="npm package" /></a>
   <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%3E=20.0.0-brightgreen.svg" alt="Node.js version" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License" /></a>
   <img src="https://img.shields.io/badge/typescript-strict%205.7+-blue.svg" alt="TypeScript Strict" />
@@ -138,7 +138,7 @@ FeCode requires **Node.js `>= 20.0.0`** and **npm `>= 10.0.0`**.
 
 ```bash
 # Install globally via npm
-npm install -g @fecode/cli
+npm install -g fecode-cli
 
 # Verify installation
 fe --version

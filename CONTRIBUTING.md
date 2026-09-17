@@ -40,7 +40,7 @@ npm run build
 ```text
 fecode/
 ├── apps/
-│   └── cli/          # Ink / React interactive terminal application (@fecode/cli)
+│   └── cli/          # Ink / React interactive terminal application (fecode-cli)
 ├── packages/
 │   ├── agent/        # Core agent runtime, planning, permissions, checkpoints (@fecode/agent)
 │   ├── models/       # Provider abstractions for Gemini, OpenAI, and Ollama (@fecode/models)

@@ -7,3 +7,4 @@ docs
 .env
 dist-release/
 *.tgz
+apps/cli/skills/
