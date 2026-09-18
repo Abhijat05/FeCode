@@ -449,7 +449,7 @@ describe("CLI App Component", () => {
     await delay(100);
 
     const frame = lastFrame();
-    expect(frame).toContain("Available commands:");
+    expect(frame).toContain("Available Commands:");
     expect(frame).toContain("/help");
     expect(frame).toContain("/status");
     expect(frame).toContain("/history");
@@ -2726,7 +2726,127 @@ describe("CLI App Component", () => {
       expect(frame).not.toContain("Available Commands:");
     });
   });
+
+  describe("BUG-UI-06 & BUG-UI-07: Isolated Secondary Views & Durable Runs History", () => {
+    it("does not render conversation turns underneath when in secondary views (BUG-UI-06)", async () => {
+      const mockAgent = new MockAgent();
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      // Submit initial task prompt
+      await typeAndSubmit(stdin, "inspect project code");
+      await delay(100);
+
+      let frame = lastFrame() ?? "";
+      expect(frame).toContain("inspect project code");
+
+      // Switch to /help view
+      await typeAndSubmit(stdin, "/help");
+      await delay(100);
+
+      frame = lastFrame() ?? "";
+      expect(frame).toContain("Available Commands:");
+      // Conversational turns must NOT be rendered underneath HelpView
+      expect(frame).not.toContain("inspect project code");
+
+      // Press Escape to return to main view
+      stdin.write("\u001B");
+      await delay(100);
+
+      frame = lastFrame() ?? "";
+      expect(frame).not.toContain("Available Commands:");
+      // Conversational turns are restored in main view
+      expect(frame).toContain("inspect project code");
+    });
+
+    it("populates RunHistoryView with full list of durable historical runs without duplicate turns (BUG-UI-06 & BUG-UI-07)", async () => {
+      const mockAgent = new MockAgent();
+      const sampleRuns: import("@fecode/agent").DurableRunRecord[] = [
+        {
+          schemaVersion: 1,
+          runId: "run-alpha-101",
+          projectId: "proj-test",
+          cwd: "/test",
+          userRequestSummary: "First historical task",
+          startedAt: Date.now() - 15000,
+          completedAt: Date.now() - 10000,
+          durationMs: 5000,
+          finalStatus: "completed",
+          executionState: "completed",
+          activeSkills: [],
+          initialRiskLevel: "normal",
+          riskReasons: [],
+          requiresCheckpoint: false,
+          requiresExplicitApproval: false,
+          verificationAttempts: 0,
+          maxVerificationAttempts: 3,
+          recoveryAttempts: 0,
+          maxRecoveryAttempts: 1,
+          tools: [],
+          commands: [],
+          files: { modified: [], created: [], deleted: [] },
+          lifecycleTransitions: []
+        },
+        {
+          schemaVersion: 1,
+          runId: "run-beta-202",
+          projectId: "proj-test",
+          cwd: "/test",
+          userRequestSummary: "Second historical task",
+          startedAt: Date.now() - 8000,
+          completedAt: Date.now() - 2000,
+          durationMs: 6000,
+          finalStatus: "failed",
+          executionState: "failed",
+          activeSkills: [],
+          initialRiskLevel: "elevated",
+          riskReasons: [],
+          requiresCheckpoint: true,
+          requiresExplicitApproval: false,
+          verificationAttempts: 1,
+          maxVerificationAttempts: 3,
+          recoveryAttempts: 0,
+          maxRecoveryAttempts: 1,
+          tools: [],
+          commands: [],
+          files: { modified: [], created: [], deleted: [] },
+          lifecycleTransitions: []
+        }
+      ];
+
+      mockAgent.listHistoricalRuns = async () => sampleRuns;
+      mockAgent.getHistoricalRun = async (id: string) =>
+        sampleRuns.find((r) => r.runId === id) || null;
+
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      // Submit /runs command
+      await typeAndSubmit(stdin, "/runs");
+      await delay(100);
+
+      let frame = lastFrame() ?? "";
+      expect(frame).toContain("Recent Runs");
+      expect(frame).not.toContain("No recorded historical runs found.");
+      expect(frame).toContain("run-alpha-101");
+      expect(frame).toContain("run-beta-202");
+      expect(frame).toContain("First historical task");
+      expect(frame).toContain("Second historical task");
+
+      // Press Escape to return to main view
+      stdin.write("\u001B");
+      await delay(100);
+
+      frame = lastFrame() ?? "";
+      expect(frame).not.toContain("Recent Runs");
+
+      // Run /run <id> to inspect single run, which should render in main view
+      await typeAndSubmit(stdin, "/run run-alpha-101");
+      await delay(100);
+
+      frame = lastFrame() ?? "";
+      expect(frame).toContain("Project:   proj-test");
+      expect(frame).toContain("run-alpha-101");
+    });
+  });
 });
-
-
-

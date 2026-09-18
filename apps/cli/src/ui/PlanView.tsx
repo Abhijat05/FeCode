@@ -26,6 +26,7 @@ export interface PlanViewProps {
   steps?: PlanStepItem[];
   completedCount?: number;
   totalCount?: number;
+  formattedOutput?: string;
 }
 
 export const PlanView: React.FC<PlanViewProps> = ({
@@ -36,8 +37,26 @@ export const PlanView: React.FC<PlanViewProps> = ({
   riskLevel,
   steps = [],
   completedCount,
-  totalCount
+  totalCount,
+  formattedOutput
 }) => {
+  if (formattedOutput) {
+    return (
+      <Box
+        flexDirection="column"
+        borderStyle="round"
+        borderColor="blue"
+        paddingX={1}
+        marginY={1}
+      >
+        <Box marginBottom={0}>
+          <Text bold color="blue">Task Plan</Text>
+        </Box>
+        <Text color="white">{formattedOutput}</Text>
+      </Box>
+    );
+  }
+
   const total = totalCount ?? steps.length;
   const completed =
     completedCount ?? steps.filter((s) => s.status === "completed").length;

@@ -10,7 +10,6 @@ import {
   DefaultRecoveryManager,
   RecoveryFormatter,
   DefaultTaskRiskPolicy,
-  formatRunDiagnostics,
   RunHistoryFormatter,
   PlanFormatter,
   transitionPlanStatus,
@@ -140,6 +139,90 @@ export const App: React.FC<AppProps> = ({
   const [activeView, setActiveView] = useState<
     "main" | "plan" | "runs" | "diagnostics" | "help" | "git"
   >("main");
+  const [historicalRuns, setHistoricalRuns] = useState<
+    import("./ui/RunHistoryView.js").HistoricalRunItem[]
+  >([]);
+  const [diagnosticsSummary, setDiagnosticsSummary] = useState<
+    import("@fecode/agent").RunSummary | undefined
+  >(undefined);
+  const [planFormattedOutput, setPlanFormattedOutput] = useState<
+    string | undefined
+  >(undefined);
+
+  useEffect(() => {
+    if (activeView === "runs") {
+      (async () => {
+        try {
+          let runs: import("@fecode/agent").DurableRunRecord[] = [];
+          if (
+            agent &&
+            "listHistoricalRuns" in agent &&
+            typeof (
+              agent as unknown as {
+                listHistoricalRuns: () => Promise<
+                  import("@fecode/agent").DurableRunRecord[]
+                >;
+              }
+            ).listHistoricalRuns === "function"
+          ) {
+            runs = await (
+              agent as {
+                listHistoricalRuns: () => Promise<
+                  import("@fecode/agent").DurableRunRecord[]
+                >;
+              }
+            ).listHistoricalRuns();
+          } else if (runtime && runtime.getHistoricalRuns) {
+            runs = await runtime.getHistoricalRuns();
+          }
+          if (runs && runs.length > 0) {
+            setHistoricalRuns(
+              runs.map((r) => ({
+                runId: r.runId,
+                status: r.finalStatus || r.executionState || "unknown",
+                userRequestSummary: r.userRequestSummary,
+                durationMs: r.durationMs,
+                startedAt: r.startedAt,
+                projectId: r.projectId
+              }))
+            );
+          }
+        } catch {
+          // ignore
+        }
+      })();
+    } else if (activeView === "diagnostics") {
+      try {
+        let summary: import("@fecode/agent").RunSummary | undefined;
+        if (
+          agent &&
+          "getRunSummary" in agent &&
+          typeof (
+            agent as unknown as {
+              getRunSummary: (
+                id?: string
+              ) => import("@fecode/agent").RunSummary | undefined;
+            }
+          ).getRunSummary === "function"
+        ) {
+          summary = (
+            agent as {
+              getRunSummary: (
+                id?: string
+              ) => import("@fecode/agent").RunSummary | undefined;
+            }
+          ).getRunSummary();
+        } else if (runtime && runtime.getDiagnosticsSummary) {
+          summary = runtime.getDiagnosticsSummary();
+        }
+        if (summary) {
+          setDiagnosticsSummary(summary);
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }, [activeView, agent, runtime]);
   const [store] = useState<SessionStore>(
     () => sessionStore || new DefaultSessionStore()
   );
@@ -612,6 +695,7 @@ export const App: React.FC<AppProps> = ({
           return;
         }
         setActiveView("main");
+        setPlanFormattedOutput(undefined);
         setQuery("");
         return;
       }
@@ -1451,16 +1535,6 @@ export const App: React.FC<AppProps> = ({
 
       if (cmd === "/help") {
         setActiveView("help");
-        setTurns((prev) => [
-          ...prev,
-          {
-            id: `cmd-${Date.now()}`,
-            prompt: trimmed,
-            response:
-              "Available commands:\n  /help       - Show this help message\n  /status     - Show provider, model, and session status\n  /history    - Show task history in this session\n  /tasks      - List completed tasks\n  /task <num> - View details of a specific task\n  /sessions   - List past sessions\n  /clear      - Clear conversation history\n  /exit       - Exit FeCode\n",
-            status: "done"
-          }
-        ]);
         return;
       }
 
@@ -1731,7 +1805,6 @@ export const App: React.FC<AppProps> = ({
       }
 
       if (cmd === "/debug" || cmd === "/diagnostics") {
-        setActiveView("diagnostics");
         let summary: import("@fecode/agent").RunSummary | undefined;
         if (agent && "getRunSummary" in agent) {
           summary = (
@@ -1745,33 +1818,12 @@ export const App: React.FC<AppProps> = ({
           summary = runtime.getDiagnosticsSummary(arg || undefined);
         }
 
-        if (summary) {
-          const formatted = formatRunDiagnostics(summary);
-          setTurns((prev) => [
-            ...prev,
-            {
-              id: `cmd-${Date.now()}`,
-              prompt: trimmed,
-              response: formatted,
-              status: "done"
-            }
-          ]);
-        } else {
-          setTurns((prev) => [
-            ...prev,
-            {
-              id: `cmd-${Date.now()}`,
-              prompt: trimmed,
-              response: "No run diagnostics available.\n",
-              status: "done"
-            }
-          ]);
-        }
+        setDiagnosticsSummary(summary);
+        setActiveView("diagnostics");
         return;
       }
 
       if (cmd === "/runs") {
-        setActiveView("runs");
         let runs: import("@fecode/agent").DurableRunRecord[] = [];
         if (agent && "listHistoricalRuns" in agent) {
           runs = await (
@@ -1785,20 +1837,22 @@ export const App: React.FC<AppProps> = ({
           runs = await runtime.getHistoricalRuns();
         }
 
-        const formatted = RunHistoryFormatter.formatRunsList(runs);
-        setTurns((prev) => [
-          ...prev,
-          {
-            id: `cmd-${Date.now()}`,
-            prompt: trimmed,
-            response: formatted,
-            status: "done"
-          }
-        ]);
+        setHistoricalRuns(
+          runs.map((r) => ({
+            runId: r.runId,
+            status: r.finalStatus || r.executionState || "unknown",
+            userRequestSummary: r.userRequestSummary,
+            durationMs: r.durationMs,
+            startedAt: r.startedAt,
+            projectId: r.projectId
+          }))
+        );
+        setActiveView("runs");
         return;
       }
 
       if (cmd === "/run") {
+        setActiveView("main");
         if (!arg) {
           setTurns((prev) => [
             ...prev,
@@ -2115,15 +2169,7 @@ export const App: React.FC<AppProps> = ({
             if (summary.planSummary) {
               lines.push(`Summary:        ${summary.planSummary}`);
             }
-            setTurns((prev) => [
-              ...prev,
-              {
-                id: `cmd-${Date.now()}`,
-                prompt: trimmed,
-                response: lines.join("\n") + "\n",
-                status: "done"
-              }
-            ]);
+            setPlanFormattedOutput(lines.join("\n") + "\n");
             return;
           }
         }
@@ -2147,25 +2193,9 @@ export const App: React.FC<AppProps> = ({
 
         if (activePlan) {
           const detail = PlanFormatter.formatPlanDetail(activePlan);
-          setTurns((prev) => [
-            ...prev,
-            {
-              id: `cmd-${Date.now()}`,
-              prompt: trimmed,
-              response: detail,
-              status: "done"
-            }
-          ]);
+          setPlanFormattedOutput(detail);
         } else {
-          setTurns((prev) => [
-            ...prev,
-            {
-              id: `cmd-${Date.now()}`,
-              prompt: trimmed,
-              response: "No active plan found.\n",
-              status: "done"
-            }
-          ]);
+          setPlanFormattedOutput("No active plan found.\n");
         }
         return;
       }
@@ -2190,6 +2220,8 @@ export const App: React.FC<AppProps> = ({
     }
 
     // Standard task submission
+    setActiveView("main");
+    setPlanFormattedOutput(undefined);
     setQuery("");
     setIsGenerating(true);
     const nextTaskCount = taskCount + 1;
@@ -2956,7 +2988,9 @@ export const App: React.FC<AppProps> = ({
       {activeView === "runs" && (
         <RunHistoryView
           runs={
-            uiState?.diagnostics
+            historicalRuns.length > 0
+              ? historicalRuns
+              : uiState?.diagnostics
               ? [
                   {
                     runId: uiState.diagnostics.runId,
@@ -2971,18 +3005,19 @@ export const App: React.FC<AppProps> = ({
       )}
 
       {activeView === "diagnostics" && (
-        <DiagnosticsView summary={uiState?.diagnostics} />
+        <DiagnosticsView summary={diagnosticsSummary || uiState?.diagnostics} />
       )}
 
-      {activeView === "plan" && uiState?.activePlan && (
+      {activeView === "plan" && (
         <PlanView
-          planId={uiState.activePlan.planId}
-          objective={uiState.activePlan.objective}
-          summary={uiState.activePlan.userRequestSummary}
-          status={uiState.activePlan.status}
-          steps={uiState.activePlan.steps}
-          completedCount={uiState.activePlan.completedStepsCount}
-          totalCount={uiState.activePlan.totalStepsCount}
+          planId={uiState?.activePlan?.planId}
+          objective={uiState?.activePlan?.objective}
+          summary={uiState?.activePlan?.userRequestSummary}
+          status={uiState?.activePlan?.status}
+          steps={uiState?.activePlan?.steps}
+          completedCount={uiState?.activePlan?.completedStepsCount}
+          totalCount={uiState?.activePlan?.totalStepsCount}
+          formattedOutput={planFormattedOutput}
         />
       )}
 
@@ -2997,25 +3032,29 @@ export const App: React.FC<AppProps> = ({
 
       {/* Main Turns / Streaming execution */}
       <Box flexDirection="column">
-        {turns.map((turn, idx) => (
-          <TurnView
-            key={turn.id}
-            prompt={turn.prompt}
-            response={turn.response}
-            status={turn.status}
-            error={turn.error}
-            isLast={idx === turns.length - 1}
-            thinkingMs={turn.thinkingMs}
-            thinkingTokens={turn.thinkingTokens}
-            thinkingSummary={turn.thinkingSummary}
-          />
-        ))}
+        {activeView === "main" && (
+          <>
+            {turns.map((turn, idx) => (
+              <TurnView
+                key={turn.id}
+                prompt={turn.prompt}
+                response={turn.response}
+                status={turn.status}
+                error={turn.error}
+                isLast={idx === turns.length - 1}
+                thinkingMs={turn.thinkingMs}
+                thinkingTokens={turn.thinkingTokens}
+                thinkingSummary={turn.thinkingSummary}
+              />
+            ))}
 
-        {/* Thinking Indicator — shown while generating */}
-        {isGenerating && (
-          <Box marginTop={0}>
-            <ThinkingIndicator isActive={isGenerating} label="Agent is working..." />
-          </Box>
+            {/* Thinking Indicator — shown while generating */}
+            {isGenerating && (
+              <Box marginTop={0}>
+                <ThinkingIndicator isActive={isGenerating} label="Agent is working..." />
+              </Box>
+            )}
+          </>
         )}
 
         {/* Task Input Prompt */}

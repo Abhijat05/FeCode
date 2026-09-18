@@ -16,6 +16,7 @@ export const HelpView: React.FC = () => {
     { cmd: "/history", desc: "Show completed tasks in current session" },
     { cmd: "/tasks", desc: "List session task summaries" },
     { cmd: "/task <num>", desc: "View task details by index" },
+    { cmd: "/sessions", desc: "List past sessions" },
     { cmd: "/git", desc: "Inspect git repository status and branch" },
     { cmd: "/checkpoints", desc: "List available rollback checkpoints" },
     { cmd: "/checkpoint", desc: "Create a new manual checkpoint" },
