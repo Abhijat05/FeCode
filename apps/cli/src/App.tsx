@@ -2823,6 +2823,49 @@ export const App: React.FC<AppProps> = ({
     }
   };
 
+  let activeStep: number | undefined;
+  let totalSteps: number | undefined;
+  let activeStepTitle: string | undefined;
+
+  let activePlan = uiState?.activePlan;
+  if (!activePlan && agent && "getTaskPlan" in agent && typeof (agent as { getTaskPlan?: () => unknown }).getTaskPlan === "function") {
+    const rawPlan = (agent as { getTaskPlan: () => import("@fecode/agent").TaskPlan | undefined }).getTaskPlan();
+    if (rawPlan) {
+      activePlan = {
+        planId: rawPlan.planId,
+        runId: rawPlan.runId,
+        objective: rawPlan.objective,
+        userRequestSummary: rawPlan.userRequestSummary,
+        status: rawPlan.status,
+        steps: rawPlan.steps as unknown as import("@fecode/agent").StepSnapshot[],
+        createdAt: rawPlan.createdAt,
+        completedStepsCount: rawPlan.steps ? rawPlan.steps.filter((s) => s.status === "completed").length : 0,
+        totalStepsCount: rawPlan.steps ? rawPlan.steps.length : 0
+      };
+    }
+  }
+
+  if (activePlan && activePlan.status !== "completed" && activePlan.steps && activePlan.steps.length > 0) {
+    totalSteps = activePlan.totalStepsCount || activePlan.steps.length;
+    let currentStep = uiState?.activeStepId
+      ? activePlan.steps.find((s) => s.stepId === uiState.activeStepId)
+      : undefined;
+
+    if (!currentStep) {
+      currentStep =
+        activePlan.steps.find((s) => s.status === "in_progress") ||
+        activePlan.steps.find(
+          (s) => s.status !== "completed" && s.status !== "skipped"
+        );
+    }
+
+    if (currentStep) {
+      const idx = activePlan.steps.findIndex((s) => s.stepId === currentStep!.stepId);
+      activeStep = currentStep.order || (idx >= 0 ? idx + 1 : 1);
+      activeStepTitle = currentStep.title;
+    }
+  }
+
   return (
     <AppShell
       header={
@@ -2924,6 +2967,9 @@ export const App: React.FC<AppProps> = ({
           status={uiState?.status || lastTaskStatus}
           isGenerating={isGenerating}
           hasModal={hasModal}
+          activeStep={activeStep}
+          totalSteps={totalSteps}
+          activeStepTitle={activeStepTitle}
           activeView={activeView}
           isReconciliation={Boolean(pendingPlanBlocked?.reconciliationResult)}
           recoveryMode={

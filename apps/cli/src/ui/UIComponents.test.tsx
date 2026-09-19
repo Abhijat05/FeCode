@@ -283,6 +283,61 @@ describe("Phase 5AD: Modular UI Components", () => {
     expect(frame).toMatch(/Executing task\.\.\./);
   });
 
+  it("renders StatusBar with step progress during executing state", () => {
+    const { lastFrame } = render(
+      <StatusBar
+        status="executing"
+        isGenerating={true}
+        activeStep={1}
+        totalSteps={3}
+        activeStepTitle="Inspect files"
+      />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("Executing Step 1/3: Inspect files");
+  });
+
+  it("renders StatusBar with step progress during awaiting_step_approval state", () => {
+    const { lastFrame } = render(
+      <StatusBar
+        status="awaiting_step_approval"
+        hasModal={true}
+        modalType="approval"
+        activeStep={2}
+        totalSteps={3}
+        activeStepTitle="Run tests"
+      />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("⚠ Waiting for Approval (Step 2/3: Run tests)");
+  });
+
+  it("renders StatusBar with step progress during verifying state", () => {
+    const { lastFrame } = render(
+      <StatusBar
+        status="verifying"
+        activeStep={2}
+        totalSteps={3}
+        activeStepTitle="Verify"
+      />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("Verifying (Step 2/3: Verify)");
+  });
+
+  it("renders StatusBar with step progress during blocked state", () => {
+    const { lastFrame } = render(
+      <StatusBar
+        status="blocked"
+        activeStep={3}
+        totalSteps={3}
+        activeStepTitle="Deploy"
+      />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("! Blocked at Step 3/3: Deploy");
+  });
+
   it("renders AppShell containing header, body, and footer slots", () => {
     const { lastFrame } = render(
       <AppShell

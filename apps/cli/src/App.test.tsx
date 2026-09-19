@@ -2727,8 +2727,8 @@ describe("CLI App Component", () => {
     });
   });
 
-  describe("BUG-UI-06 & BUG-UI-07: Isolated Secondary Views & Durable Runs History", () => {
-    it("does not render conversation turns underneath when in secondary views (BUG-UI-06)", async () => {
+  describe("Isolated Secondary Views and Durable Runs History", () => {
+    it("does not render conversation turns underneath when in secondary views", async () => {
       const mockAgent = new MockAgent();
       const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
       await delay(50);
@@ -2759,7 +2759,7 @@ describe("CLI App Component", () => {
       expect(frame).toContain("inspect project code");
     });
 
-    it("populates RunHistoryView with full list of durable historical runs without duplicate turns (BUG-UI-06 & BUG-UI-07)", async () => {
+    it("populates RunHistoryView with full list of durable historical runs without duplicate turns", async () => {
       const mockAgent = new MockAgent();
       const sampleRuns: import("@fecode/agent").DurableRunRecord[] = [
         {
@@ -2847,6 +2847,92 @@ describe("CLI App Component", () => {
       frame = lastFrame() ?? "";
       expect(frame).toContain("Project:   proj-test");
       expect(frame).toContain("run-alpha-101");
+    });
+  });
+
+  describe("StatusBar Plan Step Progress", () => {
+    it("wires activeStep, totalSteps, and activeStepTitle to StatusBar during plan execution", async () => {
+      const mockAgent = new MockAgent();
+      let resolveStep!: () => void;
+      const stepBlocker = new Promise<void>((resolve) => {
+        resolveStep = resolve;
+      });
+
+      mockAgent.runFn = async function* () {
+        yield {
+          type: "plan_created",
+          plan: {
+            planId: "plan-sb-1",
+            runId: "run-sb-1",
+            createdAt: Date.now(),
+            userRequestSummary: "Refactor database models",
+            objective: "Refactor database models",
+            status: "ready",
+            steps: [
+              {
+                stepId: "step-1",
+                order: 1,
+                title: "Inspect database schema",
+                objective: "Inspect database schema",
+                type: "inspect",
+                dependencies: [],
+                riskLevel: "low",
+                verificationRequired: false,
+                status: "in_progress"
+              },
+              {
+                stepId: "step-2",
+                order: 2,
+                title: "Migrate user table",
+                objective: "Migrate user table",
+                type: "modify",
+                dependencies: ["step-1"],
+                riskLevel: "normal",
+                verificationRequired: true,
+                status: "pending"
+              }
+            ],
+            risks: []
+          }
+        };
+        yield {
+          type: "plan_execution_started",
+          planId: "plan-sb-1",
+          totalSteps: 2,
+          timestamp: Date.now()
+        };
+        yield {
+          type: "plan_step_started",
+          planId: "plan-sb-1",
+          stepId: "step-1",
+          stepIndex: 0,
+          title: "Inspect database schema",
+          timestamp: Date.now()
+        };
+        // Hold step execution to inspect StatusBar
+        await stepBlocker;
+        yield {
+          type: "plan_step_completed",
+          planId: "plan-sb-1",
+          stepId: "step-1",
+          stepIndex: 0,
+          durationMs: 500
+        };
+        yield { type: "done" };
+      };
+
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      await typeAndSubmit(stdin, "Refactor database models");
+      await delay(200);
+
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("Executing Step 1/2: Inspect database schema");
+
+      // Release step and finish
+      resolveStep();
+      await delay(100);
     });
   });
 });
