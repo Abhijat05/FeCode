@@ -150,6 +150,24 @@ export const App: React.FC<AppProps> = ({
   const [planFormattedOutput, setPlanFormattedOutput] = useState<
     string | undefined
   >(undefined);
+  const [gitFormattedOutput, setGitFormattedOutput] = useState<
+    string | undefined
+  >(undefined);
+
+  useEffect(() => {
+    if (activeView === "git") {
+      (async () => {
+        try {
+          const statusResult = await gitRepo.getStatus(cwd);
+          const formatted = GitStatusFormatter.formatGitStatus(statusResult);
+          setGitFormattedOutput(formatted);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          setGitFormattedOutput(`✗ Git error: ${msg}\n`);
+        }
+      })();
+    }
+  }, [activeView, cwd, gitRepo]);
 
   useEffect(() => {
     if (activeView === "runs") {
@@ -1189,6 +1207,7 @@ export const App: React.FC<AppProps> = ({
 
     if (pendingPlanBlocked) {
       setQuery("");
+      setBlockedInput("");
       const pb = pendingPlanBlocked;
       setPendingPlanBlocked(null);
 
@@ -1386,6 +1405,7 @@ export const App: React.FC<AppProps> = ({
 
     if (pendingReplan) {
       setQuery("");
+      setReplanInput("");
       const pr = pendingReplan;
       setPendingReplan(null);
 
@@ -1462,6 +1482,7 @@ export const App: React.FC<AppProps> = ({
 
     if (pendingResume) {
       setQuery("");
+      setResumeInput("");
       const pr = pendingResume;
       setPendingResume(null);
 
@@ -1666,26 +1687,12 @@ export const App: React.FC<AppProps> = ({
         try {
           const statusResult = await gitRepo.getStatus(cwd);
           const formatted = GitStatusFormatter.formatGitStatus(statusResult);
-          setTurns((prev) => [
-            ...prev,
-            {
-              id: `cmd-${Date.now()}`,
-              prompt: trimmed,
-              response: formatted,
-              status: "done"
-            }
-          ]);
+          setGitFormattedOutput(formatted);
+          setActiveView("git");
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
-          setTurns((prev) => [
-            ...prev,
-            {
-              id: `cmd-${Date.now()}`,
-              prompt: trimmed,
-              response: `✗ Git error: ${msg}\n`,
-              status: "done"
-            }
-          ]);
+          setGitFormattedOutput(`✗ Git error: ${msg}\n`);
+          setActiveView("git");
         }
         return;
       }
@@ -3050,6 +3057,7 @@ export const App: React.FC<AppProps> = ({
           untrackedFiles={uiState?.workspace?.untrackedFiles}
           hasDrift={uiState?.workspace?.hasDrift}
           driftReason={uiState?.workspace?.driftReason}
+          formattedOutput={gitFormattedOutput}
         />
       )}
 

@@ -617,6 +617,26 @@ describe("CLI App Component", () => {
     expect(frame).toContain("Git");
   });
 
+  it("switches to git workspace view on /git and returns to main view on Escape", async () => {
+    const mockAgent = new MockAgent();
+    const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+    await delay(50);
+
+    await typeAndSubmit(stdin, "/git");
+    await delay(100);
+
+    let frame = lastFrame() ?? "";
+    expect(frame).toContain("Git & Workspace Status");
+
+    // Press Escape to return to main view
+    stdin.write("\u001B");
+    await delay(100);
+
+    frame = lastFrame() ?? "";
+    expect(frame).not.toContain("Git & Workspace Status");
+    expect(frame).toContain("Ready for task");
+  });
+
   it("handles /checkpoints and /checkpoint commands", async () => {
     const mockAgent = new MockAgent();
     const mockGitRepo = new DefaultGitRepository(async () => ({
