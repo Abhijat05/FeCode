@@ -95,6 +95,18 @@ describe("CommandPalette", () => {
     expect(frame).toContain("›");
     expect(frame).toContain("/history");
   });
+
+  it("renders top scroll indicator when scrolled past the visible window", () => {
+    const suggestions: CommandDef[] = Array.from({ length: 12 }, (_, i) => ({
+      command: `/cmd${i + 1}`,
+      description: `Description ${i + 1}`
+    }));
+    const { lastFrame } = render(
+      <CommandPalette suggestions={suggestions} selectedIndex={9} />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("▲ …2 more");
+  });
 });
 
 describe("TurnView", () => {

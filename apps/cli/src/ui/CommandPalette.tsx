@@ -32,6 +32,11 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       paddingX={1}
       marginBottom={0}
     >
+      {startIndex > 0 && (
+        <Box>
+          <Text color="gray" dimColor>  ▲ …{startIndex} more</Text>
+        </Box>
+      )}
       {visible.map((cmd, idx) => {
         const isSelected = startIndex + idx === clampedIndex;
         return (
