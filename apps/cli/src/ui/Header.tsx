@@ -23,7 +23,8 @@ export const Header: React.FC<HeaderProps> = ({
   gitBranch,
   isGitClean = true,
   runId,
-  elapsedMs
+  elapsedMs,
+  sessionId
 }) => {
   const getStatusBadge = () => {
     switch (status.toLowerCase()) {
@@ -101,18 +102,23 @@ export const Header: React.FC<HeaderProps> = ({
         </Box>
       </Box>
 
-      {(cwd || runId) && (
+      {(cwd || runId || sessionId) && (
         <Box justifyContent="space-between" marginTop={0}>
           <Box>
             <Text color="gray">Working directory: </Text>
             <Text color="white">{cwd}</Text>
           </Box>
-          {runId && (
+          {runId ? (
             <Box>
               <Text color="gray">Run: </Text>
               <Text color="cyan">{runId.slice(0, 16)}</Text>
             </Box>
-          )}
+          ) : sessionId ? (
+            <Box>
+              <Text color="gray">Session: </Text>
+              <Text color="gray">{sessionId.slice(0, 16)}</Text>
+            </Box>
+          ) : null}
         </Box>
       )}
     </Box>

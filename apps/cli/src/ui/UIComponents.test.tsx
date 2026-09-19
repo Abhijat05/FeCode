@@ -873,6 +873,18 @@ describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
       expect(frame).toContain("⎇ main ● modified");
       expect(frame).toContain("○ IDLE");
     });
+
+    it("renders session ID when runId is not present", () => {
+      const { lastFrame } = render(
+        <Header
+          projectName="my-app"
+          status="idle"
+          sessionId="session-9876543210abcdef"
+        />
+      );
+      const frame = lastFrame();
+      expect(frame).toContain("Session: session-98765432");
+    });
   });
 
   describe("StatusBar Context-Sensitive Shortcuts", () => {

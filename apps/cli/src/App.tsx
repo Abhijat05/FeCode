@@ -76,6 +76,7 @@ export interface AppProps {
   projectContext?: ProjectContext;
   sessionStore?: SessionStore;
   initialSessionData?: PersistedSessionData;
+  sessionId?: string;
   gitRepository?: import("@fecode/agent").GitRepository;
   checkpointManager?: CheckpointManager;
   recoveryManager?: RecoveryManager;
@@ -95,6 +96,7 @@ export const App: React.FC<AppProps> = ({
   projectContext: _projectContext,
   sessionStore,
   initialSessionData,
+  sessionId: sessionIdProp,
   gitRepository: gitRepoProp,
   checkpointManager: checkpointManagerProp,
   recoveryManager: recoveryManagerProp,
@@ -128,7 +130,7 @@ export const App: React.FC<AppProps> = ({
         gitRepository: gitRepo,
         approvalResolver,
         initialCwd: cwd,
-        initialSessionId: initialSessionData?.sessionId
+        initialSessionId: sessionIdProp || initialSessionData?.sessionId
       });
     }
     return undefined as unknown as ProductRuntime;
@@ -228,6 +230,7 @@ export const App: React.FC<AppProps> = ({
   );
   const [sessionId] = useState<string>(
     () =>
+      sessionIdProp ||
       initialSessionData?.sessionId ||
       `session-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
   );
@@ -272,6 +275,8 @@ export const App: React.FC<AppProps> = ({
   });
 
   const [isGenerating, setIsGenerating] = useState(false);
+  const [executionStartTime, setExecutionStartTime] = useState<number | undefined>(undefined);
+  const [activeElapsedMs, setActiveElapsedMs] = useState<number | undefined>(undefined);
   const [pendingQuery, setPendingQuery] = useState<string | null>(null);
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const prevIsGeneratingRef = useRef(false);
@@ -399,6 +404,19 @@ export const App: React.FC<AppProps> = ({
     }
     prevIsGeneratingRef.current = isGenerating;
   }, [isGenerating, pendingQuery]);
+
+  // Track active execution elapsed time for Header
+  useEffect(() => {
+    if (!isGenerating || !executionStartTime) {
+      setActiveElapsedMs(undefined);
+      return;
+    }
+    setActiveElapsedMs(Date.now() - executionStartTime);
+    const timer = setInterval(() => {
+      setActiveElapsedMs(Date.now() - executionStartTime);
+    }, 500);
+    return () => clearInterval(timer);
+  }, [isGenerating, executionStartTime]);
 
   const persistState = useCallback(
     async (
@@ -2289,6 +2307,7 @@ export const App: React.FC<AppProps> = ({
 
     const turnId = `turn-${Date.now()}`;
     const turnStartMs = Date.now();
+    setExecutionStartTime(turnStartMs);
     const newTurn: Turn = {
       id: turnId,
       prompt: trimmed,
@@ -2819,6 +2838,8 @@ export const App: React.FC<AppProps> = ({
       setLastTaskStatus("blocked");
     } finally {
       setIsGenerating(false);
+      setExecutionStartTime(undefined);
+      setActiveElapsedMs(undefined);
       setActiveRequest(undefined);
     }
   };
@@ -2879,6 +2900,7 @@ export const App: React.FC<AppProps> = ({
           isGitClean={uiState?.workspace ? !uiState.workspace.isGitDirty : true}
           runId={uiState?.runId}
           sessionId={sessionId}
+          elapsedMs={activeElapsedMs}
         />
       }
       modal={

@@ -2935,4 +2935,40 @@ describe("CLI App Component", () => {
       await delay(100);
     });
   });
+
+  describe("Header Indicators in CLI App", () => {
+    it("displays session ID in Header when idle and elapsed timer while task is executing", async () => {
+      const mockAgent = new MockAgent();
+      let resolveStep!: () => void;
+      const stepBlocker = new Promise<void>((resolve) => {
+        resolveStep = resolve;
+      });
+
+      mockAgent.runFn = async function* () {
+        await stepBlocker;
+        yield { type: "text", content: "Done" };
+        yield { type: "done" };
+      };
+
+      const { lastFrame, stdin } = render(
+        <App agent={mockAgent} cwd="/test" sessionId="sess-test-998877" />
+      );
+      await delay(50);
+
+      // When idle, Header should display Session ID
+      let frame = lastFrame() ?? "";
+      expect(frame).toContain("Session: sess-test-9988");
+
+      // Submit a task
+      await typeAndSubmit(stdin, "run long task");
+      await delay(600);
+
+      frame = lastFrame() ?? "";
+      // During execution, elapsed timer should be passed and rendered
+      expect(frame).toMatch(/\d+s\s+● LIVE \(EXECUTING\)/);
+
+      resolveStep();
+      await delay(100);
+    });
+  });
 });
