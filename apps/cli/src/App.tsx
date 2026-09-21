@@ -338,7 +338,7 @@ export const App: React.FC<AppProps> = ({
     Boolean(pendingResume);
 
   const commandSuggestions: CommandDef[] =
-    !isGenerating && !hasModal && query.startsWith("/")
+    !isGenerating && !hasModal && query.startsWith("/") && !query.includes(" ")
       ? filterCommands(query)
       : [];
 

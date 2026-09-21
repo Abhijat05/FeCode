@@ -2990,5 +2990,58 @@ describe("CLI App Component", () => {
       resolveStep();
       await delay(100);
     });
+
+    it("dismisses command suggestions when space is typed after a slash command", async () => {
+      const mockAgent = new MockAgent();
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      // Type /plan without space
+      for (const ch of "/plan") {
+        stdin.write(ch);
+        await delay(15);
+      }
+      await delay(50);
+      let frame = lastFrame() ?? "";
+      expect(frame).toContain("Display current active task plan");
+
+      // Type space after /plan
+      stdin.write(" ");
+      await delay(50);
+      frame = lastFrame() ?? "";
+      expect(frame).not.toContain("Display current active task plan");
+    });
+
+    it("filters command suggestions cleanly when typing / followed by p without layout duplication", async () => {
+      const mockAgent = new MockAgent();
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      // Type /
+      stdin.write("/");
+      await delay(50);
+      let frame = lastFrame() ?? "";
+      // Prompt should appear before suggestions dropdown
+      const promptSlashPos = frame.indexOf("› /");
+      const suggestionsTopBorder = frame.indexOf("╭");
+      expect(promptSlashPos).toBeGreaterThanOrEqual(0);
+      expect(suggestionsTopBorder).toBeGreaterThanOrEqual(0);
+      expect(promptSlashPos).toBeLessThan(suggestionsTopBorder);
+
+      // Now type p
+      stdin.write("p");
+      await delay(50);
+      frame = lastFrame() ?? "";
+
+      // Exactly ONE header and ONE task prompt in frame
+      const headerMatches = frame.match(/FeCode project: fecode/g);
+      expect(headerMatches).toHaveLength(1);
+      const taskMatches = frame.match(/Task/g);
+      expect(taskMatches).toHaveLength(1);
+
+      // Filtered to /plan
+      expect(frame).toContain("/plan");
+      expect(frame).toContain("Display current active task plan");
+    });
   });
 });

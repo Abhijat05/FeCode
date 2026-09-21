@@ -1,27 +1,41 @@
 import React from "react";
-import { Box, Text } from "ink";
+import { Box, Text, useStdout } from "ink";
 import type { CommandDef } from "../commands.js";
 
 export interface CommandPaletteProps {
   suggestions: CommandDef[];
   selectedIndex: number;
+  maxVisible?: number;
 }
-
-const MAX_VISIBLE = 8;
 
 export const CommandPalette: React.FC<CommandPaletteProps> = ({
   suggestions,
-  selectedIndex
+  selectedIndex,
+  maxVisible: explicitMaxVisible
 }) => {
   if (suggestions.length === 0) return null;
 
+  const { stdout } = useStdout();
+  const effectiveMaxVisible =
+    explicitMaxVisible ??
+    (stdout?.rows
+      ? stdout.rows <= 24
+        ? 4
+        : stdout.rows <= 32
+          ? 5
+          : 6
+      : 8);
+
   const clampedIndex = Math.max(0, Math.min(selectedIndex, suggestions.length - 1));
   const startIndex =
-    clampedIndex >= MAX_VISIBLE
-      ? Math.min(clampedIndex - MAX_VISIBLE + 1, Math.max(0, suggestions.length - MAX_VISIBLE))
+    clampedIndex >= effectiveMaxVisible
+      ? Math.min(
+          clampedIndex - effectiveMaxVisible + 1,
+          Math.max(0, suggestions.length - effectiveMaxVisible)
+        )
       : 0;
 
-  const visible = suggestions.slice(startIndex, startIndex + MAX_VISIBLE);
+  const visible = suggestions.slice(startIndex, startIndex + effectiveMaxVisible);
   const remaining = suggestions.length - (startIndex + visible.length);
 
   return (

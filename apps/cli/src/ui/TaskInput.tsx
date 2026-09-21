@@ -14,6 +14,7 @@ export interface TaskInputProps {
   pendingQuery?: string | null;
   suggestions?: CommandDef[];
   selectedSuggestion?: number;
+  maxSuggestionsVisible?: number;
 }
 
 export const TaskInput: React.FC<TaskInputProps> = ({
@@ -25,7 +26,8 @@ export const TaskInput: React.FC<TaskInputProps> = ({
   label,
   pendingQuery,
   suggestions,
-  selectedSuggestion = 0
+  selectedSuggestion = 0,
+  maxSuggestionsVisible
 }) => {
   return (
     <Box flexDirection="column" marginY={0}>
@@ -38,14 +40,6 @@ export const TaskInput: React.FC<TaskInputProps> = ({
         <Box marginBottom={0}>
           <Text bold color="white">{label}</Text>
         </Box>
-      )}
-
-      {/* Command Palette — shown above input when typing a slash command */}
-      {suggestions && suggestions.length > 0 && (
-        <CommandPalette
-          suggestions={suggestions}
-          selectedIndex={selectedSuggestion}
-        />
       )}
 
       <Box>
@@ -63,6 +57,18 @@ export const TaskInput: React.FC<TaskInputProps> = ({
           />
         )}
       </Box>
+
+      {/* Command Palette — shown below input when typing a slash command */}
+      {suggestions && suggestions.length > 0 && (
+        <Box marginTop={0}>
+          <CommandPalette
+            suggestions={suggestions}
+            selectedIndex={selectedSuggestion}
+            maxVisible={maxSuggestionsVisible}
+          />
+        </Box>
+      )}
+
       {isDisabled && pendingQuery && (
         <Box marginTop={0}>
           <Text color="yellow">⏎ Queued: </Text>

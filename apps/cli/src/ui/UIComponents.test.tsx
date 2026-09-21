@@ -107,6 +107,21 @@ describe("CommandPalette", () => {
     const frame = lastFrame() ?? "";
     expect(frame).toContain("▲ …2 more");
   });
+
+  it("respects explicit maxVisible prop when provided", () => {
+    const suggestions: CommandDef[] = Array.from({ length: 8 }, (_, i) => ({
+      command: `/cmd${i + 1}`,
+      description: `Description ${i + 1}`
+    }));
+    const { lastFrame } = render(
+      <CommandPalette suggestions={suggestions} selectedIndex={0} maxVisible={3} />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("/cmd1");
+    expect(frame).toContain("/cmd3");
+    expect(frame).not.toContain("/cmd4");
+    expect(frame).toContain("…5 more");
+  });
 });
 
 describe("TurnView", () => {
@@ -425,6 +440,27 @@ describe("Phase 5AD: Modular UI Components", () => {
     const frame = lastFrame() ?? "";
     expect(frame).toContain("/help");
     expect(frame).toContain("Show help");
+  });
+
+  it("renders CommandPalette below the prompt input line", () => {
+    const suggestions: CommandDef[] = [
+      { command: "/help", description: "Show help" }
+    ];
+    const { lastFrame } = render(
+      <TaskInput
+        value="/he"
+        onChange={() => {}}
+        onSubmit={() => {}}
+        suggestions={suggestions}
+        selectedSuggestion={0}
+      />
+    );
+    const frame = lastFrame() ?? "";
+    const promptInputPos = frame.indexOf("› /he");
+    const paletteBorderPos = frame.indexOf("╭");
+    expect(promptInputPos).toBeGreaterThanOrEqual(0);
+    expect(paletteBorderPos).toBeGreaterThanOrEqual(0);
+    expect(promptInputPos).toBeLessThan(paletteBorderPos);
   });
 
   it("renders PlanStep with accessible symbols, dependencies, and risk badges", () => {

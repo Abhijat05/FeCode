@@ -213,6 +213,12 @@ Interactive Commands (inside TUI):
     process.exit(1);
   }
 
+  // Clear terminal screen and position cursor at Row 1, Column 1 in interactive mode
+  // to give Ink full vertical headroom and prevent scrollback ghosting
+  if (process.stdout.isTTY && !process.env.VITEST && !process.env.CI_TEST_MODE) {
+    process.stdout.write("\x1b[2J\x1b[H");
+  }
+
   render(
     <App
       agent={agent}
