@@ -6,6 +6,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.2] - 2026-09-21
+
+### Fixed
+- **Terminal UI Rendering & Layout Stability**:
+  - Repositioned Command Palette suggestions below the input prompt line (`› `) in `TaskInput`, eliminating vertical cursor jumping while typing slash commands.
+  - Added responsive viewport-aware height capping to `CommandPalette` to prevent ANSI erase clamping and scrollback duplication in 24-row terminals.
+  - Automatically dismiss command suggestions upon typing a trailing space or accepting a Tab autocomplete suggestion.
+  - Emitted ANSI terminal clear sequence `\x1b[2J\x1b[H` on interactive startup, guaranteeing maximum vertical headroom.
+- **Git Workspace View Activation**:
+  - Fixed `/git` slash command to directly open the Git workspace view.
+  - Reset approval prompt inputs and modal input buffers upon rejection or cancellation.
+- **Header Telemetry**:
+  - Wired real-time elapsed timer duration during live task execution.
+  - Displayed persistent Session ID in Header while idle.
+- **Status Bar Integration**:
+  - Wired active plan step progress and current step title to the live status bar during plan execution.
+- **Secondary Views & Durable Runs Isolation**:
+  - Isolated secondary views (`/plan`, `/runs`, `/debug`, `/help`, `/git`) to prevent rendering conversation turns underneath.
+  - Wired full durable historical runs list into `RunHistoryView`.
+  - Added top scroll indicator (`▲ …N more`) to `CommandPalette` when navigated past visible bounds.
+
+---
+
+## [1.0.1] - 2026-09-17
+
+### Fixed
+- Included `README.md` and packaged assets in published npm package distribution.
+- Resolved package naming and dependency references in `package-lock.json`.
+
+---
+
 ## [1.0.0] - 2026-09-11
 
 ### Initial General Availability Release
