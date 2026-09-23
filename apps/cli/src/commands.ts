@@ -33,5 +33,12 @@ export const COMMANDS: CommandDef[] = [
 export function filterCommands(prefix: string): CommandDef[] {
   if (!prefix || !prefix.trim().startsWith("/")) return [];
   const lower = prefix.trim().toLowerCase();
-  return COMMANDS.filter((c) => c.command.toLowerCase().startsWith(lower));
+  const matched = COMMANDS.filter((c) => c.command.toLowerCase().startsWith(lower));
+  return matched.sort((a, b) => {
+    const aLower = a.command.toLowerCase();
+    const bLower = b.command.toLowerCase();
+    if (aLower === lower && bLower !== lower) return -1;
+    if (bLower === lower && aLower !== lower) return 1;
+    return 0;
+  });
 }

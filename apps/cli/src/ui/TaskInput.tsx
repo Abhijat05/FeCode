@@ -29,6 +29,18 @@ export const TaskInput: React.FC<TaskInputProps> = ({
   selectedSuggestion = 0,
   maxSuggestionsVisible
 }) => {
+  const handleInputSubmit = (submittedValue: string) => {
+    if (suggestions && suggestions.length > 0) {
+      const clamped = Math.max(0, Math.min(selectedSuggestion, suggestions.length - 1));
+      const selected = suggestions[clamped];
+      if (selected) {
+        onSubmit(selected.command);
+        return;
+      }
+    }
+    onSubmit(submittedValue);
+  };
+
   return (
     <Box flexDirection="column" marginY={0}>
       {!label && (
@@ -52,7 +64,7 @@ export const TaskInput: React.FC<TaskInputProps> = ({
           <TextInput
             value={value}
             onChange={onChange}
-            onSubmit={onSubmit}
+            onSubmit={handleInputSubmit}
             placeholder={placeholder}
           />
         )}

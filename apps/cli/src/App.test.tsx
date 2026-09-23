@@ -3043,5 +3043,61 @@ describe("CLI App Component", () => {
       expect(frame).toContain("/plan");
       expect(frame).toContain("Display current active task plan");
     });
+
+    it("submits navigated slash command suggestion on Enter instead of raw prefix", async () => {
+      const mockAgent = new MockAgent();
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      // Type /h
+      stdin.write("/");
+      await delay(15);
+      stdin.write("h");
+      await delay(50);
+
+      let frame = lastFrame() ?? "";
+      expect(frame).toContain("/help");
+      expect(frame).toContain("/history");
+
+      // Press Enter to execute the selected suggestion (/help)
+      stdin.write("\r");
+      await delay(100);
+
+      frame = lastFrame() ?? "";
+      // Should NOT say Unknown command: /h
+      expect(frame).not.toContain("Unknown command: /h");
+      // Should execute /help (opening help view with Available Commands:)
+      expect(frame).toContain("Available Commands:");
+    });
+
+    it("submits suggestion navigated via arrow down on Enter", async () => {
+      const mockAgent = new MockAgent();
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      // Type /h
+      stdin.write("/");
+      await delay(15);
+      stdin.write("h");
+      await delay(50);
+
+      let frame = lastFrame() ?? "";
+      expect(frame).toContain("/help");
+      expect(frame).toContain("/history");
+
+      // Press Down Arrow to navigate to /history
+      stdin.write("\u001B[B");
+      await delay(50);
+
+      // Press Enter to execute /history
+      stdin.write("\r");
+      await delay(100);
+
+      frame = lastFrame() ?? "";
+      // Should NOT say Unknown command: /h
+      expect(frame).not.toContain("Unknown command: /h");
+      // Should have executed /history (turn prompt is /history)
+      expect(frame).toContain("/history");
+    });
   });
 });

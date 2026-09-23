@@ -751,6 +751,23 @@ export const App: React.FC<AppProps> = ({
   const handleSubmit = async (value: string) => {
     let trimmed = value.trim();
 
+    if (
+      commandSuggestions.length > 0 &&
+      trimmed.startsWith("/") &&
+      !trimmed.includes(" ") &&
+      !commandSuggestions.some((c) => c.command === trimmed)
+    ) {
+      const clamped = Math.max(
+        0,
+        Math.min(selectedSuggestion, commandSuggestions.length - 1)
+      );
+      const selected = commandSuggestions[clamped];
+      if (selected) {
+        trimmed = selected.command;
+      }
+    }
+    setSelectedSuggestion(0);
+
     // Queue the prompt if agent is currently running and no modal is active
     const modalActive =
       Boolean(pendingApproval) ||

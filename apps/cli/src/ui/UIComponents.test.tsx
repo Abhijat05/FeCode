@@ -463,6 +463,54 @@ describe("Phase 5AD: Modular UI Components", () => {
     expect(promptInputPos).toBeLessThan(paletteBorderPos);
   });
 
+  it("submits the selected suggestion command on Enter when suggestions are active", async () => {
+    let submitted = "";
+    const suggestions: CommandDef[] = [
+      { command: "/help", description: "Show help" },
+      { command: "/history", description: "Show history" }
+    ];
+    const { stdin, unmount } = render(
+      <TaskInput
+        value="/h"
+        onChange={() => {}}
+        onSubmit={(val) => {
+          submitted = val;
+        }}
+        suggestions={suggestions}
+        selectedSuggestion={0}
+      />
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    stdin.write("\r");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(submitted).toBe("/help");
+    unmount();
+  });
+
+  it("submits the navigated suggestion command when selectedSuggestion is greater than 0", async () => {
+    let submitted = "";
+    const suggestions: CommandDef[] = [
+      { command: "/help", description: "Show help" },
+      { command: "/history", description: "Show history" }
+    ];
+    const { stdin, unmount } = render(
+      <TaskInput
+        value="/h"
+        onChange={() => {}}
+        onSubmit={(val) => {
+          submitted = val;
+        }}
+        suggestions={suggestions}
+        selectedSuggestion={1}
+      />
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    stdin.write("\r");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(submitted).toBe("/history");
+    unmount();
+  });
+
   it("renders PlanStep with accessible symbols, dependencies, and risk badges", () => {
     const { lastFrame: completedFrame } = render(
       <PlanStep
