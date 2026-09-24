@@ -3099,5 +3099,36 @@ describe("CLI App Component", () => {
       // Should have executed /history (turn prompt is /history)
       expect(frame).toContain("/history");
     });
+
+    it("renders sanitized provider fallback notice when provider_fallback_attempt event occurs", async () => {
+      const mockAgent = new MockAgent();
+      mockAgent.runFn = async function* () {
+        yield {
+          type: "provider_fallback_attempt",
+          fromProvider: "gemini",
+          toProvider: "openai",
+          reason: "Gemini quota exceeded (429 ResourceExhausted)",
+          attempt: 1,
+          maxAttempts: 2
+        };
+        yield {
+          type: "text",
+          content: "Response from fallback provider"
+        };
+        yield {
+          type: "done"
+        };
+      };
+
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      await typeAndSubmit(stdin, "Write tests");
+      await delay(200);
+
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("Quota reached on gemini. Falling back to openai...");
+      expect(frame).toContain("Response from fallback provider");
+    });
   });
 });

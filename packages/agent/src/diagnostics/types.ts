@@ -37,6 +37,16 @@ export interface RecoveryDiagnosticRecord {
   error?: string;
 }
 
+export interface FallbackDiagnosticRecord {
+  fromProvider: string;
+  toProvider: string;
+  reason: string;
+  category: string;
+  attempt: number;
+  maxAttempts: number;
+  timestamp: number;
+}
+
 export interface RunFilesSummary {
   modified: string[];
   created: string[];
@@ -66,6 +76,9 @@ export interface RunSummary {
   tools: ToolDiagnosticRecord[];
   commands: CommandDiagnosticRecord[];
   recovery?: RecoveryDiagnosticRecord[];
+  fallbackEvents?: FallbackDiagnosticRecord[];
+  fallbackCount?: number;
+  lastUsedProvider?: string;
   files: RunFilesSummary;
   lifecycleTransitions: AgentRunTransition[];
   failureReason?: string;
@@ -244,6 +257,10 @@ export interface RunDiagnosticsManager {
   recordHandoffResult(
     runId: string,
     result: import("../planning/types.js").ExecutionHandoffResult
+  ): void;
+  recordFallbackDecision(
+    runId: string,
+    record: FallbackDiagnosticRecord
   ): void;
   recordToolStart(runId: string, toolName: string, callId: string, targetPath?: string): void;
   recordToolComplete(

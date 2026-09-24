@@ -8,3 +8,5 @@ export * from "./tools/registry.js";
 export * from "./tools/executor.js";
 export * from "./permissions/types.js";
 export * from "./permissions/policy.js";
+export * from "./errors/classification.js";
+export * from "./fallback/fallbackProvider.js";

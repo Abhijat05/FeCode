@@ -33,6 +33,17 @@ export type AgentEvent =
   | { type: "tool_call"; call: ToolCall }
   | { type: "approval_required"; request: ApprovalRequest }
   | { type: "tool_result"; result: ToolResult; callId: string }
+  | {
+      type: "provider_fallback_attempt";
+      runId?: string;
+      fromProvider: string;
+      toProvider: string;
+      reason: string;
+      category?: string;
+      attempt: number;
+      maxAttempts: number;
+      timestamp?: number;
+    }
   | { type: "done" }
   | { type: "error"; error: Error }
   | { type: "skills_activated"; skills: string[] }

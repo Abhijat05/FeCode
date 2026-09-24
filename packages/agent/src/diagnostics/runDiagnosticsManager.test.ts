@@ -115,4 +115,28 @@ describe("DefaultRunDiagnosticsManager — Phase 5M", () => {
     expect(runs.map((r) => r.runId)).toEqual(["run-2", "run-3", "run-4"]);
     expect(manager.getRunSummary("run-1")).toBeUndefined();
   });
+
+  it("records and sanitizes provider fallback events in run summary", () => {
+    const manager = new DefaultRunDiagnosticsManager();
+    const runId = "fallback-run-1";
+    manager.startRun({ runId, cwd: "/w", userRequest: "Task needing fallback" });
+
+    manager.recordFallbackDecision(runId, {
+      fromProvider: "gemini",
+      toProvider: "openai",
+      reason: "Gemini quota reached (429) using key sk-abcdef1234567890abcdef12",
+      category: "quota_exhaustion",
+      attempt: 1,
+      maxAttempts: 2,
+      timestamp: 123456789
+    });
+
+    const summary = manager.getRunSummary(runId);
+    expect(summary?.fallbackCount).toBe(1);
+    expect(summary?.lastUsedProvider).toBe("openai");
+    expect(summary?.fallbackEvents?.[0].fromProvider).toBe("gemini");
+    expect(summary?.fallbackEvents?.[0].toProvider).toBe("openai");
+    expect(summary?.fallbackEvents?.[0].reason).not.toContain("sk-abcdef1234567890abcdef12");
+    expect(summary?.fallbackEvents?.[0].reason).toContain("[REDACTED_API_KEY]");
+  });
 });

@@ -63,6 +63,20 @@ describe("loadConfig", () => {
     expect(config.ollamaBaseUrl).toBe("http://localhost:11434/v1");
     expect(config.openaiApiKey).toBeUndefined();
     expect(config.geminiApiKey).toBeUndefined();
+    expect(config.fallback?.enabled).toBe(false);
+  });
+
+  it("parses fallback configuration when FE_AUTO_FALLBACK is enabled", () => {
+    process.env.FE_AUTO_FALLBACK = "true";
+    process.env.FE_FALLBACK_PROVIDERS = "gemini, openai, ollama";
+    process.env.FE_MAX_RETRIES_PER_PROVIDER = "2";
+    process.env.FE_MAX_FALLBACK_SWITCHES = "3";
+
+    const config = loadConfig({ cwd: tmpDir });
+    expect(config.fallback?.enabled).toBe(true);
+    expect(config.fallback?.providers).toEqual(["gemini", "openai", "ollama"]);
+    expect(config.fallback?.maxRetriesPerProvider).toBe(2);
+    expect(config.fallback?.maxTotalFallbackSwitches).toBe(3);
   });
 });
 

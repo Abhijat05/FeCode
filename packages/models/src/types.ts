@@ -49,6 +49,16 @@ export type ModelEvent =
   | {
       type: "error";
       error: Error;
+    }
+  | {
+      type: "fallback";
+      fromProvider: string;
+      toProvider: string;
+      reason: string;
+      category?: string;
+      attempt: number;
+      maxAttempts: number;
+      timestamp?: number;
     };
 
 export interface ModelProvider {

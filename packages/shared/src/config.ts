@@ -2,12 +2,20 @@ import * as fs from "fs";
 import * as path from "path";
 import dotenv from "dotenv";
 
+export interface ProviderFallbackConfig {
+  enabled: boolean;
+  providers?: string[];
+  maxRetriesPerProvider?: number;
+  maxTotalFallbackSwitches?: number;
+}
+
 export interface FeCodeConfig {
   provider: string;
   model: string;
   openaiApiKey?: string;
   geminiApiKey?: string;
   ollamaBaseUrl?: string;
+  fallback?: ProviderFallbackConfig;
 }
 
 export interface LoadConfigOptions {
@@ -58,12 +66,32 @@ export function loadConfig(options: LoadConfigOptions = {}): FeCodeConfig {
   const ollamaBaseUrl =
     process.env.OLLAMA_BASE_URL || "http://localhost:11434/v1";
 
+  const autoFallback = process.env.FE_AUTO_FALLBACK === "true";
+  const fallbackProvidersEnv = process.env.FE_FALLBACK_PROVIDERS;
+  const fallbackProviders = fallbackProvidersEnv
+    ? fallbackProvidersEnv.split(",").map((p) => p.trim().toLowerCase()).filter(Boolean)
+    : undefined;
+
+  const maxRetriesEnv = process.env.FE_MAX_RETRIES_PER_PROVIDER;
+  const parsedMaxRetries = maxRetriesEnv ? parseInt(maxRetriesEnv, 10) : 1;
+
+  const maxSwitchesEnv = process.env.FE_MAX_FALLBACK_SWITCHES;
+  const parsedMaxSwitches = maxSwitchesEnv ? parseInt(maxSwitchesEnv, 10) : 2;
+
+  const fallback: ProviderFallbackConfig = {
+    enabled: autoFallback,
+    providers: fallbackProviders,
+    maxRetriesPerProvider: Number.isFinite(parsedMaxRetries) ? parsedMaxRetries : 1,
+    maxTotalFallbackSwitches: Number.isFinite(parsedMaxSwitches) ? parsedMaxSwitches : 2
+  };
+
   return {
     provider,
     model,
     openaiApiKey,
     geminiApiKey,
-    ollamaBaseUrl
+    ollamaBaseUrl,
+    fallback
   };
 }
 

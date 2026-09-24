@@ -2,6 +2,7 @@ import type { AgentEvent } from "../index.js";
 import type { AgentRunTransition } from "../run/types.js";
 import type { TaskRiskLevel } from "../policy/types.js";
 import type {
+  FallbackDiagnosticRecord,
   RunDiagnosticsManager,
   RunDiagnosticsManagerOptions,
   RunSummary
@@ -11,8 +12,8 @@ function sanitizeString(str: string): string {
   // Scrub typical secret patterns if present
   return str
     .replace(/(?:sk-[a-zA-Z0-9_-]{20,})/g, "[REDACTED_API_KEY]")
-    .replace(/(?:AIza[0-9A-Za-z-_]{35})/g, "[REDACTED_API_KEY]")
-    .replace(/(?:ghp_[a-zA-Z0-9]{36})/g, "[REDACTED_TOKEN]");
+    .replace(/(?:AIza[0-9A-Za-z-_]{30,})/g, "[REDACTED_API_KEY]")
+    .replace(/(?:ghp_[a-zA-Z0-9]{20,})/g, "[REDACTED_TOKEN]");
 }
 
 export class DefaultRunDiagnosticsManager implements RunDiagnosticsManager {
@@ -514,6 +515,24 @@ export class DefaultRunDiagnosticsManager implements RunDiagnosticsManager {
       summary.handoffBlockedCount = (summary.handoffBlockedCount || 0) + 1;
       summary.handoffBlocks = summary.handoffBlockedCount;
     }
+  }
+
+  public recordFallbackDecision(
+    runId: string,
+    record: FallbackDiagnosticRecord
+  ): void {
+    const summary = this.runSummaries.get(runId);
+    if (!summary) return;
+
+    if (!summary.fallbackEvents) {
+      summary.fallbackEvents = [];
+    }
+    summary.fallbackEvents.push({
+      ...record,
+      reason: sanitizeString(record.reason)
+    });
+    summary.fallbackCount = summary.fallbackEvents.length;
+    summary.lastUsedProvider = record.toProvider;
   }
 
   public recordToolStart(

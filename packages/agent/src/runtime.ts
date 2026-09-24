@@ -1364,6 +1364,28 @@ export class AgentRuntime implements Agent {
                   (event.usage.totalTokens || 0)
               };
             }
+          } else if (event.type === "fallback") {
+            const fallbackRecord = {
+              fromProvider: event.fromProvider,
+              toProvider: event.toProvider,
+              reason: event.reason,
+              category: event.category || "quota_exhaustion",
+              attempt: event.attempt,
+              maxAttempts: event.maxAttempts,
+              timestamp: event.timestamp || Date.now()
+            };
+            this.diagnosticsManager.recordFallbackDecision(runId, fallbackRecord);
+            yield {
+              type: "provider_fallback_attempt",
+              runId,
+              fromProvider: event.fromProvider,
+              toProvider: event.toProvider,
+              reason: event.reason,
+              category: event.category,
+              attempt: event.attempt,
+              maxAttempts: event.maxAttempts,
+              timestamp: fallbackRecord.timestamp
+            };
           } else if (event.type === "error") {
             turnError = event.error;
             yield { type: "error", error: event.error };

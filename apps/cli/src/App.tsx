@@ -2452,6 +2452,19 @@ export const App: React.FC<AppProps> = ({
               )
             );
           }
+        } else if (event.type === "provider_fallback_attempt") {
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    response:
+                      t.response +
+                      `\n⟳ Quota reached on ${event.fromProvider}. Falling back to ${event.toProvider}...\n`
+                  }
+                : t
+            )
+          );
         } else if (event.type === "error") {
           setTurns((prev) =>
             prev.map((t) =>

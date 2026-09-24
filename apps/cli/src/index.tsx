@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { render } from "ink";
 import { loadConfig } from "@fecode/shared";
-import { createModelProvider } from "@fecode/models";
+import { createModelProvider, createConfiguredFallbackChain } from "@fecode/models";
 import * as fs from "fs/promises";
 import {
   AgentRuntime,
@@ -163,12 +163,23 @@ Interactive Commands (inside TUI):
           ? config.openaiApiKey
           : undefined;
 
-    const modelProvider = createModelProvider({
-      provider: providerName,
-      model: modelName,
-      apiKey,
-      baseUrl: config.ollamaBaseUrl
-    });
+    const modelProvider = config.fallback?.enabled
+      ? createConfiguredFallbackChain({
+          primaryProvider: providerName,
+          primaryModel: modelName,
+          fallbackProviders: config.fallback.providers,
+          geminiApiKey: config.geminiApiKey,
+          openaiApiKey: config.openaiApiKey,
+          ollamaBaseUrl: config.ollamaBaseUrl,
+          maxRetriesPerProvider: config.fallback.maxRetriesPerProvider,
+          maxTotalFallbackSwitches: config.fallback.maxTotalFallbackSwitches
+        })
+      : createModelProvider({
+          provider: providerName,
+          model: modelName,
+          apiKey,
+          baseUrl: config.ollamaBaseUrl
+        });
 
     const registry = createDefaultToolRegistry();
     const skillLoader = new SkillLoader();
