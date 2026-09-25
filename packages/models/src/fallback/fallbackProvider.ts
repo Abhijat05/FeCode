@@ -2,7 +2,8 @@ import type {
   ModelCapabilities,
   ModelEvent,
   ModelProvider,
-  ModelRequest
+  ModelRequest,
+  ProviderAttemptInfo
 } from "../types.js";
 import {
   classifyProviderError,
@@ -22,6 +23,8 @@ export interface FallbackEvent {
   attempt: number;
   maxAttempts: number;
   timestamp: number;
+  partialTextInterrupted?: boolean;
+  attemptId?: string;
 }
 
 export interface FallbackModelProviderOptions {
@@ -38,6 +41,9 @@ export class FallbackModelProvider implements ModelProvider {
   private readonly maxTotalFallbackSwitches: number;
   private readonly onFallback?: (event: FallbackEvent) => void;
   private readonly onProviderAttempt?: (providerId: string, attempt: number) => void;
+
+  private readonly attempts: ProviderAttemptInfo[] = [];
+  private activeAttemptId?: string;
 
   constructor(options: FallbackModelProviderOptions) {
     if (!options.candidates || options.candidates.length === 0) {
@@ -63,6 +69,14 @@ export class FallbackModelProvider implements ModelProvider {
 
   public getActiveProviderId(): string {
     return this.activeProvider.id;
+  }
+
+  public getActiveAttempt(): ProviderAttemptInfo | undefined {
+    return this.attempts.find((a) => a.id === this.activeAttemptId);
+  }
+
+  public getAttemptHistory(): ProviderAttemptInfo[] {
+    return [...this.attempts];
   }
 
   public resetActiveProvider(): void {
@@ -100,45 +114,83 @@ export class FallbackModelProvider implements ModelProvider {
         }
 
         candidateAttempt++;
+        const attemptId = `att-${candidate.provider.id}-${Date.now()}-${candidateAttempt}-${Math.random().toString(36).slice(2, 6)}`;
+        const attemptInfo: ProviderAttemptInfo = {
+          id: attemptId,
+          providerId: candidate.provider.id,
+          attemptNumber: candidateAttempt,
+          state: "streaming",
+          startedAt: Date.now(),
+          tokensEmitted: 0
+        };
+        this.attempts.push(attemptInfo);
+        this.activeAttemptId = attemptId;
+
         if (this.onProviderAttempt) {
           this.onProviderAttempt(candidate.provider.id, candidateAttempt);
         }
 
         let streamError: Error | null = null;
-        const bufferedEvents: ModelEvent[] = [];
+        let attemptTokensEmitted = 0;
 
         try {
           const stream = candidate.provider.generate(request, signal);
           for await (const event of stream) {
+            if (signal?.aborted) {
+              attemptInfo.state = "cancelled";
+              attemptInfo.completedAt = Date.now();
+              yield { type: "error", error: new Error("Request aborted") };
+              return;
+            }
+
+            // Reject late events from superseded attempts
+            if (this.activeAttemptId !== attemptId || attemptInfo.state !== "streaming") {
+              continue;
+            }
+
             if (event.type === "error") {
               streamError = event.error;
               break;
+            } else if (event.type === "text_delta") {
+              attemptTokensEmitted++;
+              attemptInfo.tokensEmitted = attemptTokensEmitted;
+              yield event;
+            } else if (event.type === "completed") {
+              attemptInfo.state = "completed";
+              attemptInfo.completedAt = Date.now();
+              yield event;
+              candidateSucceeded = true;
+              return;
             } else {
-              bufferedEvents.push(event);
+              yield event;
             }
           }
         } catch (err: unknown) {
           streamError = err instanceof Error ? err : new Error(String(err));
         }
 
-        if (!streamError) {
-          // Success! Flush buffered events and finish.
-          for (const ev of bufferedEvents) {
-            yield ev;
-          }
-          candidateSucceeded = true;
-          break;
+        if (candidateSucceeded) {
+          return;
+        }
+
+        if (signal?.aborted) {
+          attemptInfo.state = "cancelled";
+          attemptInfo.completedAt = Date.now();
+          yield { type: "error", error: new Error("Request aborted") };
+          return;
         }
 
         lastError = streamError;
         lastClassification = classifyProviderError(streamError);
+        attemptInfo.error = streamError ? streamError.message : undefined;
 
         // If error is transient and we have retries left on this candidate, retry.
         if (lastClassification.isRetryable && candidateAttempt <= maxRetries) {
+          attemptInfo.state = "failed";
+          attemptInfo.completedAt = Date.now();
           continue;
         }
 
-        // If error occurred, break out of candidate retry loop.
         break;
       }
 
@@ -157,11 +209,28 @@ export class FallbackModelProvider implements ModelProvider {
         this.activeCandidateIndex + 1 < this.candidates.length &&
         totalSwitches < this.maxTotalFallbackSwitches
       ) {
+        if (signal?.aborted) {
+          yield { type: "error", error: new Error("Request aborted") };
+          return;
+        }
+
         const fromProvider = candidate.provider.id;
+        const currentAttempt = this.attempts.find((a) => a.id === this.activeAttemptId);
+        if (currentAttempt) {
+          currentAttempt.state = "exhausted";
+          currentAttempt.completedAt = Date.now();
+        }
+
+        const partialTextInterrupted = (currentAttempt?.tokensEmitted || 0) > 0;
+
         this.activeCandidateIndex++;
         totalSwitches++;
         const toCandidate = this.candidates[this.activeCandidateIndex];
         const toProvider = toCandidate.provider.id;
+
+        if (currentAttempt) {
+          currentAttempt.state = "superseded";
+        }
 
         const fallbackEvent: FallbackEvent = {
           fromProvider,
@@ -170,7 +239,9 @@ export class FallbackModelProvider implements ModelProvider {
           category: lastClassification.category,
           attempt: totalSwitches,
           maxAttempts: this.maxTotalFallbackSwitches,
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          partialTextInterrupted,
+          attemptId: currentAttempt?.id
         };
 
         if (this.onFallback) {
@@ -185,7 +256,9 @@ export class FallbackModelProvider implements ModelProvider {
           category: lastClassification.category,
           attempt: totalSwitches,
           maxAttempts: this.maxTotalFallbackSwitches,
-          timestamp: fallbackEvent.timestamp
+          timestamp: fallbackEvent.timestamp,
+          partialTextInterrupted,
+          attemptId: currentAttempt?.id
         };
 
         // Proceed to next candidate in while loop
@@ -194,6 +267,11 @@ export class FallbackModelProvider implements ModelProvider {
 
       // If all candidates exhausted due to quota/rate-limit
       if (lastClassification.isFallbackEligible && this.activeCandidateIndex + 1 >= this.candidates.length) {
+        const currentAttempt = this.attempts.find((a) => a.id === this.activeAttemptId);
+        if (currentAttempt) {
+          currentAttempt.state = "exhausted";
+          currentAttempt.completedAt = Date.now();
+        }
         const chain = this.candidates.map((c) => c.provider.id).join(" -> ");
         yield {
           type: "error",
@@ -205,6 +283,11 @@ export class FallbackModelProvider implements ModelProvider {
       }
 
       // For all other errors (401 auth, 400 invalid, non-fallback transient after retries, abort, etc.), yield error and terminate
+      const currentAttempt = this.attempts.find((a) => a.id === this.activeAttemptId);
+      if (currentAttempt) {
+        currentAttempt.state = signal?.aborted ? "cancelled" : "failed";
+        currentAttempt.completedAt = Date.now();
+      }
       yield {
         type: "error",
         error: lastError || new Error("Provider execution failed")

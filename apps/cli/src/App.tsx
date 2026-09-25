@@ -2453,17 +2453,29 @@ export const App: React.FC<AppProps> = ({
             );
           }
         } else if (event.type === "provider_fallback_attempt") {
+          const notice = event.partialTextInterrupted
+            ? `⟳ [Interrupted] Quota reached on ${event.fromProvider}. Restarting response with ${event.toProvider}...`
+            : `⟳ Quota reached on ${event.fromProvider}. Falling back to ${event.toProvider}...`;
           setTurns((prev) =>
-            prev.map((t) =>
-              t.id === turnId
-                ? {
-                    ...t,
-                    response:
-                      t.response +
-                      `\n⟳ Quota reached on ${event.fromProvider}. Falling back to ${event.toProvider}...\n`
-                  }
-                : t
-            )
+            prev.map((t) => {
+              if (t.id !== turnId) return t;
+              let baseResponse = t.response;
+              if (event.partialTextInterrupted) {
+                // Keep any skill header lines, discard uncommitted partial text tokens
+                const skillLines = baseResponse
+                  .split("\n")
+                  .filter((line) => line.startsWith("⚡ Skills:"))
+                  .join("\n");
+                baseResponse = skillLines ? skillLines + "\n" : "";
+              }
+              const prefix = baseResponse
+                ? baseResponse + (baseResponse.endsWith("\n") ? "" : "\n")
+                : "";
+              return {
+                ...t,
+                response: `${prefix}\n${notice}\n`
+              };
+            })
           );
         } else if (event.type === "error") {
           setTurns((prev) =>

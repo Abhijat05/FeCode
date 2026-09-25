@@ -45,6 +45,20 @@ export interface FallbackDiagnosticRecord {
   attempt: number;
   maxAttempts: number;
   timestamp: number;
+  partialTextInterrupted?: boolean;
+  tokensDiscarded?: number;
+  attemptId?: string;
+}
+
+export interface ProviderAttemptDiagnosticRecord {
+  id: string;
+  providerId: string;
+  attemptNumber: number;
+  state: string;
+  startedAt: number;
+  completedAt?: number;
+  tokensEmitted: number;
+  error?: string;
 }
 
 export interface RunFilesSummary {
@@ -79,6 +93,7 @@ export interface RunSummary {
   fallbackEvents?: FallbackDiagnosticRecord[];
   fallbackCount?: number;
   lastUsedProvider?: string;
+  providerAttempts?: ProviderAttemptDiagnosticRecord[];
   files: RunFilesSummary;
   lifecycleTransitions: AgentRunTransition[];
   failureReason?: string;
@@ -261,6 +276,10 @@ export interface RunDiagnosticsManager {
   recordFallbackDecision(
     runId: string,
     record: FallbackDiagnosticRecord
+  ): void;
+  recordProviderAttempt(
+    runId: string,
+    attempt: ProviderAttemptDiagnosticRecord
   ): void;
   recordToolStart(runId: string, toolName: string, callId: string, targetPath?: string): void;
   recordToolComplete(

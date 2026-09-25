@@ -250,4 +250,68 @@ describe("FallbackModelProvider", () => {
     const errEvent = events.find((e) => e.type === "error");
     expect(errEvent).toBeDefined();
   });
+
+  it("marks partialTextInterrupted as false when quota exhaustion occurs before any tokens (Situation A)", async () => {
+    const quotaErr = Object.assign(new Error("Gemini quota exceeded (429)"), { status: 429 });
+    const providerA = new MockProvider("gemini", () => makeErrorStream(quotaErr));
+    const providerB = new MockProvider("openai", () => makeSuccessStream("Clean start from OpenAI"));
+
+    const fallbackEvents: FallbackEvent[] = [];
+    const fallbackProvider = new FallbackModelProvider({
+      candidates: [{ provider: providerA }, { provider: providerB }],
+      onFallback: (ev) => fallbackEvents.push(ev)
+    });
+
+    const events: ModelEvent[] = [];
+    for await (const ev of fallbackProvider.generate({ messages: [] })) {
+      events.push(ev);
+    }
+
+    expect(fallbackEvents.length).toBe(1);
+    expect(fallbackEvents[0].partialTextInterrupted).toBe(false);
+    expect(fallbackEvents[0].attemptId).toBeDefined();
+
+    const fallbackYield = events.find((e) => e.type === "fallback");
+    expect(fallbackYield).toBeDefined();
+    if (fallbackYield && fallbackYield.type === "fallback") {
+      expect(fallbackYield.partialTextInterrupted).toBe(false);
+      expect(fallbackYield.attemptId).toBe(fallbackEvents[0].attemptId);
+    }
+  });
+
+  it("marks partialTextInterrupted as true when quota exhaustion occurs mid-stream (Situation B)", async () => {
+    const quotaErr = Object.assign(new Error("Gemini 429 mid-stream"), { status: 429 });
+    async function* makeInterruptedStream(): AsyncIterable<ModelEvent> {
+      yield { type: "text_delta", content: "Partial thoughts before dying..." };
+      yield { type: "error", error: quotaErr };
+    }
+
+    const providerA = new MockProvider("gemini", () => makeInterruptedStream());
+    const providerB = new MockProvider("openai", () => makeSuccessStream("Clean recovery from OpenAI"));
+
+    const fallbackEvents: FallbackEvent[] = [];
+    const fallbackProvider = new FallbackModelProvider({
+      candidates: [{ provider: providerA }, { provider: providerB }],
+      onFallback: (ev) => fallbackEvents.push(ev)
+    });
+
+    const events: ModelEvent[] = [];
+    for await (const ev of fallbackProvider.generate({ messages: [] })) {
+      events.push(ev);
+    }
+
+    expect(fallbackEvents.length).toBe(1);
+    expect(fallbackEvents[0].partialTextInterrupted).toBe(true);
+    expect(fallbackEvents[0].fromProvider).toBe("gemini");
+    expect(fallbackEvents[0].toProvider).toBe("openai");
+
+    const history = fallbackProvider.getAttemptHistory();
+    expect(history.length).toBe(2);
+    expect(history[0].providerId).toBe("gemini");
+    expect(history[0].state).toBe("superseded");
+    expect(history[0].tokensEmitted).toBe(1);
+    expect(history[1].providerId).toBe("openai");
+    expect(history[1].state).toBe("completed");
+  });
 });
+

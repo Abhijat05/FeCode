@@ -59,7 +59,29 @@ export type ModelEvent =
       attempt: number;
       maxAttempts: number;
       timestamp?: number;
+      partialTextInterrupted?: boolean;
+      attemptId?: string;
     };
+
+export type ProviderAttemptState =
+  | "pending"
+  | "streaming"
+  | "completed"
+  | "failed"
+  | "exhausted"
+  | "superseded"
+  | "cancelled";
+
+export interface ProviderAttemptInfo {
+  id: string;
+  providerId: string;
+  attemptNumber: number;
+  state: ProviderAttemptState;
+  startedAt: number;
+  completedAt?: number;
+  tokensEmitted: number;
+  error?: string;
+}
 
 export interface ModelProvider {
   id: string;

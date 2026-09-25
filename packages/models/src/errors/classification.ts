@@ -18,6 +18,13 @@ export interface ProviderErrorClassification {
   reason: string;
 }
 
+export function sanitizeReason(str: string): string {
+  return str
+    .replace(/(?:sk-[a-zA-Z0-9_-]{20,})/g, "[REDACTED_API_KEY]")
+    .replace(/(?:AIza[0-9A-Za-z-_]{30,})/g, "[REDACTED_API_KEY]")
+    .replace(/(?:ghp_[a-zA-Z0-9]{20,})/g, "[REDACTED_TOKEN]");
+}
+
 export function classifyProviderError(err: unknown): ProviderErrorClassification {
   if (!err) {
     return {
@@ -31,6 +38,7 @@ export function classifyProviderError(err: unknown): ProviderErrorClassification
   const errorObj = err as Record<string, unknown>;
   const name = typeof errorObj.name === "string" ? errorObj.name : "";
   const rawMessage = typeof errorObj.message === "string" ? errorObj.message : String(err);
+  const sanitizedMessage = sanitizeReason(rawMessage);
   const lowerMessage = rawMessage.toLowerCase();
 
   // Extract HTTP status code if present
@@ -87,7 +95,7 @@ export function classifyProviderError(err: unknown): ProviderErrorClassification
       isRetryable: false,
       statusCode: statusCode ?? 429,
       code: code ?? "quota_exhausted",
-      reason: rawMessage
+      reason: sanitizedMessage
     };
   }
 
@@ -104,7 +112,7 @@ export function classifyProviderError(err: unknown): ProviderErrorClassification
       isRetryable: false,
       statusCode: 429,
       code: code ?? "rate_limit_exceeded",
-      reason: rawMessage
+      reason: sanitizedMessage
     };
   }
 
@@ -124,7 +132,7 @@ export function classifyProviderError(err: unknown): ProviderErrorClassification
       isRetryable: false,
       statusCode: statusCode ?? 401,
       code: code ?? "unauthorized",
-      reason: rawMessage
+      reason: sanitizedMessage
     };
   }
 
@@ -140,7 +148,7 @@ export function classifyProviderError(err: unknown): ProviderErrorClassification
       isRetryable: false,
       statusCode: statusCode ?? 403,
       code: code ?? "forbidden",
-      reason: rawMessage
+      reason: sanitizedMessage
     };
   }
 
@@ -157,7 +165,7 @@ export function classifyProviderError(err: unknown): ProviderErrorClassification
       isRetryable: false,
       statusCode: statusCode ?? 404,
       code: code ?? "model_not_found",
-      reason: rawMessage
+      reason: sanitizedMessage
     };
   }
 
@@ -174,7 +182,7 @@ export function classifyProviderError(err: unknown): ProviderErrorClassification
       isRetryable: false,
       statusCode: statusCode ?? 400,
       code: code ?? "invalid_request",
-      reason: rawMessage
+      reason: sanitizedMessage
     };
   }
 
@@ -201,7 +209,7 @@ export function classifyProviderError(err: unknown): ProviderErrorClassification
       isRetryable: true,
       statusCode,
       code,
-      reason: rawMessage
+      reason: sanitizedMessage
     };
   }
 
@@ -212,6 +220,6 @@ export function classifyProviderError(err: unknown): ProviderErrorClassification
     isRetryable: false,
     statusCode,
     code,
-    reason: rawMessage
+    reason: sanitizedMessage
   };
 }

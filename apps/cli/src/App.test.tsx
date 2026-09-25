@@ -3130,5 +3130,42 @@ describe("CLI App Component", () => {
       expect(frame).toContain("Quota reached on gemini. Falling back to openai...");
       expect(frame).toContain("Response from fallback provider");
     });
+
+    it("discards partial response text and renders interrupted notice on mid-stream fallback", async () => {
+      const mockAgent = new MockAgent();
+      mockAgent.runFn = async function* () {
+        yield {
+          type: "text",
+          content: "Partial uncommitted text from dying provider"
+        };
+        yield {
+          type: "provider_fallback_attempt",
+          fromProvider: "gemini",
+          toProvider: "openai",
+          reason: "Quota exceeded 429",
+          attempt: 1,
+          maxAttempts: 2,
+          partialTextInterrupted: true
+        };
+        yield {
+          type: "text",
+          content: "Clean fresh restart from OpenAI"
+        };
+        yield {
+          type: "done"
+        };
+      };
+
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      await typeAndSubmit(stdin, "Write tests");
+      await delay(200);
+
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("[Interrupted] Quota reached on gemini. Restarting response with openai...");
+      expect(frame).toContain("Clean fresh restart from OpenAI");
+      expect(frame).not.toContain("Partial uncommitted text from dying provider");
+    });
   });
 });

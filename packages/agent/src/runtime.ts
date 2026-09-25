@@ -82,9 +82,23 @@ import type {
 } from "./run/types.js";
 import { DefaultAgentRunStateMachine } from "./run/stateMachine.js";
 import type {
+  ProviderAttemptDiagnosticRecord,
   RunDiagnosticsManager,
   RunSummary
 } from "./diagnostics/types.js";
+
+interface ProviderWithAttemptHistory {
+  getAttemptHistory(): ProviderAttemptDiagnosticRecord[];
+}
+
+function hasAttemptHistory(provider: unknown): provider is ProviderWithAttemptHistory {
+  return (
+    typeof provider === "object" &&
+    provider !== null &&
+    "getAttemptHistory" in provider &&
+    typeof (provider as { getAttemptHistory?: unknown }).getAttemptHistory === "function"
+  );
+}
 import { DefaultRunDiagnosticsManager } from "./diagnostics/runDiagnosticsManager.js";
 import type {
   DurableRunRecord,
@@ -1336,6 +1350,7 @@ export class AgentRuntime implements Agent {
         let accumulatedText = "";
         const toolCallsForTurn: ToolCall[] = [];
         let turnError: Error | null = null;
+        let hasDispatchedToolsInTurn = false;
 
         const stream = this.modelProvider.generate(
           request,
@@ -1365,6 +1380,24 @@ export class AgentRuntime implements Agent {
               };
             }
           } else if (event.type === "fallback") {
+            if (hasDispatchedToolsInTurn) {
+              // Situation D: Failure after tool dispatch
+              // Do not automatically replay the turn if doing so could duplicate a side effect.
+              // Stop at a safe execution boundary.
+              turnError = new Error(
+                `Provider fallback blocked at safe execution boundary: tool calls were already dispatched in the current turn.`
+              );
+              yield { type: "error", error: turnError };
+              break;
+            }
+
+            const tokensDiscarded = accumulatedText.length > 0 ? Math.ceil(accumulatedText.length / 4) : 0;
+            const partialTextInterrupted = Boolean(event.partialTextInterrupted || accumulatedText.length > 0);
+
+            // Situations B & C: Discard partial text and incomplete/uncommitted tool calls
+            accumulatedText = "";
+            toolCallsForTurn.length = 0;
+
             const fallbackRecord = {
               fromProvider: event.fromProvider,
               toProvider: event.toProvider,
@@ -1372,9 +1405,21 @@ export class AgentRuntime implements Agent {
               category: event.category || "quota_exhaustion",
               attempt: event.attempt,
               maxAttempts: event.maxAttempts,
-              timestamp: event.timestamp || Date.now()
+              timestamp: event.timestamp || Date.now(),
+              partialTextInterrupted,
+              tokensDiscarded,
+              attemptId: event.attemptId
             };
             this.diagnosticsManager.recordFallbackDecision(runId, fallbackRecord);
+
+            // Sync provider attempt history if available
+            if (hasAttemptHistory(this.modelProvider)) {
+              const attempts = this.modelProvider.getAttemptHistory();
+              for (const att of attempts) {
+                this.diagnosticsManager.recordProviderAttempt(runId, att);
+              }
+            }
+
             yield {
               type: "provider_fallback_attempt",
               runId,
@@ -1384,12 +1429,23 @@ export class AgentRuntime implements Agent {
               category: event.category,
               attempt: event.attempt,
               maxAttempts: event.maxAttempts,
-              timestamp: fallbackRecord.timestamp
+              timestamp: fallbackRecord.timestamp,
+              partialTextInterrupted,
+              attemptId: event.attemptId,
+              tokensDiscarded
             };
           } else if (event.type === "error") {
             turnError = event.error;
             yield { type: "error", error: event.error };
             break;
+          }
+        }
+
+        // Sync final provider attempts if available
+        if (hasAttemptHistory(this.modelProvider)) {
+          const attempts = this.modelProvider.getAttemptHistory();
+          for (const att of attempts) {
+            this.diagnosticsManager.recordProviderAttempt(runId, att);
           }
         }
 
@@ -1518,6 +1574,7 @@ export class AgentRuntime implements Agent {
         }
 
         for (const call of toolCallsForTurn) {
+          hasDispatchedToolsInTurn = true;
           if (
             this.currentRunStateMachine?.isTerminal() ||
             this.activeController.signal.aborted

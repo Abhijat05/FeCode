@@ -43,6 +43,9 @@ export type AgentEvent =
       attempt: number;
       maxAttempts: number;
       timestamp?: number;
+      partialTextInterrupted?: boolean;
+      attemptId?: string;
+      tokensDiscarded?: number;
     }
   | { type: "done" }
   | { type: "error"; error: Error }

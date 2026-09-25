@@ -3,6 +3,7 @@ import type { AgentRunTransition } from "../run/types.js";
 import type { TaskRiskLevel } from "../policy/types.js";
 import type {
   FallbackDiagnosticRecord,
+  ProviderAttemptDiagnosticRecord,
   RunDiagnosticsManager,
   RunDiagnosticsManagerOptions,
   RunSummary
@@ -533,6 +534,28 @@ export class DefaultRunDiagnosticsManager implements RunDiagnosticsManager {
     });
     summary.fallbackCount = summary.fallbackEvents.length;
     summary.lastUsedProvider = record.toProvider;
+  }
+
+  public recordProviderAttempt(
+    runId: string,
+    attempt: ProviderAttemptDiagnosticRecord
+  ): void {
+    const summary = this.runSummaries.get(runId);
+    if (!summary) return;
+
+    if (!summary.providerAttempts) {
+      summary.providerAttempts = [];
+    }
+    const sanitized: ProviderAttemptDiagnosticRecord = {
+      ...attempt,
+      error: attempt.error ? sanitizeString(attempt.error) : undefined
+    };
+    const existingIdx = summary.providerAttempts.findIndex((a) => a.id === attempt.id);
+    if (existingIdx >= 0) {
+      summary.providerAttempts[existingIdx] = sanitized;
+    } else {
+      summary.providerAttempts.push(sanitized);
+    }
   }
 
   public recordToolStart(
