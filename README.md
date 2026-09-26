@@ -11,8 +11,8 @@
   <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%3E=20.0.0-brightgreen.svg" alt="Node.js version" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License" /></a>
   <img src="https://img.shields.io/badge/typescript-strict%205.7+-blue.svg" alt="TypeScript Strict" />
-  <img src="https://img.shields.io/badge/tests-1030%20passed-success.svg" alt="Tests" />
-  <img src="https://img.shields.io/badge/version-1.0.2-brightgreen.svg" alt="Version 1.0.2" />
+  <img src="https://img.shields.io/badge/tests-1078%20passed-success.svg" alt="Tests" />
+  <img src="https://img.shields.io/badge/version-1.0.3-brightgreen.svg" alt="Version 1.0.3" />
 </p>
 
 ---

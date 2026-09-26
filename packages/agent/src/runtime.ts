@@ -198,6 +198,7 @@ export interface AgentRuntimeOptions {
   emitRunEvents?: boolean;
   maxIdenticalToolCalls?: number;
   maxTurns?: number;
+  eagerToolDispatch?: boolean;
 }
 
 export class AgentRuntime implements Agent {
@@ -238,6 +239,7 @@ export class AgentRuntime implements Agent {
   private readonly recoveryContinuationManager: RecoveryContinuationManager;
   private readonly handoffManager: ExecutionHandoffManager;
   private readonly maxReplanDepth: number;
+  private readonly eagerToolDispatch: boolean;
   private readonly completionTracker: TaskCompletionTracker = new TaskCompletionTracker();
   private readonly safeEditValidator: SafeEditValidator = new SafeEditValidator();
   private readonly commandPolicy: CommandPolicy = new DefaultCommandPolicy();
@@ -264,6 +266,9 @@ export class AgentRuntime implements Agent {
     this.maxVerificationAttempts = options.maxVerificationAttempts ?? 3;
     this.maxIdenticalToolCalls = options.maxIdenticalToolCalls ?? 3;
     this.maxTurns = options.maxTurns ?? 50;
+    this.eagerToolDispatch =
+      options.eagerToolDispatch ??
+      (process.env.FE_EAGER_TOOL_DISPATCH === "true");
     this.emitRunEvents = options.emitRunEvents ?? false;
     this.projectContext = options.projectContext;
     this.skillRegistry = options.skillRegistry;
@@ -1349,6 +1354,8 @@ export class AgentRuntime implements Agent {
 
         let accumulatedText = "";
         const toolCallsForTurn: ToolCall[] = [];
+        const executedToolCallIds = new Set<string>();
+        let assistantMessageForTurn: ModelMessage | null = null;
         let turnError: Error | null = null;
         let hasDispatchedToolsInTurn = false;
 
@@ -1364,6 +1371,27 @@ export class AgentRuntime implements Agent {
           } else if (event.type === "tool_call") {
             toolCallsForTurn.push(event.call);
             yield { type: "tool_call", call: event.call };
+            if (this.eagerToolDispatch) {
+              if (!assistantMessageForTurn) {
+                assistantMessageForTurn = {
+                  role: "assistant",
+                  content: accumulatedText
+                    ? accumulatedText.replace(/<(?:think|thinking)>[\s\S]*?<\/(?:think|thinking)>/g, "").trim() || undefined
+                    : undefined,
+                  toolCalls: [event.call]
+                };
+                this.state.messages.push(assistantMessageForTurn);
+              } else {
+                if (!assistantMessageForTurn.toolCalls) {
+                  assistantMessageForTurn.toolCalls = [event.call];
+                } else if (!assistantMessageForTurn.toolCalls.some((c) => c.id === event.call.id)) {
+                  assistantMessageForTurn.toolCalls.push(event.call);
+                }
+              }
+              hasDispatchedToolsInTurn = true;
+              executedToolCallIds.add(event.call.id);
+              yield* this.dispatchToolCall(event.call, runId, input);
+            }
           } else if (event.type === "completed") {
             if (event.usage) {
               const currentUsage = this.state.tokenUsage || {};
@@ -1473,7 +1501,11 @@ export class AgentRuntime implements Agent {
 
         const hasNoContent = !accumulatedText || accumulatedText.trim().length === 0;
 
-        if (toolCallsForTurn.length > 0) {
+        if (assistantMessageForTurn) {
+          assistantMessageForTurn.content = cleanAssistantContent || undefined;
+          assistantMessageForTurn.toolCalls =
+            toolCallsForTurn.length > 0 ? toolCallsForTurn : assistantMessageForTurn.toolCalls;
+        } else if (toolCallsForTurn.length > 0) {
           this.state.messages.push({
             role: "assistant",
             content: cleanAssistantContent || undefined,
@@ -1574,576 +1606,11 @@ export class AgentRuntime implements Agent {
         }
 
         for (const call of toolCallsForTurn) {
+          if (executedToolCallIds.has(call.id)) {
+            continue;
+          }
           hasDispatchedToolsInTurn = true;
-          if (
-            this.currentRunStateMachine?.isTerminal() ||
-            this.activeController.signal.aborted
-          ) {
-            throw new Error("Request aborted");
-          }
-
-          let targetFilePath: string | undefined;
-          if (call.name === "write_file" || call.name === "edit_file") {
-            const args = (call.arguments || {}) as { path?: string };
-            targetFilePath = args.path;
-          }
-
-          this.diagnosticsManager.recordToolStart(
-            runId,
-            call.name,
-            call.id,
-            targetFilePath
-          );
-
-          const toolStartEv: AgentEvent = {
-            type: "tool_started",
-            runId,
-            toolName: call.name,
-            callId: call.id
-          };
-          this.diagnosticsManager.recordEvent(runId, toolStartEv);
-          if (this.emitRunEvents) {
-            yield toolStartEv;
-          }
-
-          const toolContext = {
-            cwd: input.cwd,
-            signal: this.activeController.signal
-          };
-
-          const tool = this.registry.get(call.name);
-          let result: ToolResult = {
-            success: false,
-            error: {
-              message: "Tool execution failed",
-              code: "UNEXPECTED_ERROR"
-            }
-          };
-
-          const callKey = `${call.name}::${JSON.stringify(call.arguments || {})}`;
-          if (this.lastToolCallKey === callKey) {
-            this.consecutiveToolCallCount++;
-          } else {
-            this.lastToolCallKey = callKey;
-            this.consecutiveToolCallCount = 1;
-          }
-
-          if (this.consecutiveToolCallCount > this.maxIdenticalToolCalls) {
-            result = {
-              success: false,
-              error: {
-                message: `Repeated identical tool call loop detected (${call.name} called ${this.consecutiveToolCallCount} times with identical arguments). Modify parameters, broaden search, or proceed with an alternative approach.`,
-                code: "REPEATED_CALL_LOOP"
-              }
-            };
-          } else if (!tool) {
-            result = {
-              success: false,
-              error: {
-                message: `Tool not found: ${call.name}`,
-                code: "NOT_FOUND"
-              }
-            };
-          } else {
-            let affectedFilePath: string | undefined;
-            if (call.name === "write_file" || call.name === "edit_file") {
-              const args = (call.arguments || {}) as { path?: string };
-              affectedFilePath = args.path;
-            }
-
-            const toolRisk = this.executionPolicy.assess({
-              userMessage: input.message,
-              cwd: input.cwd,
-              affectedFiles: affectedFilePath ? [affectedFilePath] : [],
-              operations: [call.name]
-            });
-
-            let checkpointError: ToolResult | null = null;
-            if (
-              toolRisk.requiresCheckpoint &&
-              this.checkpointManager &&
-              !this.completionTracker.getSummary().checkpointId
-            ) {
-              try {
-                const cpRes = await this.checkpointManager.create({
-                  cwd: input.cwd,
-                  taskId: this.state.sessionId,
-                  reason:
-                    toolRisk.reasons.join("; ") ||
-                    "Elevated/Critical risk mutation",
-                  affectedFiles: affectedFilePath ? [affectedFilePath] : [],
-                  signal: this.activeController.signal
-                });
-                if (cpRes.success && cpRes.checkpoint) {
-                  this.completionTracker.setCheckpointId(cpRes.checkpoint.id);
-                } else {
-                  checkpointError = {
-                    success: false,
-                    error: {
-                      message: `Checkpoint creation failed: ${cpRes.error || "Unknown error"}. Mutation blocked for safety.`,
-                      code: "CHECKPOINT_FAILED"
-                    }
-                  };
-                }
-              } catch (err: unknown) {
-                const msg = err instanceof Error ? err.message : String(err);
-                checkpointError = {
-                  success: false,
-                  error: {
-                    message: `Checkpoint creation failed: ${msg}. Mutation blocked for safety.`,
-                    code: "CHECKPOINT_FAILED"
-                  }
-                };
-              }
-            }
-
-            if (checkpointError) {
-              result = checkpointError;
-            } else {
-              const decision = await this.permissionManager.check(
-                tool,
-                toolContext
-              );
-
-            if (decision.type === "denied") {
-              result = {
-                success: false,
-                error: {
-                  message: decision.reason,
-                  code: "PERMISSION_DENIED"
-                }
-              };
-            } else if (decision.type === "requires_approval") {
-              let skipApproval = false;
-              let changeReview: unknown;
-
-              if (call.name === "edit_file") {
-                const args = (call.arguments || {}) as {
-                  path?: string;
-                  oldText?: string;
-                  newText?: string;
-                  expectedHash?: string;
-                };
-
-                if (
-                  args.oldText !== undefined &&
-                  args.newText !== undefined &&
-                  args.oldText === args.newText
-                ) {
-                  // No-op edit: identical oldText and newText
-                  skipApproval = true;
-                  result = {
-                    success: true,
-                    output: {
-                      path: args.path || "",
-                      replacements: 0,
-                      bytesWritten: 0,
-                      changed: false,
-                      reason: "NO_CHANGE"
-                    }
-                  };
-                } else {
-                  const validated = await this.safeEditValidator.validateEdit(
-                    args.path || "",
-                    args.oldText || "",
-                    args.newText || "",
-                    toolContext.cwd,
-                    {
-                      expectedHash: args.expectedHash,
-                      signal: toolContext.signal
-                    }
-                  );
-
-                  if (!validated.valid) {
-                    skipApproval = true;
-                    result = {
-                      success: false,
-                      error: validated.error
-                    };
-                  } else {
-                    const stats = calculateDiffStats(validated.diff);
-                    if (stats.additions === 0 && stats.deletions === 0) {
-                      // No-op (+0 -0)
-                      skipApproval = true;
-                      result = {
-                        success: true,
-                        output: {
-                          path: validated.displayPath,
-                          replacements: 0,
-                          bytesWritten: 0,
-                          changed: false,
-                          reason: "NO_CHANGE"
-                        }
-                      };
-                    } else {
-                      const fileReview: ChangeReviewFile = {
-                        path: validated.displayPath,
-                        operation: "modified",
-                        additions: stats.additions,
-                        deletions: stats.deletions,
-                        diff: validated.diff
-                      };
-                      changeReview = createChangeReview([fileReview]);
-                    }
-                  }
-                }
-              } else if (call.name === "write_file") {
-                const args = (call.arguments || {}) as {
-                  path?: string;
-                  content?: string;
-                };
-
-                const validated = await this.safeEditValidator.validateWrite(
-                  args.path || "",
-                  args.content || "",
-                  toolContext.cwd,
-                  { signal: toolContext.signal }
-                );
-
-                if (!validated.valid) {
-                  skipApproval = true;
-                  result = {
-                    success: false,
-                    error: validated.error
-                  };
-                } else if (
-                  validated.originalContent === validated.proposedContent &&
-                  validated.originalContent !== ""
-                ) {
-                  // No-op write: identical content
-                  skipApproval = true;
-                  result = {
-                    success: true,
-                    output: {
-                      path: validated.displayPath,
-                      created: false,
-                      overwritten: true,
-                      bytesWritten: Buffer.byteLength(
-                        validated.proposedContent,
-                        "utf-8"
-                      ),
-                      changed: false,
-                      reason: "NO_CHANGE"
-                    }
-                  };
-                } else {
-                  const stats = calculateDiffStats(validated.diff);
-                  const isNew = validated.originalContent === "";
-                  const fileReview: ChangeReviewFile = {
-                    path: validated.displayPath,
-                    operation: isNew ? "added" : "modified",
-                    additions: stats.additions,
-                    deletions: stats.deletions,
-                    diff: validated.diff
-                  };
-                  changeReview = createChangeReview([fileReview]);
-                }
-              } else if (call.name === "execute_command") {
-                const cmd = ((call.arguments || {}) as { command?: string }).command;
-                if (!cmd || typeof cmd !== "string" || !cmd.trim()) {
-                  skipApproval = true;
-                  result = {
-                    success: false,
-                    error: {
-                      message: "The 'command' argument is required for execute_command.",
-                      code: "INVALID_ARGUMENT"
-                    }
-                  };
-                } else {
-                  const cmdDecision = this.commandPolicy.validate(cmd);
-                  if (cmdDecision.type === "denied") {
-                    skipApproval = true;
-                    result = {
-                      success: false,
-                      error: {
-                        message: `${cmdDecision.code}: ${cmdDecision.reason}`,
-                        code: cmdDecision.code || "COMMAND_NOT_ALLOWED"
-                      }
-                    };
-                  }
-                }
-              }
-
-              if (!skipApproval) {
-                const approvalRequest: ApprovalRequest = {
-                  id: `approval-${call.id}`,
-                  toolName: tool.name,
-                  category: tool.permissionCategory || "write",
-                  arguments: call.arguments,
-                  reason: decision.reason,
-                  changeReview
-                };
-
-                yield { type: "approval_required", request: approvalRequest };
-
-                let approvalDecision: ApprovalDecision = {
-                  approved: false,
-                  reason: "Approval required but no resolver configured."
-                };
-
-                if (this.approvalResolver) {
-                  approvalDecision = await this.approvalResolver.resolve(
-                    approvalRequest
-                  );
-                }
-
-                if (approvalDecision.approved) {
-                  result = await this.executor.execute(call, toolContext);
-                } else {
-                  result = {
-                    success: false,
-                    error: {
-                      message:
-                        approvalDecision.reason ||
-                        "Tool execution was denied by the user.",
-                      code: "PERMISSION_DENIED"
-                    }
-                  };
-                }
-              }
-            } else {
-              result = await this.executor.execute(call, toolContext);
-            }
-          }
-        }
-
-          yield { type: "tool_result", result, callId: call.id };
-
-          this.diagnosticsManager.recordToolComplete(
-            runId,
-            call.id,
-            result.success,
-            result.error?.code
-          );
-
-          const toolCompEv: AgentEvent = {
-            type: "tool_completed",
-            runId,
-            toolName: call.name,
-            callId: call.id,
-            success: result.success
-          };
-          this.diagnosticsManager.recordEvent(runId, toolCompEv);
-          if (this.emitRunEvents) {
-            yield toolCompEv;
-          }
-
-          if (this.currentPlan) {
-            const pendingOrActiveStep = this.currentPlan.steps.find(
-              (s) => s.status === "in_progress" || s.status === "pending"
-            );
-            if (pendingOrActiveStep) {
-              try {
-                if (result.success) {
-                  this.currentPlan = completePlanStep(
-                    this.currentPlan,
-                    pendingOrActiveStep.stepId
-                  );
-                  this.diagnosticsManager.updatePlanStep(
-                    runId,
-                    pendingOrActiveStep.stepId,
-                    "completed"
-                  );
-                  if (this.emitRunEvents) {
-                    yield {
-                      type: "plan_step_completed",
-                      planId: this.currentPlan.planId,
-                      stepId: pendingOrActiveStep.stepId,
-                      stepIndex: pendingOrActiveStep.order - 1
-                    };
-                  }
-                } else if (result.error?.code !== "NO_CHANGE") {
-                  this.currentPlan = failPlanStep(
-                    this.currentPlan,
-                    pendingOrActiveStep.stepId,
-                    result.error?.message
-                  );
-                  this.diagnosticsManager.updatePlanStep(
-                    runId,
-                    pendingOrActiveStep.stepId,
-                    "failed",
-                    result.error?.message
-                  );
-                  if (this.emitRunEvents) {
-                    yield {
-                      type: "plan_step_failed",
-                      planId: this.currentPlan.planId,
-                      stepId: pendingOrActiveStep.stepId,
-                      stepIndex: pendingOrActiveStep.order - 1,
-                      error: result.error?.message
-                    };
-                  }
-                }
-                this.diagnosticsManager.recordPlan(runId, this.currentPlan);
-              } catch {
-                // Ignore
-              }
-            }
-          }
-
-          let toolResultContent = JSON.stringify(result);
-          const MAX_STORED_TOOL_CHARS = 16000;
-          if (toolResultContent.length > MAX_STORED_TOOL_CHARS) {
-            const head = toolResultContent.slice(0, 10000);
-            const tail = toolResultContent.slice(toolResultContent.length - 4000);
-            const omitted = toolResultContent.length - 14000;
-            toolResultContent = `${head}\n... [stored tool output truncated: ${omitted} characters omitted] ...\n${tail}`;
-          }
-
-          this.state.messages.push({
-            role: "tool",
-            toolCallId: call.id,
-            name: call.name,
-            content: toolResultContent
-          });
-
-          // Invalidate repository exploration & code context caches if file was modified
-          if (
-            result.success &&
-            (call.name === "write_file" || call.name === "edit_file")
-          ) {
-            this.lastToolCallKey = null;
-            this.consecutiveToolCallCount = 0;
-            const targetPath = (call.arguments as { path?: string })?.path;
-
-            const output = result.output as {
-              path?: string;
-              diff?: string;
-              changed?: boolean;
-              created?: boolean;
-            };
-
-            if (targetPath && output?.changed !== false) {
-              const diffStr = output?.diff || "";
-              const stats = calculateDiffStats(diffStr);
-              const op =
-                call.name === "write_file" && output?.created
-                  ? "added"
-                  : "modified";
-              this.completionTracker.recordFileChange({
-                path: targetPath,
-                operation: op,
-                additions: stats.additions,
-                deletions: stats.deletions
-              });
-              this.diagnosticsManager.recordFileChange(runId, targetPath, op);
-            } else if (targetPath) {
-              this.completionTracker.recordFileModified(targetPath);
-              this.diagnosticsManager.recordFileChange(
-                runId,
-                targetPath,
-                "modified"
-              );
-            }
-            if (this.repositoryExplorer) {
-              this.repositoryExplorer.invalidate(targetPath);
-            }
-            if (this.codeContextSelector) {
-              this.codeContextSelector.invalidate(targetPath);
-            }
-          }
-
-          if (!result.success && result.error?.code === "PERMISSION_DENIED") {
-            this.completionTracker.recordBlocked(
-              result.error.message || `Permission denied for ${call.name}`
-            );
-          }
-
-          // Check if this was a command execution
-          if (call.name === "execute_command") {
-            const cmdOutput = result.output as CommandResult | undefined;
-            const isFailure =
-              !result.success ||
-              (cmdOutput && cmdOutput.exitCode !== 0) ||
-              Boolean(cmdOutput && cmdOutput.timedOut);
-
-            const cmd = (call.arguments as { command?: string })?.command || "";
-            const exitCode = cmdOutput ? cmdOutput.exitCode : (result.success ? 0 : 1);
-            const timedOut = Boolean(cmdOutput?.timedOut);
-            const succeeded = result.success && exitCode === 0 && !timedOut;
-
-            if (this.currentRunStateMachine?.getState() === "executing") {
-              yield* this.transitionRunState(
-                "verifying",
-                `Running verification: ${cmd}`
-              );
-            }
-
-            const attemptNum = (this.state.verificationAttempts || 0) + 1;
-            this.diagnosticsManager.recordVerificationStart(
-              runId,
-              cmd,
-              attemptNum
-            );
-            const vStartEv: AgentEvent = {
-              type: "verification_started",
-              runId,
-              command: cmd,
-              attempt: attemptNum
-            };
-            this.diagnosticsManager.recordEvent(runId, vStartEv);
-            if (this.emitRunEvents) {
-              yield vStartEv;
-            }
-
-            const attemptDoneNum = attemptNum;
-            this.diagnosticsManager.recordVerificationComplete(
-              runId,
-              cmd,
-              attemptDoneNum,
-              succeeded,
-              exitCode,
-              timedOut
-            );
-            const vCompEv: AgentEvent = {
-              type: "verification_completed",
-              runId,
-              command: cmd,
-              success: succeeded,
-              attempt: attemptDoneNum
-            };
-            this.diagnosticsManager.recordEvent(runId, vCompEv);
-            if (this.emitRunEvents) {
-              yield vCompEv;
-            }
-
-            this.completionTracker.recordCommandExecution({
-              command: cmd,
-              exitCode,
-              timedOut,
-              succeeded
-            });
-
-            if (isFailure) {
-              const attempts: number = (this.state.verificationAttempts || 0) + 1;
-              this.state.verificationAttempts = attempts;
-              this.currentRunStateMachine?.incrementVerificationAttempts();
-
-              if (attempts >= this.maxVerificationAttempts) {
-                this.completionTracker.recordBlocked(
-                  `Verification failed after ${this.maxVerificationAttempts} attempts`
-                );
-                this.state.messages.push({
-                  role: "user",
-                  content: `[SYSTEM NOTICE] Maximum verification attempts (${this.maxVerificationAttempts}) reached. Do not attempt further verification commands. Report the current status, failure details, and remaining unresolved issues to the user.`
-                });
-                yield* this.transitionRunState(
-                  "failed",
-                  `Verification failed after ${this.maxVerificationAttempts} attempts`
-                );
-              } else {
-                yield* this.transitionRunState(
-                  "executing",
-                  "Verification failed; fix attempt permitted"
-                );
-              }
-            } else if (this.currentRunStateMachine?.getState() === "verifying") {
-              yield* this.transitionRunState(
-                "executing",
-                "Verification succeeded"
-              );
-            }
-          }
+          yield* this.dispatchToolCall(call, runId, input);
         }
       }
     } catch (err: unknown) {
@@ -2218,6 +1685,592 @@ export class AgentRuntime implements Agent {
         } catch {
           // Non-fatal persistence error
         }
+      }
+    }
+  }
+
+
+  private async *dispatchToolCall(
+    call: ToolCall,
+    runId: string,
+    input: AgentInput
+  ): AsyncGenerator<AgentEvent> {
+    if (
+      this.currentRunStateMachine &&
+      this.currentRunStateMachine.getState() === "planning"
+    ) {
+      yield* this.transitionRunState(
+        "executing",
+        "Tool execution started"
+      );
+    }
+    if (
+      this.currentRunStateMachine?.isTerminal() ||
+      this.activeController?.signal.aborted
+    ) {
+      throw new Error("Request aborted");
+    }
+
+    let targetFilePath: string | undefined;
+    if (call.name === "write_file" || call.name === "edit_file") {
+      const args = (call.arguments || {}) as { path?: string };
+      targetFilePath = args.path;
+    }
+
+    this.diagnosticsManager.recordToolStart(
+      runId,
+      call.name,
+      call.id,
+      targetFilePath
+    );
+
+    const toolStartEv: AgentEvent = {
+      type: "tool_started",
+      runId,
+      toolName: call.name,
+      callId: call.id
+    };
+    this.diagnosticsManager.recordEvent(runId, toolStartEv);
+    if (this.emitRunEvents) {
+      yield toolStartEv;
+    }
+
+    const toolContext = {
+      cwd: input.cwd,
+      signal: this.activeController?.signal || new AbortController().signal
+    };
+
+    const tool = this.registry.get(call.name);
+    let result: ToolResult = {
+      success: false,
+      error: {
+        message: "Tool execution failed",
+        code: "UNEXPECTED_ERROR"
+      }
+    };
+
+    const callKey = `${call.name}::${JSON.stringify(call.arguments || {})}`;
+    if (this.lastToolCallKey === callKey) {
+      this.consecutiveToolCallCount++;
+    } else {
+      this.lastToolCallKey = callKey;
+      this.consecutiveToolCallCount = 1;
+    }
+
+    if (this.consecutiveToolCallCount > this.maxIdenticalToolCalls) {
+      result = {
+        success: false,
+        error: {
+          message: `Repeated identical tool call loop detected (${call.name} called ${this.consecutiveToolCallCount} times with identical arguments). Modify parameters, broaden search, or proceed with an alternative approach.`,
+          code: "REPEATED_CALL_LOOP"
+        }
+      };
+    } else if (!tool) {
+      result = {
+        success: false,
+        error: {
+          message: `Tool not found: ${call.name}`,
+          code: "NOT_FOUND"
+        }
+      };
+    } else {
+      let affectedFilePath: string | undefined;
+      if (call.name === "write_file" || call.name === "edit_file") {
+        const args = (call.arguments || {}) as { path?: string };
+        affectedFilePath = args.path;
+      }
+
+      const toolRisk = this.executionPolicy.assess({
+        userMessage: input.message,
+        cwd: input.cwd,
+        affectedFiles: affectedFilePath ? [affectedFilePath] : [],
+        operations: [call.name]
+      });
+
+      let checkpointError: ToolResult | null = null;
+      if (
+        toolRisk.requiresCheckpoint &&
+        this.checkpointManager &&
+        !this.completionTracker.getSummary().checkpointId
+      ) {
+        try {
+          const cpRes = await this.checkpointManager.create({
+            cwd: input.cwd,
+            taskId: this.state.sessionId,
+            reason:
+              toolRisk.reasons.join("; ") ||
+              "Elevated/Critical risk mutation",
+            affectedFiles: affectedFilePath ? [affectedFilePath] : [],
+            signal: this.activeController?.signal || new AbortController().signal
+          });
+          if (cpRes.success && cpRes.checkpoint) {
+            this.completionTracker.setCheckpointId(cpRes.checkpoint.id);
+          } else {
+            checkpointError = {
+              success: false,
+              error: {
+                message: `Checkpoint creation failed: ${cpRes.error || "Unknown error"}. Mutation blocked for safety.`,
+                code: "CHECKPOINT_FAILED"
+              }
+            };
+          }
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          checkpointError = {
+            success: false,
+            error: {
+              message: `Checkpoint creation failed: ${msg}. Mutation blocked for safety.`,
+              code: "CHECKPOINT_FAILED"
+            }
+          };
+        }
+      }
+
+      if (checkpointError) {
+        result = checkpointError;
+      } else {
+        const decision = await this.permissionManager.check(
+          tool,
+          toolContext
+        );
+
+      if (decision.type === "denied") {
+        result = {
+          success: false,
+          error: {
+            message: decision.reason,
+            code: "PERMISSION_DENIED"
+          }
+        };
+      } else if (decision.type === "requires_approval") {
+        let skipApproval = false;
+        let changeReview: unknown;
+
+        if (call.name === "edit_file") {
+          const args = (call.arguments || {}) as {
+            path?: string;
+            oldText?: string;
+            newText?: string;
+            expectedHash?: string;
+          };
+
+          if (
+            args.oldText !== undefined &&
+            args.newText !== undefined &&
+            args.oldText === args.newText
+          ) {
+            // No-op edit: identical oldText and newText
+            skipApproval = true;
+            result = {
+              success: true,
+              output: {
+                path: args.path || "",
+                replacements: 0,
+                bytesWritten: 0,
+                changed: false,
+                reason: "NO_CHANGE"
+              }
+            };
+          } else {
+            const validated = await this.safeEditValidator.validateEdit(
+              args.path || "",
+              args.oldText || "",
+              args.newText || "",
+              toolContext.cwd,
+              {
+                expectedHash: args.expectedHash,
+                signal: toolContext.signal
+              }
+            );
+
+            if (!validated.valid) {
+              skipApproval = true;
+              result = {
+                success: false,
+                error: validated.error
+              };
+            } else {
+              const stats = calculateDiffStats(validated.diff);
+              if (stats.additions === 0 && stats.deletions === 0) {
+                // No-op (+0 -0)
+                skipApproval = true;
+                result = {
+                  success: true,
+                  output: {
+                    path: validated.displayPath,
+                    replacements: 0,
+                    bytesWritten: 0,
+                    changed: false,
+                    reason: "NO_CHANGE"
+                  }
+                };
+              } else {
+                const fileReview: ChangeReviewFile = {
+                  path: validated.displayPath,
+                  operation: "modified",
+                  additions: stats.additions,
+                  deletions: stats.deletions,
+                  diff: validated.diff
+                };
+                changeReview = createChangeReview([fileReview]);
+              }
+            }
+          }
+        } else if (call.name === "write_file") {
+          const args = (call.arguments || {}) as {
+            path?: string;
+            content?: string;
+          };
+
+          const validated = await this.safeEditValidator.validateWrite(
+            args.path || "",
+            args.content || "",
+            toolContext.cwd,
+            { signal: toolContext.signal }
+          );
+
+          if (!validated.valid) {
+            skipApproval = true;
+            result = {
+              success: false,
+              error: validated.error
+            };
+          } else if (
+            validated.originalContent === validated.proposedContent &&
+            validated.originalContent !== ""
+          ) {
+            // No-op write: identical content
+            skipApproval = true;
+            result = {
+              success: true,
+              output: {
+                path: validated.displayPath,
+                created: false,
+                overwritten: true,
+                bytesWritten: Buffer.byteLength(
+                  validated.proposedContent,
+                  "utf-8"
+                ),
+                changed: false,
+                reason: "NO_CHANGE"
+              }
+            };
+          } else {
+            const stats = calculateDiffStats(validated.diff);
+            const isNew = validated.originalContent === "";
+            const fileReview: ChangeReviewFile = {
+              path: validated.displayPath,
+              operation: isNew ? "added" : "modified",
+              additions: stats.additions,
+              deletions: stats.deletions,
+              diff: validated.diff
+            };
+            changeReview = createChangeReview([fileReview]);
+          }
+        } else if (call.name === "execute_command") {
+          const cmd = ((call.arguments || {}) as { command?: string }).command;
+          if (!cmd || typeof cmd !== "string" || !cmd.trim()) {
+            skipApproval = true;
+            result = {
+              success: false,
+              error: {
+                message: "The 'command' argument is required for execute_command.",
+                code: "INVALID_ARGUMENT"
+              }
+            };
+          } else {
+            const cmdDecision = this.commandPolicy.validate(cmd);
+            if (cmdDecision.type === "denied") {
+              skipApproval = true;
+              result = {
+                success: false,
+                error: {
+                  message: `${cmdDecision.code}: ${cmdDecision.reason}`,
+                  code: cmdDecision.code || "COMMAND_NOT_ALLOWED"
+                }
+              };
+            }
+          }
+        }
+
+        if (!skipApproval) {
+          const approvalRequest: ApprovalRequest = {
+            id: `approval-${call.id}`,
+            toolName: tool.name,
+            category: tool.permissionCategory || "write",
+            arguments: call.arguments,
+            reason: decision.reason,
+            changeReview
+          };
+
+          yield { type: "approval_required", request: approvalRequest };
+
+          let approvalDecision: ApprovalDecision = {
+            approved: false,
+            reason: "Approval required but no resolver configured."
+          };
+
+          if (this.approvalResolver) {
+            approvalDecision = await this.approvalResolver.resolve(
+              approvalRequest
+            );
+          }
+
+          if (approvalDecision.approved) {
+            result = await this.executor.execute(call, toolContext);
+          } else {
+            result = {
+              success: false,
+              error: {
+                message:
+                  approvalDecision.reason ||
+                  "Tool execution was denied by the user.",
+                code: "PERMISSION_DENIED"
+              }
+            };
+          }
+        }
+      } else {
+        result = await this.executor.execute(call, toolContext);
+      }
+    }
+  }
+
+    yield { type: "tool_result", result, callId: call.id };
+
+    this.diagnosticsManager.recordToolComplete(
+      runId,
+      call.id,
+      result.success,
+      result.error?.code
+    );
+
+    const toolCompEv: AgentEvent = {
+      type: "tool_completed",
+      runId,
+      toolName: call.name,
+      callId: call.id,
+      success: result.success
+    };
+    this.diagnosticsManager.recordEvent(runId, toolCompEv);
+    if (this.emitRunEvents) {
+      yield toolCompEv;
+    }
+
+    if (this.currentPlan) {
+      const pendingOrActiveStep = this.currentPlan.steps.find(
+        (s) => s.status === "in_progress" || s.status === "pending"
+      );
+      if (pendingOrActiveStep) {
+        try {
+          if (result.success) {
+            this.currentPlan = completePlanStep(
+              this.currentPlan,
+              pendingOrActiveStep.stepId
+            );
+            this.diagnosticsManager.updatePlanStep(
+              runId,
+              pendingOrActiveStep.stepId,
+              "completed"
+            );
+            if (this.emitRunEvents) {
+              yield {
+                type: "plan_step_completed",
+                planId: this.currentPlan.planId,
+                stepId: pendingOrActiveStep.stepId,
+                stepIndex: pendingOrActiveStep.order - 1
+              };
+            }
+          } else if (result.error?.code !== "NO_CHANGE") {
+            this.currentPlan = failPlanStep(
+              this.currentPlan,
+              pendingOrActiveStep.stepId,
+              result.error?.message
+            );
+            this.diagnosticsManager.updatePlanStep(
+              runId,
+              pendingOrActiveStep.stepId,
+              "failed",
+              result.error?.message
+            );
+            if (this.emitRunEvents) {
+              yield {
+                type: "plan_step_failed",
+                planId: this.currentPlan.planId,
+                stepId: pendingOrActiveStep.stepId,
+                stepIndex: pendingOrActiveStep.order - 1,
+                error: result.error?.message
+              };
+            }
+          }
+          this.diagnosticsManager.recordPlan(runId, this.currentPlan);
+        } catch {
+          // Ignore
+        }
+      }
+    }
+
+    let toolResultContent = JSON.stringify(result);
+    const MAX_STORED_TOOL_CHARS = 16000;
+    if (toolResultContent.length > MAX_STORED_TOOL_CHARS) {
+      const head = toolResultContent.slice(0, 10000);
+      const tail = toolResultContent.slice(toolResultContent.length - 4000);
+      const omitted = toolResultContent.length - 14000;
+      toolResultContent = `${head}\n... [stored tool output truncated: ${omitted} characters omitted] ...\n${tail}`;
+    }
+
+    this.state.messages.push({
+      role: "tool",
+      toolCallId: call.id,
+      name: call.name,
+      content: toolResultContent
+    });
+
+    // Invalidate repository exploration & code context caches if file was modified
+    if (
+      result.success &&
+      (call.name === "write_file" || call.name === "edit_file")
+    ) {
+      this.lastToolCallKey = null;
+      this.consecutiveToolCallCount = 0;
+      const targetPath = (call.arguments as { path?: string })?.path;
+
+      const output = result.output as {
+        path?: string;
+        diff?: string;
+        changed?: boolean;
+        created?: boolean;
+      };
+
+      if (targetPath && output?.changed !== false) {
+        const diffStr = output?.diff || "";
+        const stats = calculateDiffStats(diffStr);
+        const op =
+          call.name === "write_file" && output?.created
+            ? "added"
+            : "modified";
+        this.completionTracker.recordFileChange({
+          path: targetPath,
+          operation: op,
+          additions: stats.additions,
+          deletions: stats.deletions
+        });
+        this.diagnosticsManager.recordFileChange(runId, targetPath, op);
+      } else if (targetPath) {
+        this.completionTracker.recordFileModified(targetPath);
+        this.diagnosticsManager.recordFileChange(
+          runId,
+          targetPath,
+          "modified"
+        );
+      }
+      if (this.repositoryExplorer) {
+        this.repositoryExplorer.invalidate(targetPath);
+      }
+      if (this.codeContextSelector) {
+        this.codeContextSelector.invalidate(targetPath);
+      }
+    }
+
+    if (!result.success && result.error?.code === "PERMISSION_DENIED") {
+      this.completionTracker.recordBlocked(
+        result.error.message || `Permission denied for ${call.name}`
+      );
+    }
+
+    // Check if this was a command execution
+    if (call.name === "execute_command") {
+      const cmdOutput = result.output as CommandResult | undefined;
+      const isFailure =
+        !result.success ||
+        (cmdOutput && cmdOutput.exitCode !== 0) ||
+        Boolean(cmdOutput && cmdOutput.timedOut);
+
+      const cmd = (call.arguments as { command?: string })?.command || "";
+      const exitCode = cmdOutput ? cmdOutput.exitCode : (result.success ? 0 : 1);
+      const timedOut = Boolean(cmdOutput?.timedOut);
+      const succeeded = result.success && exitCode === 0 && !timedOut;
+
+      if (this.currentRunStateMachine?.getState() === "executing") {
+        yield* this.transitionRunState(
+          "verifying",
+          `Running verification: ${cmd}`
+        );
+      }
+
+      const attemptNum = (this.state.verificationAttempts || 0) + 1;
+      this.diagnosticsManager.recordVerificationStart(
+        runId,
+        cmd,
+        attemptNum
+      );
+      const vStartEv: AgentEvent = {
+        type: "verification_started",
+        runId,
+        command: cmd,
+        attempt: attemptNum
+      };
+      this.diagnosticsManager.recordEvent(runId, vStartEv);
+      if (this.emitRunEvents) {
+        yield vStartEv;
+      }
+
+      const attemptDoneNum = attemptNum;
+      this.diagnosticsManager.recordVerificationComplete(
+        runId,
+        cmd,
+        attemptDoneNum,
+        succeeded,
+        exitCode,
+        timedOut
+      );
+      const vCompEv: AgentEvent = {
+        type: "verification_completed",
+        runId,
+        command: cmd,
+        success: succeeded,
+        attempt: attemptDoneNum
+      };
+      this.diagnosticsManager.recordEvent(runId, vCompEv);
+      if (this.emitRunEvents) {
+        yield vCompEv;
+      }
+
+      this.completionTracker.recordCommandExecution({
+        command: cmd,
+        exitCode,
+        timedOut,
+        succeeded
+      });
+
+      if (isFailure) {
+        const attempts: number = (this.state.verificationAttempts || 0) + 1;
+        this.state.verificationAttempts = attempts;
+        this.currentRunStateMachine?.incrementVerificationAttempts();
+
+        if (attempts >= this.maxVerificationAttempts) {
+          this.completionTracker.recordBlocked(
+            `Verification failed after ${this.maxVerificationAttempts} attempts`
+          );
+          this.state.messages.push({
+            role: "user",
+            content: `[SYSTEM NOTICE] Maximum verification attempts (${this.maxVerificationAttempts}) reached. Do not attempt further verification commands. Report the current status, failure details, and remaining unresolved issues to the user.`
+          });
+          yield* this.transitionRunState(
+            "failed",
+            `Verification failed after ${this.maxVerificationAttempts} attempts`
+          );
+        } else {
+          yield* this.transitionRunState(
+            "executing",
+            "Verification failed; fix attempt permitted"
+          );
+        }
+      } else if (this.currentRunStateMachine?.getState() === "verifying") {
+        yield* this.transitionRunState(
+          "executing",
+          "Verification succeeded"
+        );
       }
     }
   }

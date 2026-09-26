@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { AgentRuntime } from "../runtime.js";
-import { FallbackModelProvider } from "@fecode/models";
+import { FallbackModelProvider, DefaultToolRegistry } from "@fecode/models";
 import type {
   ModelCapabilities,
   ModelEvent,
@@ -227,6 +227,148 @@ describe("Phase 5AI.6 — Provider Fallback Hardening & Mid-Stream Safety", () =
     const toolResultEvents = events.filter((e) => e.type === "tool_result");
     expect(toolResultEvents.length).toBe(1);
     expect(toolResultEvents[0].callId).toBe("call-read");
+  });
+
+  it("Situation D2 (Same-Turn Execution Safety): tool dispatched mid-stream followed by provider failure halts at safe boundary, prevents fallback replay, discards incomplete fragments, and prevents late restarts", async () => {
+    let sideEffectExecutionCount = 0;
+    const quotaErr = Object.assign(new Error("Gemini quota 429 mid-turn after tool dispatch"), { status: 429 });
+
+    const primary = new MockProvider("gemini", async function* () {
+      // Step 1: Emit valid tool call to be dispatched eagerly
+      yield {
+        type: "tool_call",
+        call: { id: "call-1", name: "mutation_tool", arguments: { val: "side-effect-1" } }
+      };
+      // Step 2: Emit incomplete tool-call fragment (partial streaming chunk before provider dies)
+      yield {
+        type: "text_delta",
+        content: '{"name": "mutation_tool", "arguments": {"val": "incomplete-fragment'
+      };
+      // Step 3: Provider fails during the same turn with quota exhaustion
+      yield { type: "error", error: quotaErr };
+    });
+
+    const fallback = new MockProvider("openai", async function* () {
+      // If fallback was improperly attempted, this would run
+      yield { type: "text_delta", content: "OpenAI response should never occur" };
+      yield { type: "completed" };
+    });
+
+    const fallbackModel = new FallbackModelProvider({
+      candidates: [{ provider: primary }, { provider: fallback }]
+    });
+
+    const registry = new DefaultToolRegistry();
+    registry.register({
+      name: "mutation_tool",
+      description: "A tool that causes a side effect",
+      inputSchema: { type: "object", properties: { val: { type: "string" } } },
+      async execute(args) {
+        sideEffectExecutionCount++;
+        return { success: true, output: { executed: true, val: (args as { val: string }).val } };
+      }
+    });
+
+    const runtime = new AgentRuntime(fallbackModel, {
+      registry,
+      eagerToolDispatch: true,
+      emitRunEvents: true
+    });
+
+    const events: AgentEvent[] = [];
+    for await (const ev of runtime.run({ message: "Execute mutation and continue", cwd: process.cwd() })) {
+      events.push(ev);
+    }
+
+    // 1. Primary was attempted once, fallback candidate 2 was NEVER attempted
+    expect(primary.attempts).toBe(1);
+    expect(fallback.attempts).toBe(0);
+
+    // 2. The dispatched tool side effect occurred EXACTLY ONCE (no duplicate replay)
+    expect(sideEffectExecutionCount).toBe(1);
+
+    // 3. Incomplete tool-call fragment was discarded and never executed
+    const toolStartedEvents = events.filter((e) => e.type === "tool_started");
+    expect(toolStartedEvents.length).toBe(1);
+    expect(toolStartedEvents[0].callId).toBe("call-1");
+
+    const toolResultEvents = events.filter((e) => e.type === "tool_result");
+    expect(toolResultEvents.length).toBe(1);
+    expect(toolResultEvents[0].callId).toBe("call-1");
+
+    // 4. Safe execution boundary stopped the run with explicit boundary error
+    const errorEvents = events.filter((e) => e.type === "error");
+    expect(errorEvents.length).toBeGreaterThan(0);
+    expect(errorEvents.some((e) => e.error?.message.includes("safe execution boundary"))).toBe(true);
+
+    // 5. Run status is marked failed / blocked at the boundary
+    expect(runtime.getState().status).toBe("failed");
+    expect(runtime.getRunSummary()?.finalStatus).toBe("failed");
+
+    // 6. Conversation history is consistent: only call-1 and its result, NO incomplete fragments
+    const messages = runtime.getState().messages;
+    const assistantMsgs = messages.filter((m: ModelMessage) => m.role === "assistant");
+    expect(assistantMsgs.length).toBe(1);
+    expect(assistantMsgs[0].toolCalls?.length).toBe(1);
+    expect(assistantMsgs[0].toolCalls?.[0].id).toBe("call-1");
+
+    const toolMsgs = messages.filter((m: ModelMessage) => m.role === "tool");
+    expect(toolMsgs.length).toBe(1);
+    expect(toolMsgs[0].toolCallId).toBe("call-1");
+  });
+
+  it("Situation D2 (Same-Turn Cancellation & Late Events): mid-turn abort halts execution immediately without secondary attempts or late event restarts", async () => {
+    let sideEffectCount = 0;
+
+    const primary = new MockProvider("gemini", async function* () {
+      yield {
+        type: "tool_call",
+        call: { id: "call-cancel", name: "mutation_tool", arguments: { val: "cancel-test" } }
+      };
+      // Provider attempts to yield late events after cancellation
+      yield { type: "text_delta", content: "Late text delta" };
+      yield { type: "completed" };
+    });
+
+    const fallback = new MockProvider("openai", async function* () {
+      yield { type: "text_delta", content: "Should never run" };
+      yield { type: "completed" };
+    });
+
+    const fallbackModel = new FallbackModelProvider({
+      candidates: [{ provider: primary }, { provider: fallback }]
+    });
+
+    const registry = new DefaultToolRegistry();
+    registry.register({
+      name: "mutation_tool",
+      description: "A tool that causes a side effect",
+      inputSchema: { type: "object", properties: { val: { type: "string" } } },
+      async execute() {
+        sideEffectCount++;
+        return { success: true, output: { done: true } };
+      }
+    });
+
+    const runtime = new AgentRuntime(fallbackModel, {
+      registry,
+      eagerToolDispatch: true
+    });
+
+    const events: AgentEvent[] = [];
+    for await (const ev of runtime.run({ message: "Test cancel mid-turn", cwd: process.cwd() })) {
+      events.push(ev);
+      if (ev.type === "tool_result") {
+        await runtime.cancel();
+      }
+    }
+
+    expect(primary.attempts).toBe(1);
+    expect(fallback.attempts).toBe(0);
+    expect(sideEffectCount).toBe(1);
+    expect(runtime.getState().status).toBe("cancelled");
+    const lateTextEvents = events.filter((e) => e.type === "text" && e.content.includes("Late text delta"));
+    expect(lateTextEvents.length).toBe(0);
   });
 
   it("Cancellation: immediately halts fallback chain when signal is aborted before fallback completes", async () => {

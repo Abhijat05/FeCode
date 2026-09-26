@@ -4,6 +4,28 @@ All notable changes to FeCode are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2026-09-26
+
+### Added
+- **Deterministic Opt-In Provider Auto-Fallback**:
+  - Configurable multi-provider fallback chains across Gemini, OpenAI, and Ollama when qualifying quota exhaustion or rate limit conditions occur (`FE_AUTO_FALLBACK=true`).
+  - Structured provider error classification (`classifyProviderError`) distinguishing fallback-eligible quota/rate-limit conditions, retryable transient failures, terminal authentication errors, and context length limits.
+  - Bounded retry policy for transient errors before switching to replacement providers.
+  - Strict preservation of provider-specific credentials (`GEMINI_API_KEY`, `OPENAI_API_KEY`, Ollama host) without credential cross-contamination.
+- **Mid-Stream Safety & Streaming Guarantees**:
+  - Interrupted partial text deltas are safely discarded upon mid-stream quota exhaustion, guaranteeing conversation history contains only final, clean generation.
+  - Incomplete tool-call fragments generated prior to mid-stream failure are cleanly discarded and never dispatched or persisted.
+  - Deterministic same-turn execution boundary: blocks automatic fallback if tools were already dispatched within the current turn, preventing replay of side effects and duplicate operations.
+  - Cancellation safeguards: immediate termination of fallback chains upon signal abort, rejecting late events from superseded attempts.
+- **Diagnostics, Telemetry & TUI Notices**:
+  - Structured tracking of fallback decisions, provider attempt states (`streaming`, `completed`, `exhausted`, `superseded`, `cancelled`, `failed`), token discards, and uninterrupted durable run session resumption.
+  - Non-intrusive Ink/React TUI fallback notices and interruption indicators.
+  - Comprehensive secret redaction ensuring API keys, bearer tokens, and credentials are never leaked in error messages, fallback reasons, or persistent run history.
+
+### Fixed
+- **Package Manifest Metadata**:
+  - Added explicit `"license": "MIT"` metadata in `apps/cli/package.json` aligning published npm package metadata with repository license.
+
 ---
 
 ## [1.0.2] - 2026-09-21
