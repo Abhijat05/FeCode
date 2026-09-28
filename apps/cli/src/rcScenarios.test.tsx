@@ -457,6 +457,7 @@ describe("FeCode V1 Release Candidate Acceptance Scenarios", () => {
       />
     );
 
+    await delay(50);
     await typeAndSubmit(stdin, "/diagnostics");
     await delay(50);
 

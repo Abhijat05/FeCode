@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { Box, Text } from "ink";
+import { Box, Text, useStdout } from "ink";
+import { getTerminalLayout, truncateText } from "./AppShell.js";
 
 export interface StatusBarProps {
   status?: string;
@@ -13,6 +14,7 @@ export interface StatusBarProps {
   isReconciliation?: boolean;
   recoveryMode?: "confirm" | "continuation" | "still_blocked" | string;
   activeView?: string;
+  columns?: number;
 }
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -36,8 +38,13 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   customMessage,
   isReconciliation = false,
   recoveryMode = "confirm",
-  activeView = "main"
+  activeView = "main",
+  columns: explicitColumns
 }) => {
+  const { stdout } = useStdout();
+  const terminalColumns = explicitColumns ?? stdout?.columns ?? 80;
+  const layout = getTerminalLayout(terminalColumns);
+
   const [frame, setFrame] = useState(0);
   const isAnimating = isGenerating || ACTIVE_STATUSES.has(status.toLowerCase());
 
@@ -62,7 +69,9 @@ export const StatusBar: React.FC<StatusBarProps> = ({
     }
 
     if (activeStep !== undefined && totalSteps !== undefined && totalSteps > 0) {
-      const stepText = `Step ${activeStep}/${totalSteps}${activeStepTitle ? `: ${activeStepTitle}` : ""}`;
+      const maxTitleLen = layout === "wide" ? 40 : layout === "medium" ? 25 : 15;
+      const displayTitle = activeStepTitle ? `: ${truncateText(activeStepTitle, maxTitleLen)}` : "";
+      const stepText = `Step ${activeStep}/${totalSteps}${displayTitle}`;
       if (status === "executing" || isGenerating) {
         return (
           <Text color="green">
@@ -195,6 +204,22 @@ export const StatusBar: React.FC<StatusBarProps> = ({
     }
 
     if (activeView && activeView !== "main") {
+      if (layout === "very_narrow") {
+        return (
+          <Box>
+            <Text color="gray">[Esc] Main</Text>
+          </Box>
+        );
+      }
+      if (layout === "narrow") {
+        return (
+          <Box>
+            <Text color="gray">[Esc] Main </Text>
+            <Text color="cyan">[?]</Text>
+            <Text color="gray"> Help</Text>
+          </Box>
+        );
+      }
       return (
         <Box>
           <Text color="gray">[Esc] Main </Text>
@@ -210,7 +235,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
       );
     }
 
-    if (isGenerating) {
+    if (isGenerating || ACTIVE_STATUSES.has(status.toLowerCase())) {
       return (
         <Box>
           <Text color="cyan">[Ctrl+C]</Text>
@@ -219,18 +244,54 @@ export const StatusBar: React.FC<StatusBarProps> = ({
       );
     }
 
+    if (layout === "wide") {
+      return (
+        <Box>
+          <Text color="cyan">[Ctrl+C]</Text>
+          <Text color="gray"> Exit  •  </Text>
+          <Text color="cyan">[/plan]</Text>
+          <Text color="gray">  </Text>
+          <Text color="cyan">[/runs]</Text>
+          <Text color="gray">  </Text>
+          <Text color="cyan">[/debug]</Text>
+          <Text color="gray">  </Text>
+          <Text color="cyan">[/help]</Text>
+          <Text color="gray"> Help</Text>
+        </Box>
+      );
+    }
+
+    if (layout === "medium") {
+      return (
+        <Box>
+          <Text color="cyan">[Ctrl+C]</Text>
+          <Text color="gray"> Exit  •  </Text>
+          <Text color="cyan">[/plan]</Text>
+          <Text color="gray">  </Text>
+          <Text color="cyan">[/runs]</Text>
+          <Text color="gray">  </Text>
+          <Text color="cyan">[/debug]</Text>
+          <Text color="gray">  </Text>
+          <Text color="cyan">[/help]</Text>
+        </Box>
+      );
+    }
+
+    if (layout === "narrow") {
+      return (
+        <Box>
+          <Text color="cyan">[Ctrl+C]</Text>
+          <Text color="gray"> Exit  •  </Text>
+          <Text color="cyan">[/help]</Text>
+          <Text color="gray"> Help</Text>
+        </Box>
+      );
+    }
+
     return (
       <Box>
         <Text color="cyan">[Ctrl+C]</Text>
-        <Text color="gray"> Exit </Text>
-        <Text color="cyan">/plan</Text>
-        <Text color="gray"> Plan </Text>
-        <Text color="cyan">/runs</Text>
-        <Text color="gray"> Runs </Text>
-        <Text color="cyan">/debug</Text>
-        <Text color="gray"> Diagnostics </Text>
-        <Text color="cyan">/help</Text>
-        <Text color="gray"> Help</Text>
+        <Text color="gray"> Exit</Text>
       </Box>
     );
   };

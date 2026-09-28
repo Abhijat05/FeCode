@@ -293,13 +293,41 @@ describe("Phase 5AD: Modular UI Components", () => {
     expect(frame).toContain("Working directory: /workspace/fecode");
   });
 
-  it("renders StatusBar with state and keyboard shortcuts", () => {
+  it("renders StatusBar with responsive delimited shortcuts on wide terminals", () => {
     const { lastFrame } = render(
-      <StatusBar status="idle" isGenerating={false} />
+      <StatusBar status="idle" isGenerating={false} columns={100} />
     );
-    const frame = lastFrame();
+    const frame = lastFrame() ?? "";
     expect(frame).toContain("○ Ready for task");
-    expect(frame).toContain("[Ctrl+C] Exit /plan Plan /runs Runs /debug Diagnostics /help Help");
+    expect(frame).toContain("[Ctrl+C] Exit");
+    expect(frame).toContain("[/plan]");
+    expect(frame).toContain("[/runs]");
+    expect(frame).toContain("[/debug]");
+    expect(frame).toContain("[/help] Help");
+  });
+
+  it("renders compact non-overflowing shortcuts on standard 80-column terminals", () => {
+    const { lastFrame } = render(
+      <StatusBar status="idle" isGenerating={false} columns={80} />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("○ Ready for task");
+    expect(frame).toContain("[Ctrl+C] Exit");
+    expect(frame).toContain("[/plan]");
+    expect(frame).toContain("[/runs]");
+    expect(frame).toContain("[/debug]");
+    expect(frame).toContain("[/help]");
+  });
+
+  it("renders minimal shortcuts on narrow terminals without wrapping", () => {
+    const { lastFrame } = render(
+      <StatusBar status="idle" isGenerating={false} columns={60} />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("○ Ready for task");
+    expect(frame).toContain("[Ctrl+C] Exit");
+    expect(frame).toContain("[/help] Help");
+    expect(frame).not.toContain("[/runs]");
   });
 
   it("renders StatusBar with spinner in executing and active states", () => {
