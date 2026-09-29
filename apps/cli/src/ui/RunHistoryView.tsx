@@ -13,11 +13,15 @@ export interface HistoricalRunItem {
 export interface RunHistoryViewProps {
   runs?: HistoricalRunItem[];
   formattedOutput?: string;
+  projectId?: string;
+  isAll?: boolean;
 }
 
 export const RunHistoryView: React.FC<RunHistoryViewProps> = ({
   runs = [],
-  formattedOutput
+  formattedOutput,
+  projectId,
+  isAll = false
 }) => {
   if (formattedOutput) {
     return (
@@ -75,12 +79,18 @@ export const RunHistoryView: React.FC<RunHistoryViewProps> = ({
       marginY={1}
     >
       <Box marginBottom={0}>
-        <Text bold color="cyan">Recent Runs</Text>
+        <Text bold color="cyan">
+          Recent Runs{isAll ? " (All Projects)" : projectId ? ` (${projectId})` : ""}
+        </Text>
       </Box>
 
       {runs.length === 0 ? (
         <Box marginTop={0}>
-          <Text color="gray">No recorded historical runs found.</Text>
+          <Text color="gray">
+            {isAll
+              ? "No recorded historical runs found."
+              : "No recorded historical runs found for this project."}
+          </Text>
         </Box>
       ) : (
         <Box flexDirection="column" marginTop={0}>
@@ -121,6 +131,11 @@ export const RunHistoryView: React.FC<RunHistoryViewProps> = ({
         <Text color="gray">
           Inspect run details: <Text color="cyan">/run &lt;id&gt;</Text> | Resume run:{" "}
           <Text color="cyan">/resume &lt;id&gt;</Text>
+          {!isAll && (
+            <>
+              {" "}| All projects: <Text color="cyan">/runs --all</Text>
+            </>
+          )}
         </Text>
       </Box>
     </Box>

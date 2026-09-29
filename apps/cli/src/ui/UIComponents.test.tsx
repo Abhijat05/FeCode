@@ -834,6 +834,35 @@ describe("Phase 5AD: Modular UI Components", () => {
     expect(frame).toContain("✗ FAILED");
   });
 
+  it("renders RunHistoryView with project scope and empty state for empty runs", () => {
+    const { lastFrame } = render(
+      <RunHistoryView runs={[]} projectId="proj-custom-99" />
+    );
+    const frame = lastFrame();
+    expect(frame).toContain("Recent Runs (proj-custom-99)");
+    expect(frame).toContain("No recorded historical runs found for this project.");
+    expect(frame).toContain("/runs --all");
+  });
+
+  it("renders RunHistoryView with all projects title when isAll is set", () => {
+    const { lastFrame } = render(
+      <RunHistoryView
+        isAll={true}
+        runs={[
+          {
+            runId: "run-cross-1",
+            status: "completed",
+            userRequestSummary: "Cross project task",
+            durationMs: 5000
+          }
+        ]}
+      />
+    );
+    const frame = lastFrame();
+    expect(frame).toContain("Recent Runs (All Projects)");
+    expect(frame).toContain("run-cross-1");
+  });
+
   it("renders WorkspaceStatus with git branch and status details", () => {
     const { lastFrame } = render(
       <WorkspaceStatus

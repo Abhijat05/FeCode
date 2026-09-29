@@ -2,6 +2,7 @@ import type { ApprovalDecision, ApprovalResolver } from "@fecode/models";
 import type { TaskRiskAssessment, TaskRiskContext } from "../policy/types.js";
 import type { RunSummary } from "../diagnostics/types.js";
 import type { DurableRunRecord, ResumePreparation } from "../history/types.js";
+import { getProjectIdentifier } from "../history/projectIdentifier.js";
 import type {
   TaskPlan,
   ReplanAssessment,
@@ -339,8 +340,24 @@ export class DefaultProductRuntime implements ProductRuntime {
 
   public async getHistoricalRuns(options?: {
     limit?: number;
+    projectId?: string;
+    allProjects?: boolean;
   }): Promise<DurableRunRecord[]> {
-    return this.agentRuntime.listHistoricalRuns(options);
+    let projectId = options?.projectId;
+    if (!projectId && !options?.allProjects) {
+      try {
+        projectId = await getProjectIdentifier(
+          this.uiState.cwd,
+          this.gitRepository
+        );
+      } catch {
+        // Fallback to unisolated query
+      }
+    }
+    return this.agentRuntime.listHistoricalRuns({
+      ...options,
+      projectId: options?.allProjects ? undefined : projectId
+    });
   }
 
   public async getHistoricalRun(runId: string): Promise<DurableRunRecord | null> {

@@ -5,6 +5,7 @@ import * as path from "path";
 import * as os from "os";
 import {
   DefaultGitRepository,
+  getProjectIdentifier,
   type Agent,
   type AgentEvent,
   type AgentInput,
@@ -28,7 +29,11 @@ class MockAgent implements Agent {
   public runFn?: (input: AgentInput) => AsyncIterable<AgentEvent>;
   public isCancelled = false;
   public getRunSummary?: (runId?: string) => import("@fecode/agent").RunSummary | undefined;
-  public listHistoricalRuns?: () => Promise<import("@fecode/agent").DurableRunRecord[]>;
+  public listHistoricalRuns?: (options?: {
+    projectId?: string;
+    limit?: number;
+    allProjects?: boolean;
+  }) => Promise<import("@fecode/agent").DurableRunRecord[]>;
   public getHistoricalRun?: (id: string) => Promise<import("@fecode/agent").DurableRunRecord | null>;
   public prepareResume?: (
     id: string,
@@ -2867,6 +2872,97 @@ describe("CLI App Component", () => {
       frame = lastFrame() ?? "";
       expect(frame).toContain("Project:   proj-test");
       expect(frame).toContain("run-alpha-101");
+    });
+
+    it("isolates historical runs by project in /runs and displays cross-project runs with /runs --all", async () => {
+      const mockAgent = new MockAgent();
+      const currentPid = await getProjectIdentifier("/test");
+      const sampleRuns: import("@fecode/agent").DurableRunRecord[] = [
+        {
+          schemaVersion: 1,
+          runId: "run-local-proj-1",
+          projectId: currentPid,
+          cwd: "/test",
+          userRequestSummary: "Local project task",
+          startedAt: 1716900000000,
+          completedAt: 1716900005000,
+          durationMs: 5000,
+          finalStatus: "completed",
+          executionState: "completed",
+          activeSkills: [],
+          initialRiskLevel: "low",
+          riskReasons: [],
+          requiresCheckpoint: false,
+          requiresExplicitApproval: false,
+          verificationAttempts: 1,
+          maxVerificationAttempts: 3,
+          recoveryAttempts: 0,
+          maxRecoveryAttempts: 1,
+          tools: [],
+          commands: [],
+          files: { modified: [], created: [], deleted: [] },
+          lifecycleTransitions: []
+        },
+        {
+          schemaVersion: 1,
+          runId: "run-foreign-2",
+          projectId: "foreign-proj-hash",
+          cwd: "/other/workspace",
+          userRequestSummary: "Foreign project task",
+          startedAt: 1716900006000,
+          completedAt: 1716900010000,
+          durationMs: 4000,
+          finalStatus: "completed",
+          executionState: "completed",
+          activeSkills: [],
+          initialRiskLevel: "low",
+          riskReasons: [],
+          requiresCheckpoint: false,
+          requiresExplicitApproval: false,
+          verificationAttempts: 1,
+          maxVerificationAttempts: 3,
+          recoveryAttempts: 0,
+          maxRecoveryAttempts: 1,
+          tools: [],
+          commands: [],
+          files: { modified: [], created: [], deleted: [] },
+          lifecycleTransitions: []
+        }
+      ];
+
+      mockAgent.listHistoricalRuns = async (options) => {
+        if (options?.allProjects) {
+          return sampleRuns;
+        }
+        if (options?.projectId) {
+          return sampleRuns.filter((r) => r.projectId === options.projectId);
+        }
+        return sampleRuns;
+      };
+
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      // Default /runs should only return the local project's run
+      await typeAndSubmit(stdin, "/runs");
+      await delay(100);
+
+      let frame = lastFrame() ?? "";
+      expect(frame).toContain("Recent Runs");
+      expect(frame).toContain("run-local-proj-1");
+      expect(frame).toContain("Local project task");
+      expect(frame).not.toContain("run-foreign-2");
+      expect(frame).not.toContain("Foreign project task");
+
+      // /runs --all should return runs across all projects
+      await typeAndSubmit(stdin, "/runs --all");
+      await delay(100);
+
+      frame = lastFrame() ?? "";
+      expect(frame).toContain("Recent Runs (All Projects)");
+      expect(frame).toContain("run-local-proj-1");
+      expect(frame).toContain("run-foreign-2");
+      expect(frame).toContain("Foreign project task");
     });
   });
 

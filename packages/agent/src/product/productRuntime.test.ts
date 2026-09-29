@@ -166,4 +166,94 @@ describe("Phase 5AC — DefaultProductRuntime Facade Unit Tests", () => {
     expect(ws.isGitDirty).toBe(true);
     expect(ws.modifiedFiles).toContain("src/app.ts");
   });
+
+  it("filters historical runs by active workspace project ID and supports allProjects query", async () => {
+    const historyDir = path.join(tmpDir, "history");
+    const { DefaultRunHistoryStore } = await import("../history/runHistoryStore.js");
+    const { getProjectIdentifier } = await import("../history/projectIdentifier.js");
+    const historyStore = new DefaultRunHistoryStore({ storageDir: historyDir });
+
+    const currentProjectId = await getProjectIdentifier(tmpDir);
+    const otherProjectId = "other-foreign-project-12345";
+
+    const baseRecord = {
+      schemaVersion: 1 as const,
+      cwd: tmpDir,
+      startedAt: Date.now() - 1000,
+      completedAt: Date.now(),
+      durationMs: 1000,
+      finalStatus: "completed" as const,
+      executionState: "completed" as const,
+      activeSkills: [],
+      initialRiskLevel: "low" as const,
+      riskReasons: [],
+      requiresCheckpoint: false,
+      requiresExplicitApproval: false,
+      verificationAttempts: 0,
+      maxVerificationAttempts: 3,
+      recoveryAttempts: 0,
+      maxRecoveryAttempts: 1,
+      tools: [],
+      commands: [],
+      files: { modified: [], created: [], deleted: [] },
+      lifecycleTransitions: []
+    };
+
+    await historyStore.saveRun(
+      {
+        ...baseRecord,
+        runId: "run-curr-1",
+        projectId: currentProjectId,
+        userRequestSummary: "Current project task"
+      },
+      currentProjectId
+    );
+
+    await historyStore.saveRun(
+      {
+        ...baseRecord,
+        runId: "run-other-1",
+        projectId: otherProjectId,
+        userRequestSummary: "Other foreign project task"
+      },
+      otherProjectId
+    );
+
+    const runtime = new AgentRuntime(
+      {
+        id: "mock",
+        capabilities: DEFAULT_CAPS,
+        generate: async function* () {
+          yield { type: "text_delta", content: "ok" };
+        }
+      },
+      {
+        registry: new DefaultToolRegistry(),
+        historyStore
+      }
+    );
+
+    const productRuntime = new DefaultProductRuntime({
+      agentRuntime: runtime,
+      initialCwd: tmpDir
+    });
+
+    // Scoped by default
+    const scopedRuns = await productRuntime.getHistoricalRuns();
+    expect(scopedRuns.length).toBe(1);
+    expect(scopedRuns[0].runId).toBe("run-curr-1");
+    expect(scopedRuns[0].projectId).toBe(currentProjectId);
+
+    // Cross-project query with allProjects: true
+    const allRuns = await productRuntime.getHistoricalRuns({ allProjects: true });
+    expect(allRuns.length).toBe(2);
+    expect(allRuns.map((r) => r.runId)).toContain("run-curr-1");
+    expect(allRuns.map((r) => r.runId)).toContain("run-other-1");
+
+    // Explicit projectId query
+    const otherRuns = await productRuntime.getHistoricalRuns({ projectId: otherProjectId });
+    expect(otherRuns.length).toBe(1);
+    expect(otherRuns[0].runId).toBe("run-other-1");
+  });
 });
+

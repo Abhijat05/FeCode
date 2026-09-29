@@ -866,8 +866,25 @@ export class AgentRuntime implements Agent {
   public async listHistoricalRuns(options?: {
     projectId?: string;
     limit?: number;
+    allProjects?: boolean;
+    cwd?: string;
   }): Promise<DurableRunRecord[]> {
-    return this.historyStore.listRuns(options);
+    let projectId = options?.projectId;
+    if (!projectId && !options?.allProjects) {
+      if (this.currentProjectId) {
+        projectId = this.currentProjectId;
+      } else if (options?.cwd) {
+        try {
+          projectId = await getProjectIdentifier(options.cwd, this.gitRepository);
+        } catch {
+          // ignore
+        }
+      }
+    }
+    return this.historyStore.listRuns({
+      projectId: options?.allProjects ? undefined : projectId,
+      limit: options?.limit
+    });
   }
 
   public getRunStateMachine(): AgentRunStateMachine | undefined {

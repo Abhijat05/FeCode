@@ -266,7 +266,11 @@ export interface ProductRuntime {
 
   // Diagnostics & History (Project Isolated)
   getDiagnosticsSummary(runId?: string): RunSummary | undefined;
-  getHistoricalRuns(options?: { limit?: number }): Promise<DurableRunRecord[]>;
+  getHistoricalRuns(options?: {
+    limit?: number;
+    projectId?: string;
+    allProjects?: boolean;
+  }): Promise<DurableRunRecord[]>;
   getHistoricalRun(runId: string): Promise<DurableRunRecord | null>;
   getRunLineage(runId: string): Promise<DurableRunRecord[]>;
 

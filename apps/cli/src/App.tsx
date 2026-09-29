@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import {
   DefaultSessionStore,
@@ -16,6 +16,7 @@ import {
   DefaultProductRuntime,
   createInitialUIState,
   reduceUIState,
+  getProjectIdentifier,
   type ProductRuntime,
   type UIState,
   type Agent,
@@ -102,17 +103,26 @@ export const App: React.FC<AppProps> = ({
   recoveryManager: recoveryManagerProp,
   executionPolicy: executionPolicyProp
 }) => {
-  const gitRepo = gitRepoProp || new DefaultGitRepository();
-  const cpManager =
-    checkpointManagerProp ||
-    (agent && "getCheckpointManager" in agent && typeof (agent as unknown as { getCheckpointManager: () => CheckpointManager }).getCheckpointManager === "function"
-      ? (agent as unknown as { getCheckpointManager: () => CheckpointManager }).getCheckpointManager()
-      : new DefaultCheckpointManager(undefined, gitRepo));
-  const recManager =
-    recoveryManagerProp ||
-    (agent && "getRecoveryManager" in agent && typeof (agent as unknown as { getRecoveryManager: () => RecoveryManager }).getRecoveryManager === "function"
-      ? (agent as unknown as { getRecoveryManager: () => RecoveryManager }).getRecoveryManager()
-      : new DefaultRecoveryManager(undefined, gitRepo));
+  const gitRepo = useMemo(
+    () => gitRepoProp || new DefaultGitRepository(),
+    [gitRepoProp]
+  );
+  const cpManager = useMemo(
+    () =>
+      checkpointManagerProp ||
+      (agent && "getCheckpointManager" in agent && typeof (agent as unknown as { getCheckpointManager: () => CheckpointManager }).getCheckpointManager === "function"
+        ? (agent as unknown as { getCheckpointManager: () => CheckpointManager }).getCheckpointManager()
+        : new DefaultCheckpointManager(undefined, gitRepo)),
+    [checkpointManagerProp, agent, gitRepo]
+  );
+  const recManager = useMemo(
+    () =>
+      recoveryManagerProp ||
+      (agent && "getRecoveryManager" in agent && typeof (agent as unknown as { getRecoveryManager: () => RecoveryManager }).getRecoveryManager === "function"
+        ? (agent as unknown as { getRecoveryManager: () => RecoveryManager }).getRecoveryManager()
+        : new DefaultRecoveryManager(undefined, gitRepo)),
+    [recoveryManagerProp, agent, gitRepo]
+  );
   const _execPolicy =
     executionPolicyProp ||
     (agent && "getExecutionPolicy" in agent && typeof (agent as unknown as { getExecutionPolicy: () => ExecutionPolicy }).getExecutionPolicy === "function"
@@ -144,6 +154,8 @@ export const App: React.FC<AppProps> = ({
   const [historicalRuns, setHistoricalRuns] = useState<
     import("./ui/RunHistoryView.js").HistoricalRunItem[]
   >([]);
+  const [runsIsAll, setRunsIsAll] = useState(false);
+  const [currentProjectId, setCurrentProjectId] = useState<string | undefined>(undefined);
   const [diagnosticsSummary, setDiagnosticsSummary] = useState<
     import("@fecode/agent").RunSummary | undefined
   >(undefined);
@@ -170,43 +182,56 @@ export const App: React.FC<AppProps> = ({
   }, [activeView, cwd, gitRepo]);
 
   useEffect(() => {
+    let isCurrent = true;
     if (activeView === "runs") {
       (async () => {
         try {
+          const pid = await getProjectIdentifier(cwd, gitRepo);
+          if (!isCurrent) return;
+          setCurrentProjectId(pid);
           let runs: import("@fecode/agent").DurableRunRecord[] = [];
           if (
             agent &&
             "listHistoricalRuns" in agent &&
             typeof (
               agent as unknown as {
-                listHistoricalRuns: () => Promise<
-                  import("@fecode/agent").DurableRunRecord[]
-                >;
+                listHistoricalRuns: (options?: {
+                  projectId?: string;
+                  limit?: number;
+                  allProjects?: boolean;
+                }) => Promise<import("@fecode/agent").DurableRunRecord[]>;
               }
             ).listHistoricalRuns === "function"
           ) {
             runs = await (
               agent as {
-                listHistoricalRuns: () => Promise<
-                  import("@fecode/agent").DurableRunRecord[]
-                >;
+                listHistoricalRuns: (options?: {
+                  projectId?: string;
+                  limit?: number;
+                  allProjects?: boolean;
+                }) => Promise<import("@fecode/agent").DurableRunRecord[]>;
               }
-            ).listHistoricalRuns();
+            ).listHistoricalRuns({
+              projectId: runsIsAll ? undefined : pid,
+              allProjects: runsIsAll
+            });
           } else if (runtime && runtime.getHistoricalRuns) {
-            runs = await runtime.getHistoricalRuns();
+            runs = await runtime.getHistoricalRuns({
+              projectId: runsIsAll ? undefined : pid,
+              allProjects: runsIsAll
+            });
           }
-          if (runs && runs.length > 0) {
-            setHistoricalRuns(
-              runs.map((r) => ({
-                runId: r.runId,
-                status: r.finalStatus || r.executionState || "unknown",
-                userRequestSummary: r.userRequestSummary,
-                durationMs: r.durationMs,
-                startedAt: r.startedAt,
-                projectId: r.projectId
-              }))
-            );
-          }
+          if (!isCurrent) return;
+          setHistoricalRuns(
+            runs.map((r) => ({
+              runId: r.runId,
+              status: r.finalStatus || r.executionState || "unknown",
+              userRequestSummary: r.userRequestSummary,
+              durationMs: r.durationMs,
+              startedAt: r.startedAt,
+              projectId: r.projectId
+            }))
+          );
         } catch {
           // ignore
         }
@@ -235,14 +260,17 @@ export const App: React.FC<AppProps> = ({
         } else if (runtime && runtime.getDiagnosticsSummary) {
           summary = runtime.getDiagnosticsSummary();
         }
-        if (summary) {
+        if (summary && isCurrent) {
           setDiagnosticsSummary(summary);
         }
       } catch {
         // ignore
       }
     }
-  }, [activeView, agent, runtime]);
+    return () => {
+      isCurrent = false;
+    };
+  }, [activeView, cwd, gitRepo, runsIsAll]);
   const [store] = useState<SessionStore>(
     () => sessionStore || new DefaultSessionStore()
   );
@@ -1867,16 +1895,40 @@ export const App: React.FC<AppProps> = ({
 
       if (cmd === "/runs") {
         let runs: import("@fecode/agent").DurableRunRecord[] = [];
+        const isAll =
+          arg.toLowerCase().startsWith("--all") ||
+          arg.toLowerCase().startsWith("-a") ||
+          arg.toLowerCase() === "all";
+        const limitArg = isAll
+          ? arg.replace(/^--?all\s*|^--?a\s*|^all\s*/i, "").trim()
+          : arg.trim();
+        const parsedLimit =
+          limitArg && /^\d+$/.test(limitArg) ? parseInt(limitArg, 10) : undefined;
+
+        setRunsIsAll(isAll);
+        const pid = await getProjectIdentifier(cwd, gitRepo);
+        setCurrentProjectId(pid);
+
         if (agent && "listHistoricalRuns" in agent) {
           runs = await (
             agent as {
-              listHistoricalRuns: () => Promise<
-                import("@fecode/agent").DurableRunRecord[]
-              >;
+              listHistoricalRuns: (options?: {
+                projectId?: string;
+                limit?: number;
+                allProjects?: boolean;
+              }) => Promise<import("@fecode/agent").DurableRunRecord[]>;
             }
-          ).listHistoricalRuns();
+          ).listHistoricalRuns({
+            projectId: isAll ? undefined : pid,
+            limit: parsedLimit,
+            allProjects: isAll
+          });
         } else if (runtime && runtime.getHistoricalRuns) {
-          runs = await runtime.getHistoricalRuns();
+          runs = await runtime.getHistoricalRuns({
+            projectId: isAll ? undefined : pid,
+            limit: parsedLimit,
+            allProjects: isAll
+          });
         }
 
         setHistoricalRuns(
@@ -3105,6 +3157,8 @@ export const App: React.FC<AppProps> = ({
 
       {activeView === "runs" && (
         <RunHistoryView
+          projectId={currentProjectId}
+          isAll={runsIsAll}
           runs={
             historicalRuns.length > 0
               ? historicalRuns
