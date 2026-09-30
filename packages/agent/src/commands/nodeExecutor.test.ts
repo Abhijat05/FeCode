@@ -135,4 +135,27 @@ describe("NodeCommandExecutor", () => {
     expect(res.exitCode).toBe(0);
     expect(res.error).toBeUndefined();
   });
+
+  it("terminates spawned process tree cleanly when command execution times out", async () => {
+    const nestedScript = `
+      const { spawn } = require('child_process');
+      const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], {
+        stdio: 'ignore',
+        windowsHide: true
+      });
+      setTimeout(() => {}, 60000);
+    `;
+
+    const res = await executor.execute(
+      `node -e "${nestedScript.replace(/\n/g, " ").replace(/"/g, '\\"')}"`,
+      {
+        cwd: tmpDir,
+        timeoutMs: 250
+      }
+    );
+
+    expect(res.timedOut).toBe(true);
+    expect(res.exitCode).toBeNull();
+    expect(res.error?.toLowerCase()).toContain("timed out");
+  });
 });

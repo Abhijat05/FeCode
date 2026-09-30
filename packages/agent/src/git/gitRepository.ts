@@ -6,6 +6,7 @@ import type {
 } from "./types.js";
 import { parseGitStatusPorcelain } from "./parser.js";
 import { prepareChildEnvironment } from "../commands/nodeExecutor.js";
+import { killProcessTree } from "../commands/processTree.js";
 
 export type GitCommandRunner = (
   args: string[],
@@ -63,19 +64,11 @@ export class DefaultGitRepository implements GitRepository {
       });
 
       const timer = setTimeout(() => {
-        try {
-          child.kill("SIGTERM");
-        } catch {
-          // Ignore
-        }
+        killProcessTree(child, "SIGTERM");
       }, 10000);
 
       const onAbort = () => {
-        try {
-          child.kill("SIGTERM");
-        } catch {
-          // Ignore
-        }
+        killProcessTree(child, "SIGTERM");
       };
       signal?.addEventListener("abort", onAbort, { once: true });
 

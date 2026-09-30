@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "child_process";
+import { killProcessTree } from "./processTree.js";
 import { DefaultCommandPolicy } from "./policy.js";
 import type {
   CommandExecutionOptions,
@@ -133,29 +134,17 @@ export class NodeCommandExecutor implements CommandExecutor {
 
       const timer = setTimeout(() => {
         timedOut = true;
-        try {
-          child.kill("SIGTERM");
-        } catch {
-          // ignore
-        }
+        killProcessTree(child, "SIGTERM");
         setTimeout(() => {
           if (!processClosed) {
-            try {
-              child.kill("SIGKILL");
-            } catch {
-              // ignore
-            }
+            killProcessTree(child, "SIGKILL");
           }
         }, 1000);
       }, timeoutMs);
 
       const onAbort = () => {
         aborted = true;
-        try {
-          child.kill("SIGTERM");
-        } catch {
-          // ignore
-        }
+        killProcessTree(child, "SIGTERM");
       };
 
       if (options.signal) {
@@ -232,7 +221,7 @@ export class NodeCommandExecutor implements CommandExecutor {
 
         resolve({
           command,
-          exitCode: code,
+          exitCode: timedOut || aborted ? null : code,
           stdout: stdoutStr,
           stderr: stderrStr,
           timedOut,
