@@ -4,6 +4,46 @@ All notable changes to FeCode are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-10-01
+
+### Added
+- **Generic OpenAI-Compatible Provider (`openai-compatible`)**:
+  - Implemented `OpenAICompatibleModelProvider` conforming to the unified `ModelProvider` interface, allowing connections to any service providing the OpenAI chat completions specification (NVIDIA NIM, DeepSeek API, vLLM, Together AI, local gateways) without vendor-specific code modifications.
+  - Strict separation of transport protocol (`FE_PROVIDER=openai-compatible`) from model identity (`FE_MODEL`).
+- **Custom OpenAI-Compatible Endpoint Configuration**:
+  - Added support for `OPENAI_BASE_URL` and `FE_OPENAI_BASE_URL` to configure custom service endpoints.
+  - Added optional dedicated `OPENAI_COMPATIBLE_API_KEY` / `FE_OPENAI_COMPATIBLE_API_KEY` to prevent credential collision when both standard OpenAI and OpenAI-compatible endpoints are configured.
+- **NVIDIA API Compatibility & DeepSeek Acceptance**:
+  - Validated compatibility with NVIDIA NIM endpoints (`https://integrate.api.nvidia.com/v1`) and NVIDIA-hosted DeepSeek models (`deepseek-ai/deepseek-v4.1-flash`).
+- **Streaming & Reasoning Token Extraction**:
+  - Live token streaming with non-buffered async iterable event dispatch.
+  - Automatic extraction and display of reasoning tokens (`reasoning_content` / `reasoning`) wrapped in `<think>` tags within the terminal TUI's collapsible thinking block.
+  - Structured function and tool calling with multi-chunk argument accumulation.
+- **Provider Fallback Integration**:
+  - Full participation of `openai-compatible` as either primary provider or fallback candidate in `FE_FALLBACK_PROVIDERS`.
+
+### Safety / Reliability
+- **Mid-Stream Fallback Protection**:
+  - Safe discard of uncommitted output fragments when quota exhaustion occurs mid-stream.
+  - Interruption notices rendered in TUI, restarting generation on replacement providers with clean conversation history.
+- **Incomplete Tool-Call Suppression**:
+  - Incomplete or fragmented tool calls from failed or aborted attempts are dropped and never dispatched or executed.
+- **Post-Dispatch Fallback Blocking**:
+  - Preserved the atomic turn execution boundary, blocking automatic fallback if tools were already dispatched within the turn.
+- **Cancellation-Safe Provider Attempts**:
+  - `AbortSignal` cancellation immediately aborts active streams, terminates candidate attempts, and prevents unintended fallback switches.
+- **Credential Redaction & Isolation**:
+  - Extended error and reason sanitization to detect and redact NVIDIA `nvapi-...` credentials.
+  - Dynamic redaction of active configured credentials from thrown errors and diagnostics.
+- **Provider Error Classification**:
+  - Structured categorization of HTTP 401 (authentication), HTTP 404 (unsupported model), HTTP 429 (quota exhaustion/rate limit), and transient network errors.
+
+### Documentation
+- Documented `openai-compatible` configuration, environment variables, and NVIDIA DeepSeek integration examples in `docs/v1/configuration.md` and `README.md`.
+- Added clear guidance on endpoint URL resolution and secret management.
+
+---
+
 ## [1.0.3] - 2026-09-26
 
 ### Added

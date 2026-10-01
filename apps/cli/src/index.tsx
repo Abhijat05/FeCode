@@ -30,13 +30,13 @@ async function main(): Promise<void> {
 
   // Check --version / -v
   if (args.includes("--version") || args.includes("-v")) {
-    console.log("1.0.3");
+    console.log("1.1.0");
     process.exit(0);
   }
 
   // Check --help / -h
   if (args.includes("--help") || args.includes("-h")) {
-    console.log(`FeCode - Interactive Terminal Coding Assistant (v1.0.3)
+    console.log(`FeCode - Interactive Terminal Coding Assistant (v1.1.0)
 
 Usage:
   fe [options]
@@ -48,10 +48,11 @@ Options:
   -r, --resume <id>   Resume a previous session or historical run by ID
 
 Environment Variables:
-  FE_PROVIDER         LLM provider ('gemini', 'openai', 'ollama') [default: gemini]
+  FE_PROVIDER         LLM provider ('gemini', 'openai', 'ollama', 'openai-compatible') [default: gemini]
   FE_MODEL            Model name [default: gemini-2.5-flash / gpt-4o / qwen2.5-coder]
   GEMINI_API_KEY      API key for Google Gemini provider
-  OPENAI_API_KEY      API key for OpenAI provider
+  OPENAI_API_KEY      API key for OpenAI or OpenAI-compatible provider
+  OPENAI_BASE_URL     Base URL for OpenAI or OpenAI-compatible provider
   OLLAMA_BASE_URL     Base URL for Ollama provider [default: http://localhost:11434/v1]
 
 Interactive Commands (inside TUI):
