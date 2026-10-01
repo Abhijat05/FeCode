@@ -151,7 +151,9 @@ Interactive Commands (inside TUI):
       ? "gpt-4o"
       : providerName === "ollama"
         ? "qwen2.5-coder"
-        : "gemini-2.5-flash");
+        : providerName === "openai-compatible"
+          ? (process.env.FE_MODEL || "")
+          : "gemini-2.5-flash");
 
   const approvalResolver = new InteractiveApprovalResolver();
 
@@ -161,6 +163,15 @@ Interactive Commands (inside TUI):
         ? config.geminiApiKey
         : providerName === "openai"
           ? config.openaiApiKey
+          : providerName === "openai-compatible"
+            ? config.openaiCompatibleApiKey
+            : undefined;
+
+    const baseUrl =
+      providerName === "ollama"
+        ? config.ollamaBaseUrl
+        : providerName === "openai-compatible"
+          ? config.openaiBaseUrl
           : undefined;
 
     const modelProvider = config.fallback?.enabled
@@ -170,7 +181,9 @@ Interactive Commands (inside TUI):
           fallbackProviders: config.fallback.providers,
           geminiApiKey: config.geminiApiKey,
           openaiApiKey: config.openaiApiKey,
+          openaiCompatibleApiKey: config.openaiCompatibleApiKey,
           ollamaBaseUrl: config.ollamaBaseUrl,
+          openaiBaseUrl: config.openaiBaseUrl,
           maxRetriesPerProvider: config.fallback.maxRetriesPerProvider,
           maxTotalFallbackSwitches: config.fallback.maxTotalFallbackSwitches
         })
@@ -178,7 +191,7 @@ Interactive Commands (inside TUI):
           provider: providerName,
           model: modelName,
           apiKey,
-          baseUrl: config.ollamaBaseUrl
+          baseUrl
         });
 
     const registry = createDefaultToolRegistry();

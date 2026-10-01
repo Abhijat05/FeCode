@@ -78,6 +78,32 @@ describe("loadConfig", () => {
     expect(config.fallback?.maxRetriesPerProvider).toBe(2);
     expect(config.fallback?.maxTotalFallbackSwitches).toBe(3);
   });
+
+  it("parses OPENAI_BASE_URL and openai-compatible provider configuration", () => {
+    process.env.FE_PROVIDER = "openai-compatible";
+    process.env.FE_MODEL = "deepseek-ai/deepseek-v4.1-flash";
+    process.env.OPENAI_API_KEY = "nvapi-test-key-12345";
+    process.env.OPENAI_BASE_URL = "https://integrate.api.nvidia.com/v1";
+
+    const config = loadConfig({ cwd: tmpDir });
+    expect(config.provider).toBe("openai-compatible");
+    expect(config.model).toBe("deepseek-ai/deepseek-v4.1-flash");
+    expect(config.openaiApiKey).toBe("nvapi-test-key-12345");
+    expect(config.openaiBaseUrl).toBe("https://integrate.api.nvidia.com/v1");
+    expect(config.openaiCompatibleApiKey).toBe("nvapi-test-key-12345");
+  });
+
+  it("supports separate OPENAI_COMPATIBLE_API_KEY when specified", () => {
+    process.env.FE_PROVIDER = "openai-compatible";
+    process.env.OPENAI_API_KEY = "sk-openai-primary";
+    process.env.OPENAI_COMPATIBLE_API_KEY = "nvapi-separate-key";
+    process.env.OPENAI_BASE_URL = "https://integrate.api.nvidia.com/v1";
+
+    const config = loadConfig({ cwd: tmpDir });
+    expect(config.openaiApiKey).toBe("sk-openai-primary");
+    expect(config.openaiCompatibleApiKey).toBe("nvapi-separate-key");
+    expect(config.openaiBaseUrl).toBe("https://integrate.api.nvidia.com/v1");
+  });
 });
 
 describe("maskSecret", () => {

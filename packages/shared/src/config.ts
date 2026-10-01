@@ -13,8 +13,10 @@ export interface FeCodeConfig {
   provider: string;
   model: string;
   openaiApiKey?: string;
+  openaiCompatibleApiKey?: string;
   geminiApiKey?: string;
   ollamaBaseUrl?: string;
+  openaiBaseUrl?: string;
   fallback?: ProviderFallbackConfig;
 }
 
@@ -58,13 +60,21 @@ export function loadConfig(options: LoadConfigOptions = {}): FeCodeConfig {
       ? "gemini-2.5-flash"
       : provider === "ollama"
         ? "qwen2.5-coder"
-        : "gpt-4o";
+        : provider === "openai-compatible"
+          ? ""
+          : "gpt-4o";
 
   const model = process.env.FE_MODEL || defaultModel;
-  const openaiApiKey = process.env.OPENAI_API_KEY;
-  const geminiApiKey = process.env.GEMINI_API_KEY;
+  const openaiApiKey = process.env.OPENAI_API_KEY || process.env.FE_OPENAI_API_KEY;
+  const openaiCompatibleApiKey =
+    process.env.OPENAI_COMPATIBLE_API_KEY ||
+    process.env.FE_OPENAI_COMPATIBLE_API_KEY ||
+    openaiApiKey;
+  const geminiApiKey = process.env.GEMINI_API_KEY || process.env.FE_GEMINI_API_KEY;
   const ollamaBaseUrl =
     process.env.OLLAMA_BASE_URL || "http://localhost:11434/v1";
+  const openaiBaseUrl =
+    process.env.OPENAI_BASE_URL || process.env.FE_OPENAI_BASE_URL;
 
   const autoFallback = process.env.FE_AUTO_FALLBACK === "true";
   const fallbackProvidersEnv = process.env.FE_FALLBACK_PROVIDERS;
@@ -89,8 +99,10 @@ export function loadConfig(options: LoadConfigOptions = {}): FeCodeConfig {
     provider,
     model,
     openaiApiKey,
+    openaiCompatibleApiKey,
     geminiApiKey,
     ollamaBaseUrl,
+    openaiBaseUrl,
     fallback
   };
 }

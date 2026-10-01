@@ -1,4 +1,5 @@
 import { OpenAIModelProvider } from "./providers/openai/index.js";
+import { OpenAICompatibleModelProvider } from "./providers/openai-compatible/index.js";
 import { GeminiModelProvider } from "./providers/gemini/index.js";
 import { OllamaModelProvider } from "./providers/ollama/index.js";
 import { FallbackModelProvider, type FallbackEvent, type FallbackCandidate } from "./fallback/fallbackProvider.js";
@@ -17,6 +18,13 @@ export function createModelProvider(config: ModelConfig): ModelProvider {
   switch (providerName) {
     case "openai":
       return new OpenAIModelProvider({
+        apiKey: config.apiKey,
+        model: config.model,
+        baseURL: config.baseUrl
+      });
+    case "openai-compatible":
+      return new OpenAICompatibleModelProvider({
+        baseUrl: config.baseUrl,
         apiKey: config.apiKey,
         model: config.model
       });
@@ -41,7 +49,9 @@ export interface FallbackConfigOptions {
   fallbackProviders?: string[];
   geminiApiKey?: string;
   openaiApiKey?: string;
+  openaiCompatibleApiKey?: string;
   ollamaBaseUrl?: string;
+  openaiBaseUrl?: string;
   maxRetriesPerProvider?: number;
   maxTotalFallbackSwitches?: number;
   onFallback?: (event: FallbackEvent) => void;
@@ -54,17 +64,42 @@ export function createConfiguredFallbackChain(
   const primaryName = options.primaryProvider.toLowerCase().trim();
   const geminiKey = options.geminiApiKey || process.env.GEMINI_API_KEY;
   const openaiKey = options.openaiApiKey || process.env.OPENAI_API_KEY;
+  const openaiCompatibleKey =
+    options.openaiCompatibleApiKey ||
+    process.env.OPENAI_COMPATIBLE_API_KEY ||
+    process.env.FE_OPENAI_COMPATIBLE_API_KEY ||
+    openaiKey;
   const ollamaUrl = options.ollamaBaseUrl || process.env.OLLAMA_BASE_URL || "http://localhost:11434/v1";
+  const openaiUrl =
+    options.openaiBaseUrl ||
+    process.env.OPENAI_BASE_URL ||
+    process.env.FE_OPENAI_BASE_URL;
 
   const candidates: FallbackCandidate[] = [];
   const addedProviders = new Set<string>();
 
   // 1. Add primary provider
+  const primaryApiKey =
+    primaryName === "gemini"
+      ? geminiKey
+      : primaryName === "openai"
+        ? openaiKey
+        : primaryName === "openai-compatible"
+          ? openaiCompatibleKey
+          : undefined;
+
+  const primaryBaseUrl =
+    primaryName === "ollama"
+      ? ollamaUrl
+      : primaryName === "openai-compatible"
+        ? openaiUrl
+        : undefined;
+
   const primaryProvider = createModelProvider({
     provider: primaryName,
     model: options.primaryModel,
-    apiKey: primaryName === "gemini" ? geminiKey : primaryName === "openai" ? openaiKey : undefined,
-    baseUrl: primaryName === "ollama" ? ollamaUrl : undefined
+    apiKey: primaryApiKey,
+    baseUrl: primaryBaseUrl
   });
   candidates.push({
     provider: primaryProvider,
@@ -99,6 +134,18 @@ export function createConfiguredFallbackChain(
           provider: new OpenAIModelProvider({
             apiKey: openaiKey,
             model: "gpt-4o"
+          }),
+          maxRetries: options.maxRetriesPerProvider ?? 1
+        });
+        addedProviders.add(name);
+      }
+    } else if (name === "openai-compatible") {
+      if (openaiCompatibleKey && openaiUrl) {
+        candidates.push({
+          provider: new OpenAICompatibleModelProvider({
+            baseUrl: openaiUrl,
+            apiKey: openaiCompatibleKey,
+            model: options.primaryModel || process.env.FE_MODEL || "deepseek-ai/deepseek-v4.1-flash"
           }),
           maxRetries: options.maxRetriesPerProvider ?? 1
         });

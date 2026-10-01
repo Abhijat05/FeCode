@@ -79,6 +79,10 @@ export class FallbackModelProvider implements ModelProvider {
     return [...this.attempts];
   }
 
+  public getCandidates(): readonly FallbackCandidate[] {
+    return [...this.candidates];
+  }
+
   public resetActiveProvider(): void {
     this.activeCandidateIndex = 0;
   }

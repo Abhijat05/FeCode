@@ -9,12 +9,13 @@ import type {
 import type { ToolCall } from "../../tools/types.js";
 import { sanitizeReason } from "../../errors/classification.js";
 
-export interface OpenAIProviderOptions {
+export interface OpenAICompatibleProviderOptions {
+  baseUrl?: string;
   apiKey?: string;
   model?: string;
   client?: OpenAI;
   extraBody?: Record<string, unknown>;
-  baseURL?: string;
+  maxContextTokens?: number;
 }
 
 interface AccumulatedToolCall {
@@ -23,33 +24,86 @@ interface AccumulatedToolCall {
   arguments: string;
 }
 
-export class OpenAIModelProvider implements ModelProvider {
-  public readonly id = "openai";
+export class OpenAICompatibleModelProvider implements ModelProvider {
+  public readonly id = "openai-compatible";
+  public readonly baseUrl: string;
   public readonly model: string;
   private readonly apiKey: string;
   private readonly client: OpenAI;
   private readonly extraBody?: Record<string, unknown>;
 
-  public readonly capabilities: ModelCapabilities = {
-    streaming: true,
-    toolCalling: true,
-    vision: true,
-    maxContextTokens: 128000
-  };
+  public readonly capabilities: ModelCapabilities;
 
-  constructor(options: OpenAIProviderOptions = {}) {
-    const apiKey = options.apiKey || process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      throw new Error("OPENAI_API_KEY is not configured.");
+  constructor(options: OpenAICompatibleProviderOptions = {}) {
+    const rawBaseUrl =
+      options.baseUrl ||
+      process.env.OPENAI_BASE_URL ||
+      process.env.FE_OPENAI_BASE_URL;
+
+    if (!rawBaseUrl || !rawBaseUrl.trim()) {
+      throw new Error(
+        "OpenAI-compatible provider requires a base URL. Please set OPENAI_BASE_URL."
+      );
     }
-    this.apiKey = apiKey;
-    this.model = options.model || process.env.FE_MODEL || "gpt-4o";
+
+    try {
+      const parsedUrl = new URL(rawBaseUrl.trim());
+      if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+        throw new Error(
+          `OpenAI-compatible provider received an invalid base URL: "${rawBaseUrl}". It must be an HTTP or HTTPS URL.`
+        );
+      }
+    } catch (err: unknown) {
+      if (err instanceof Error && err.message.includes("It must be an HTTP")) {
+        throw err;
+      }
+      throw new Error(
+        `OpenAI-compatible provider received an invalid base URL: "${rawBaseUrl}".`
+      );
+    }
+    this.baseUrl = rawBaseUrl.trim();
+
+    const apiKey =
+      options.apiKey ||
+      process.env.OPENAI_COMPATIBLE_API_KEY ||
+      process.env.FE_OPENAI_COMPATIBLE_API_KEY ||
+      process.env.OPENAI_API_KEY ||
+      process.env.FE_OPENAI_API_KEY;
+
+    if (!apiKey || !apiKey.trim()) {
+      throw new Error(
+        "OpenAI-compatible provider requires an API key. Please set OPENAI_API_KEY."
+      );
+    }
+    this.apiKey = apiKey.trim();
+
+    const model = options.model || process.env.FE_MODEL;
+    if (!model || !model.trim()) {
+      throw new Error(
+        "OpenAI-compatible provider requires a model identifier. Please set FE_MODEL."
+      );
+    }
+    this.model = model.trim();
+
     this.extraBody = options.extraBody;
+
+    const maxContextTokens =
+      typeof options.maxContextTokens === "number" && options.maxContextTokens > 0
+        ? options.maxContextTokens
+        : 128000;
+
+    this.capabilities = {
+      streaming: true,
+      toolCalling: true,
+      vision: true,
+      maxContextTokens
+    };
+
     this.client =
       options.client ||
       new OpenAI({
         apiKey: this.apiKey,
-        baseURL: options.baseURL || process.env.OPENAI_BASE_URL
+        baseURL: this.baseUrl
       });
   }
 
@@ -243,17 +297,30 @@ export class OpenAIModelProvider implements ModelProvider {
         sanitized = sanitized.split(this.apiKey).join("[REDACTED_API_KEY]");
       }
       let message = sanitized;
+
       if (
-        sanitized.includes("401 Unauthorized") ||
+        sanitized.includes("401") ||
+        sanitized.toLowerCase().includes("unauthorized") ||
+        sanitized.toLowerCase().includes("invalid api key") ||
         sanitized.toLowerCase().includes("incorrect api key")
       ) {
-        message = `OpenAI API key is invalid or unauthorized. Please check your OPENAI_API_KEY environment variable. Original error: ${sanitized}`;
+        message = `OpenAI-compatible provider authentication failed (401 Unauthorized). Please check your OPENAI_API_KEY. Endpoint: ${this.baseUrl}. Original error: ${sanitized}`;
       } else if (
-        sanitized.includes("429 Too Many Requests") ||
-        sanitized.toLowerCase().includes("rate limit reached (429")
+        sanitized.includes("404") ||
+        sanitized.toLowerCase().includes("model not found") ||
+        sanitized.toLowerCase().includes("does not exist") ||
+        sanitized.toLowerCase().includes("unknown model")
       ) {
-        message = `OpenAI quota exceeded or rate limit reached (429 RateLimit). Please wait a moment before retrying.`;
+        message = `Model '${this.model}' was rejected by the configured endpoint (${this.baseUrl}) (404 Not Found). Original error: ${sanitized}`;
+      } else if (
+        sanitized.includes("429") ||
+        sanitized.toLowerCase().includes("too many requests") ||
+        sanitized.toLowerCase().includes("rate limit") ||
+        sanitized.toLowerCase().includes("quota")
+      ) {
+        message = `OpenAI-compatible provider quota exceeded or rate limit reached (429 RateLimit). Endpoint: ${this.baseUrl}. Original error: ${sanitized}`;
       }
+
       yield { type: "error", error: new Error(message) };
     }
   }

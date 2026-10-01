@@ -185,6 +185,12 @@ export OPENAI_API_KEY="your-openai-api-key"
 export FE_PROVIDER="ollama"
 export FE_MODEL="qwen2.5-coder"
 export OLLAMA_BASE_URL="http://localhost:11434/v1"
+
+# Option 4: Generic OpenAI-Compatible / NVIDIA (e.g. DeepSeek on NVIDIA NIM)
+export FE_PROVIDER="openai-compatible"
+export FE_MODEL="deepseek-ai/deepseek-v4.1-flash"
+export OPENAI_API_KEY="your-nvidia-api-key"
+export OPENAI_BASE_URL="https://integrate.api.nvidia.com/v1"
 ```
 
 ### 2. Launch FeCode
@@ -226,10 +232,11 @@ CLI Flags  ──▶  Environment Variables  ──▶  Workspace .env  ──�
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| `FE_PROVIDER` | LLM provider backend (`gemini`, `openai`, `ollama`) | `gemini` |
-| `FE_MODEL` | Model name override | `gemini-2.5-flash` / `gpt-4o` / `qwen2.5-coder` |
+| `FE_PROVIDER` | LLM provider backend (`gemini`, `openai`, `ollama`, `openai-compatible`) | `gemini` |
+| `FE_MODEL` | Model name override | Provider-specific |
 | `GEMINI_API_KEY` | API key for Google Gemini provider | None (Required for Gemini) |
-| `OPENAI_API_KEY` | API key for OpenAI provider | None (Required for OpenAI) |
+| `OPENAI_API_KEY` | API key for OpenAI or OpenAI-compatible provider | None (Required for OpenAI / Compatible) |
+| `OPENAI_BASE_URL` | Base API endpoint for OpenAI or OpenAI-compatible services | Standard OpenAI API (`https://api.openai.com/v1`) |
 | `OLLAMA_BASE_URL` | Base API endpoint for local Ollama daemon | `http://localhost:11434/v1` |
 
 *Refer to [Configuration Documentation](docs/v1/configuration.md) for full configuration specs.*
@@ -244,6 +251,7 @@ FeCode abstracts model providers behind a unified streaming interface in `@fecod
 | :--- | :--- | :---: | :---: | :---: |
 | **Google Gemini** | `gemini-2.5-flash`, `gemini-1.5-pro` | Yes | Yes | Cloud |
 | **OpenAI** | `gpt-4o`, `gpt-4o-mini` | Yes | Yes | Cloud |
+| **Generic OpenAI-Compatible** | `deepseek-ai/deepseek-v4.1-flash`, NVIDIA NIM, vLLM, etc. | Yes | Yes | Cloud / Self-Hosted |
 | **Ollama** | `qwen2.5-coder`, `deepseek-coder` | Yes | Yes | **Local (100% Offline)** |
 
 ---
