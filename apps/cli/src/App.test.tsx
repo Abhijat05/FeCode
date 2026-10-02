@@ -2572,6 +2572,251 @@ describe("CLI App Component", () => {
       expect(frame).not.toContain("</think>");
     });
 
+    it("supports keyboard scrolling through previous turns using PageUp and PageDown/End without getting locked to bottom", async () => {
+      const mockAgent = new MockAgent();
+      mockAgent.runFn = async function* (input: AgentInput) {
+        yield { type: "text", content: `Response for: ${input.message}` };
+        yield { type: "done" };
+      };
+
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      // Submit first turn
+      await typeAndSubmit(stdin, "First question");
+      await delay(150);
+
+      // Submit second turn
+      await typeAndSubmit(stdin, "Second question");
+      await delay(150);
+
+      let frame = lastFrame() ?? "";
+      expect(frame).toContain("Response for: Second question");
+
+      // Press PageUp to scroll up to previous turn
+      stdin.write("\u001B[5~");
+      await delay(50);
+
+      frame = lastFrame() ?? "";
+      expect(frame).toContain("Scrolled");
+      expect(frame).toContain("First question");
+
+      // Press PageDown to return to bottom
+      stdin.write("\u001B[6~");
+      await delay(50);
+
+      frame = lastFrame() ?? "";
+      expect(frame).toContain("Second question");
+      expect(frame).not.toContain("Scrolled to turn");
+
+      // Press PageUp again, then press Escape to return to bottom
+      stdin.write("\u001B[5~");
+      await delay(50);
+      frame = lastFrame() ?? "";
+      expect(frame).toContain("Scrolled to turn");
+
+      stdin.write("\u001B");
+      await delay(50);
+      frame = lastFrame() ?? "";
+      expect(frame).toContain("Second question");
+      expect(frame).not.toContain("Scrolled to turn");
+    });
+
+    it("supports mouse wheel scrolling through turns and allows scrolling while an approval prompt is active", async () => {
+      const mockAgent = new MockAgent();
+      const resolver = new InteractiveApprovalResolver();
+
+      mockAgent.runFn = async function* (input: AgentInput) {
+        if (input.message === "Turn 1") {
+          yield { type: "text", content: "Result of turn 1" };
+          yield { type: "done" };
+          return;
+        }
+
+        yield {
+          type: "approval_required",
+          request: {
+            id: "req-scroll-1",
+            toolName: "edit_file",
+            category: "write",
+            arguments: { path: "src/main.ts" },
+            reason: "Modify main.ts"
+          }
+        };
+
+        const decision = await resolver.resolve({
+          id: "req-scroll-1",
+          toolName: "edit_file",
+          category: "write",
+          arguments: { path: "src/main.ts" }
+        });
+
+        if (decision.approved) {
+          yield { type: "text", content: "Edit approved and applied" };
+        } else {
+          yield { type: "text", content: "Edit denied" };
+        }
+        yield { type: "done" };
+      };
+
+      const { lastFrame, stdin } = render(
+        <App agent={mockAgent} cwd="/test" approvalResolver={resolver} />
+      );
+      await delay(50);
+
+      // Submit turn 1
+      await typeAndSubmit(stdin, "Turn 1");
+      await delay(150);
+
+      // Submit turn 2 (triggers approval prompt)
+      await typeAndSubmit(stdin, "Turn 2 edit");
+      await delay(150);
+
+      let frame = lastFrame() ?? "";
+      expect(frame).toContain("Modify main.ts");
+
+      // While approval prompt is open, user scrolls up using mouse wheel (\u001B[<64;20;10M)
+      stdin.write("\u001B[<64;20;10M");
+      await delay(50);
+
+      frame = lastFrame() ?? "";
+      expect(frame).toContain("Scrolled");
+      expect(frame).toContain("Turn 1");
+
+      // Scroll back down using mouse wheel (\u001B[<65;20;10M)
+      stdin.write("\u001B[<65;20;10M");
+      await delay(50);
+
+      frame = lastFrame() ?? "";
+      expect(frame).toContain("Modify main.ts");
+      expect(frame).not.toContain("Scrolled to turn");
+
+      // Scroll up again with PageUp, then return with Escape
+      stdin.write("\u001B[5~");
+      await delay(50);
+      frame = lastFrame() ?? "";
+      expect(frame).toContain("Scrolled");
+
+      stdin.write("\u001B");
+      await delay(50);
+      frame = lastFrame() ?? "";
+      expect(frame).toContain("Modify main.ts");
+
+      // Approve prompt with 'y'
+      stdin.write("y");
+      await delay(150);
+
+      frame = lastFrame() ?? "";
+      expect(frame).toContain("Edit approved and applied");
+    });
+
+    it("supports scrolling through past turns using Up and Down arrow keys while idle and during generation", async () => {
+      let sendNextChunk: ((chunk: string) => void) | undefined;
+      let finishTask: (() => void) | undefined;
+
+      const mockAgent = new MockAgent();
+      mockAgent.runFn = async function* (input: AgentInput) {
+        if (input.message === "Question 1") {
+          yield { type: "text", content: "Answer to question 1" };
+          yield { type: "done" };
+          return;
+        }
+
+        yield { type: "text", content: "Starting generation 2..." };
+        const chunkQueue: string[] = [];
+        await new Promise<void>((resolve) => {
+          sendNextChunk = (c) => chunkQueue.push(c);
+          finishTask = resolve;
+        });
+        for (const c of chunkQueue) {
+          yield { type: "text", content: c };
+        }
+        yield { type: "done" };
+      };
+
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      // Submit turn 1
+      await typeAndSubmit(stdin, "Question 1");
+      await delay(150);
+
+      let frame = lastFrame() ?? "";
+      expect(frame).toContain("Answer to question 1");
+
+      // Now start turn 2
+      await typeAndSubmit(stdin, "Question 2");
+      await delay(100);
+
+      frame = lastFrame() ?? "";
+      expect(frame).toContain("Agent is working...");
+
+      // Press Up Arrow (\u001B[A) to scroll up while agent is working
+      stdin.write("\u001B[A");
+      await delay(50);
+
+      frame = lastFrame() ?? "";
+      expect(frame).toContain("Scrolled to turn 1 of 2");
+      expect(frame).toContain("Question 1");
+      expect(frame).toContain("Answer to question 1");
+
+      // While user is scrolled up, agent streams new tokens in background
+      if (sendNextChunk) {
+        sendNextChunk(" Streaming more lines in background...");
+      }
+      await delay(100);
+
+      // User's view must REMAIN stable on Turn 1 and NOT snap down
+      frame = lastFrame() ?? "";
+      expect(frame).toContain("Scrolled to turn 1 of 2");
+      expect(frame).toContain("Answer to question 1");
+
+      // Press Down Arrow (\u001B[B) to return towards bottom
+      stdin.write("\u001B[B");
+      await delay(50);
+
+      frame = lastFrame() ?? "";
+      expect(frame).not.toContain("Scrolled to turn");
+      expect(frame).toContain("Agent is working...");
+
+      // Complete task
+      if (finishTask) finishTask();
+      await delay(150);
+    });
+
+    it("resets scrollOffset when user types into the task input while scrolled up", async () => {
+      const mockAgent = new MockAgent();
+      mockAgent.runFn = async function* (input: AgentInput) {
+        yield { type: "text", content: `Echo: ${input.message}` };
+        yield { type: "done" };
+      };
+
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      await typeAndSubmit(stdin, "History turn 1");
+      await delay(150);
+
+      await typeAndSubmit(stdin, "History turn 2");
+      await delay(150);
+
+      // Scroll up using Up Arrow
+      stdin.write("\u001B[A");
+      await delay(50);
+
+      let frame = lastFrame() ?? "";
+      expect(frame).toContain("Scrolled to turn 1 of 2");
+      expect(frame).toContain("History turn 1");
+
+      // Typing a letter into input resets scroll offset immediately
+      stdin.write("h");
+      await delay(50);
+
+      frame = lastFrame() ?? "";
+      expect(frame).not.toContain("Scrolled to turn");
+      expect(frame).toContain("History turn 2");
+    });
+
     it("dismisses pendingPlanBlocked modal on Ctrl+C without exiting", async () => {
       let exited = false;
       const mockAgent = new MockAgent();

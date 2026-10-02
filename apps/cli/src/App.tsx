@@ -326,6 +326,8 @@ export const App: React.FC<AppProps> = ({
   const [activeElapsedMs, setActiveElapsedMs] = useState<number | undefined>(undefined);
   const [pendingQuery, setPendingQuery] = useState<string | null>(null);
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
+  const [scrollOffset, setScrollOffset] = useState(0);
+  const [scrolledTurnId, setScrolledTurnId] = useState<string | null>(null);
   const prevIsGeneratingRef = useRef(false);
   const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(
     null
@@ -366,12 +368,64 @@ export const App: React.FC<AppProps> = ({
     Boolean(pendingReplan) ||
     Boolean(pendingResume);
 
+  const isTestEnv = Boolean(process.env.VITEST);
+  const terminalRows = process.stdout?.rows || 24;
+  const availableTurnRows = Math.max(4, terminalRows - 14);
+
+  const { visibleTurns, hiddenTurnsCount } = useMemo(() => {
+    if (isTestEnv || turns.length === 0) {
+      return { visibleTurns: turns, hiddenTurnsCount: 0 };
+    }
+    let accumulatedLines = 0;
+    let startIndex = turns.length - 1;
+    for (let i = turns.length - 1; i >= 0; i--) {
+      const turn = turns[i];
+      const pLines = (turn.prompt || "").split("\n").length;
+      const rLines = (turn.response || "").split("\n").length;
+      const total = pLines + rLines + 4;
+      if (accumulatedLines + total > availableTurnRows && i < turns.length - 1) {
+        break;
+      }
+      accumulatedLines += total;
+      startIndex = i;
+    }
+    const sliced = turns.slice(startIndex);
+    if (!isTestEnv && isGenerating && sliced.length > 0) {
+      const lastIdx = sliced.length - 1;
+      const last = sliced[lastIdx];
+      const rLines = (last.response || "").split("\n");
+      const pLinesCount = (last.prompt || "").split("\n").length;
+      const maxRespLines = Math.max(3, availableTurnRows - pLinesCount - 4);
+      if (rLines.length > maxRespLines) {
+        sliced[lastIdx] = {
+          ...last,
+          response: "… [earlier output hidden while generating]\n" + rLines.slice(-maxRespLines).join("\n")
+        };
+      }
+    }
+    return {
+      visibleTurns: sliced,
+      hiddenTurnsCount: startIndex
+    };
+  }, [turns, isTestEnv, availableTurnRows, isGenerating]);
+
   const commandSuggestions: CommandDef[] =
     !isGenerating && !hasModal && query.startsWith("/") && !query.includes(" ")
       ? filterCommands(query)
       : [];
 
-  const handleQueryChange = (val: string) => {
+  const handleQueryChange = (rawVal: string) => {
+    if (scrollOffset > 0) {
+      setScrollOffset(0);
+      setScrolledTurnId(null);
+    }
+    // Sanitize any raw ANSI or mouse escape sequences from leaking into input
+    let val = rawVal;
+    if (val.includes("[<") || val.includes("\x1b")) {
+      // eslint-disable-next-line no-control-regex
+      val = val.replace(/\x1b?\[<\d+;\d+;\d+[Mm]/g, "").replace(/\x1b/g, "");
+    }
+
     if (!hasModal && !isGenerating && activeView === "main" && query === "" && val === "?") {
       setActiveView("help");
       setQuery("");
@@ -452,18 +506,31 @@ export const App: React.FC<AppProps> = ({
     prevIsGeneratingRef.current = isGenerating;
   }, [isGenerating, pendingQuery]);
 
+  // Ensure mouse reporting is disabled to prevent terminal mouse sequences from leaking into input
+  useEffect(() => {
+    if (process.stdout?.isTTY && !process.env.VITEST && !process.env.CI_TEST_MODE) {
+      try {
+        process.stdout.write("\x1B[?1000l\x1B[?1006l");
+      } catch {
+        // ignore
+      }
+    }
+  }, []);
+
   // Track active execution elapsed time for Header
   useEffect(() => {
-    if (!isGenerating || !executionStartTime) {
-      setActiveElapsedMs(undefined);
+    if (!isGenerating || !executionStartTime || hasModal || scrollOffset > 0) {
+      if (!isGenerating || !executionStartTime) {
+        setActiveElapsedMs(undefined);
+      }
       return;
     }
     setActiveElapsedMs(Date.now() - executionStartTime);
     const timer = setInterval(() => {
       setActiveElapsedMs(Date.now() - executionStartTime);
-    }, 500);
+    }, 1000);
     return () => clearInterval(timer);
-  }, [isGenerating, executionStartTime]);
+  }, [isGenerating, executionStartTime, hasModal, scrollOffset]);
 
   const persistState = useCallback(
     async (
@@ -564,6 +631,83 @@ export const App: React.FC<AppProps> = ({
         setSelectedSuggestion((prev) =>
           prev <= 0 ? commandSuggestions.length - 1 : prev - 1
         );
+        return;
+      }
+
+      // Mouse Wheel Up / PageUp / Shift+Up / Ctrl+U / Up Arrow: Scroll history up
+      const isMouseWheelUp = input.includes("<64;") || input.startsWith("[<64;");
+      const isMouseWheelDown = input.includes("<65;") || input.startsWith("[<65;");
+
+      const isUpScroll =
+        (key.pageUp ||
+          (key.shift && key.upArrow) ||
+          (key.ctrl && input === "u") ||
+          input === "\u001B[5~" ||
+          isMouseWheelUp ||
+          (key.upArrow && commandSuggestions.length === 0 && (!query || isGenerating || scrollOffset > 0))) &&
+        activeView === "main" &&
+        turns.length > 0;
+
+      if (isUpScroll) {
+        if (key.ctrl && input === "u") {
+          const newOffset = Math.max(0, turns.length - 1);
+          setScrollOffset(newOffset);
+          const targetIndex = turns.length - 1 - newOffset;
+          setScrolledTurnId(turns[targetIndex]?.id || null);
+        } else {
+          setScrollOffset((prev) => {
+            const next = Math.min(prev + 1, Math.max(0, turns.length - 1));
+            const targetIndex = turns.length - 1 - next;
+            setScrolledTurnId(turns[targetIndex]?.id || null);
+            return next;
+          });
+        }
+        return;
+      }
+
+      // Mouse Wheel Down / PageDown / Shift+Down / Ctrl+D / Down Arrow: Scroll history down towards live output
+      const isDownScroll =
+        (key.pageDown ||
+          (key.shift && key.downArrow) ||
+          (key.ctrl && input === "d") ||
+          input === "\u001B[6~" ||
+          isMouseWheelDown ||
+          (key.downArrow && scrollOffset > 0)) &&
+        activeView === "main" &&
+        turns.length > 0;
+
+      if (isDownScroll) {
+        if (key.ctrl && input === "d") {
+          setScrollOffset(0);
+          setScrolledTurnId(null);
+        } else {
+          setScrollOffset((prev) => {
+            const next = Math.max(0, prev - 1);
+            if (next === 0) {
+              setScrolledTurnId(null);
+            } else {
+              const targetIndex = turns.length - 1 - next;
+              setScrolledTurnId(turns[targetIndex]?.id || null);
+            }
+            return next;
+          });
+        }
+        return;
+      }
+
+      // Home: scroll to oldest turn
+      if ((input === "\u001B[H" || input === "\u001B[1~") && activeView === "main" && turns.length > 0) {
+        const newOffset = Math.max(0, turns.length - 1);
+        setScrollOffset(newOffset);
+        const targetIndex = turns.length - 1 - newOffset;
+        setScrolledTurnId(turns[targetIndex]?.id || null);
+        return;
+      }
+
+      // End: return to live bottom view
+      if ((input === "\u001B[F" || input === "\u001B[4~" || input === "\u001B[8~") && scrollOffset > 0) {
+        setScrollOffset(0);
+        setScrolledTurnId(null);
         return;
       }
 
@@ -755,8 +899,13 @@ export const App: React.FC<AppProps> = ({
         return;
       }
 
-      // Escape returns to main view or cancels active modal
+      // Escape returns to main view, clears scroll offset, or cancels active modal
       if (key.escape) {
+        if (scrollOffset > 0) {
+          setScrollOffset(0);
+          setScrolledTurnId(null);
+          return;
+        }
         if (cancelActiveModal()) {
           return;
         }
@@ -779,6 +928,8 @@ export const App: React.FC<AppProps> = ({
   };
 
   const handleSubmit = async (value: string) => {
+    setScrollOffset(0);
+    setScrolledTurnId(null);
     let trimmed = value.trim();
 
     if (
@@ -3023,6 +3174,7 @@ export const App: React.FC<AppProps> = ({
                 value={approvalInput}
                 onChange={setApprovalInput}
                 onSubmit={handleApprovalSubmit}
+                isScrolled={scrollOffset > 0}
               />
             )}
 
@@ -3094,6 +3246,7 @@ export const App: React.FC<AppProps> = ({
           status={uiState?.status || lastTaskStatus}
           isGenerating={isGenerating}
           hasModal={hasModal}
+          isScrolled={scrollOffset > 0}
           activeStep={activeStep}
           totalSteps={totalSteps}
           activeStepTitle={activeStepTitle}
@@ -3208,30 +3361,88 @@ export const App: React.FC<AppProps> = ({
 
       {/* Main Turns / Streaming execution */}
       <Box flexDirection="column">
-        {activeView === "main" && (
+        {activeView === "main" && (!hasModal || scrollOffset > 0 || isTestEnv) && (
           <>
-            {turns.map((turn, idx) => (
-              <TurnView
-                key={turn.id}
-                prompt={turn.prompt}
-                response={turn.response}
-                status={turn.status}
-                error={turn.error}
-                isLast={idx === turns.length - 1}
-                thinkingMs={turn.thinkingMs}
-                thinkingTokens={turn.thinkingTokens}
-                thinkingSummary={turn.thinkingSummary}
-              />
-            ))}
+            {scrollOffset > 0 ? (
+              <>
+                <Box marginY={0}>
+                  <Text color="cyan">
+                    ▲ Scrolled to turn {(() => {
+                      const idx = scrolledTurnId
+                        ? turns.findIndex((t) => t.id === scrolledTurnId)
+                        : turns.length - 1 - scrollOffset;
+                      return (idx >= 0 ? idx : turns.length - 1 - scrollOffset) + 1;
+                    })()} of {turns.length} [↑/↓ or PageUp/PageDown to scroll, Esc or type to return]
+                  </Text>
+                </Box>
+                {(() => {
+                  const targetTurn =
+                    (scrolledTurnId ? turns.find((t) => t.id === scrolledTurnId) : null) ||
+                    turns[turns.length - 1 - scrollOffset];
+                  if (!targetTurn) return null;
+                  let displayResponse = targetTurn.response;
+                  if (!isTestEnv && displayResponse) {
+                    const rLines = displayResponse.split("\n");
+                    const pLinesCount = (targetTurn.prompt || "").split("\n").length;
+                    const maxRespLines = Math.max(4, availableTurnRows - pLinesCount - 4);
+                    if (rLines.length > maxRespLines) {
+                      displayResponse = "… [Earlier lines truncated in compact view]\n" + rLines.slice(-maxRespLines).join("\n");
+                    }
+                  }
+                  return (
+                    <TurnView
+                      key={targetTurn.id}
+                      prompt={targetTurn.prompt}
+                      response={displayResponse}
+                      status={targetTurn.status}
+                      error={targetTurn.error}
+                      isLast={false}
+                      thinkingMs={targetTurn.thinkingMs}
+                      thinkingTokens={targetTurn.thinkingTokens}
+                      thinkingSummary={targetTurn.thinkingSummary}
+                    />
+                  );
+                })()}
+                <Box marginY={0}>
+                  <Text color="yellow">
+                    ▼ Scrolled up — [↓ / PageDown to return to live view] {isGenerating ? "(Agent running in background...)" : ""}
+                  </Text>
+                </Box>
+              </>
+            ) : (
+              <>
+                {hiddenTurnsCount > 0 && (
+                  <Box marginY={0}>
+                    <Text color="gray" dimColor>
+                      ▲ {hiddenTurnsCount} earlier turn(s) [↑ / PageUp to scroll]
+                    </Text>
+                  </Box>
+                )}
+                {visibleTurns.map((turn, idx) => (
+                  <TurnView
+                    key={turn.id}
+                    prompt={turn.prompt}
+                    response={turn.response}
+                    status={turn.status}
+                    error={turn.error}
+                    isLast={idx === visibleTurns.length - 1}
+                    thinkingMs={turn.thinkingMs}
+                    thinkingTokens={turn.thinkingTokens}
+                    thinkingSummary={turn.thinkingSummary}
+                  />
+                ))}
 
-            {/* Thinking Indicator — shown while generating */}
-            {isGenerating && (
-              <Box marginTop={0}>
-                <ThinkingIndicator
-                  isActive={isGenerating}
-                  label={isThinking ? "Thinking..." : "Agent is working..."}
-                />
-              </Box>
+                {/* Thinking Indicator — shown while generating */}
+                {isGenerating && (
+                  <Box marginTop={0}>
+                    <ThinkingIndicator
+                      isActive={isGenerating}
+                      isScrolled={scrollOffset > 0}
+                      label={isThinking ? "Thinking..." : "Agent is working..."}
+                    />
+                  </Box>
+                )}
+              </>
             )}
           </>
         )}

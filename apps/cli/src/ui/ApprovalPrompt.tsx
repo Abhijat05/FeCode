@@ -37,6 +37,7 @@ export interface ApprovalPromptProps {
   onChange?: (val: string) => void;
   onSubmit: (val: string) => void;
   defaultIndex?: number;
+  isScrolled?: boolean;
 }
 
 export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
@@ -55,12 +56,32 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
   value: _value,
   onChange: _onChange,
   onSubmit,
-  defaultIndex
+  defaultIndex,
+  isScrolled = false
 }) => {
   const [selectedIndex, setSelectedIndex] = useState<number>(defaultIndex ?? 1);
 
   useInput(
     (input, key) => {
+      // Let mouse wheel, PageUp/PageDown, and Shift+Arrows pass through for history scrolling
+      if (
+        key.pageUp ||
+        key.pageDown ||
+        (key.shift && (key.upArrow || key.downArrow)) ||
+        (key.ctrl && (input === "u" || input === "d")) ||
+        input.includes("<64;") ||
+        input.includes("<65;") ||
+        input.startsWith("[<64;") ||
+        input.startsWith("[<65;")
+      ) {
+        return;
+      }
+
+      // If user is scrolled up viewing history, let Escape return to bottom without denying prompt
+      if (key.escape && isScrolled) {
+        return;
+      }
+
       if (
         key.leftArrow ||
         key.rightArrow ||

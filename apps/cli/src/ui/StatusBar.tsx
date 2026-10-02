@@ -9,6 +9,7 @@ export interface StatusBarProps {
   activeStepTitle?: string;
   isGenerating?: boolean;
   hasModal?: boolean;
+  isScrolled?: boolean;
   modalType?: "approval" | "blocked" | "recovery" | "replan" | "resume" | string;
   customMessage?: string;
   isReconciliation?: boolean;
@@ -18,7 +19,7 @@ export interface StatusBarProps {
 }
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-const INTERVAL_MS = 80;
+const INTERVAL_MS = 300;
 
 const ACTIVE_STATUSES = new Set([
   "executing",
@@ -34,6 +35,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   activeStepTitle,
   isGenerating = false,
   hasModal = false,
+  isScrolled = false,
   modalType,
   customMessage,
   isReconciliation = false,
@@ -46,7 +48,10 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   const layout = getTerminalLayout(terminalColumns);
 
   const [frame, setFrame] = useState(0);
-  const isAnimating = isGenerating || ACTIVE_STATUSES.has(status.toLowerCase());
+  const isAnimating =
+    !hasModal &&
+    !isScrolled &&
+    (isGenerating || ACTIVE_STATUSES.has(status.toLowerCase()));
 
   useEffect(() => {
     if (!isAnimating) return;
