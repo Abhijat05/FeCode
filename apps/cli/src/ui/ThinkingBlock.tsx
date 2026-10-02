@@ -7,6 +7,18 @@ export interface ThinkingBlockProps {
   summary?: string;
 }
 
+const MAX_SUMMARY_LENGTH = 70;
+
+const formatSummary = (raw?: string): string | null => {
+  if (!raw) return null;
+  const firstLine = raw.split("\n")[0]?.trim();
+  if (!firstLine || firstLine.toLowerCase() === "thinking...") return null;
+  if (firstLine.length > MAX_SUMMARY_LENGTH) {
+    return firstLine.slice(0, MAX_SUMMARY_LENGTH - 3) + "...";
+  }
+  return firstLine;
+};
+
 export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({
   durationMs,
   tokenCount,
@@ -20,6 +32,7 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({
       ? `, ${tokenCount} tokens`
       : "";
   const header = `Thought for ${seconds}s${tokenText}`;
+  const cleanSummary = formatSummary(summary);
 
   return (
     <Box flexDirection="column" marginLeft={2} marginBottom={0}>
@@ -27,10 +40,10 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({
         <Text color="gray" dimColor>▸ </Text>
         <Text color="gray" dimColor italic>{header}</Text>
       </Box>
-      {summary && (
+      {cleanSummary && (
         <Box marginLeft={2}>
-          <Text color="gray" dimColor italic wrap="wrap">
-            {summary.split("\n")[0]}
+          <Text color="gray" dimColor italic wrap="truncate-end">
+            {cleanSummary}
           </Text>
         </Box>
       )}

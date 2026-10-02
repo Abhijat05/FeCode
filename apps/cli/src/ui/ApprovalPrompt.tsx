@@ -1,6 +1,5 @@
-import React from "react";
-import { Box, Text } from "ink";
-import TextInput from "ink-text-input";
+import React, { useState } from "react";
+import { Box, Text, useInput } from "ink";
 
 export interface ChangeReviewItem {
   path: string;
@@ -34,9 +33,10 @@ export interface ApprovalPromptProps {
     totalAddedLines?: number;
     totalRemovedLines?: number;
   };
-  value: string;
-  onChange: (val: string) => void;
+  value?: string;
+  onChange?: (val: string) => void;
   onSubmit: (val: string) => void;
+  defaultIndex?: number;
 }
 
 export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
@@ -52,10 +52,46 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
   checkpointId,
   diff,
   changeReview,
-  value,
-  onChange,
-  onSubmit
+  value: _value,
+  onChange: _onChange,
+  onSubmit,
+  defaultIndex
 }) => {
+  const [selectedIndex, setSelectedIndex] = useState<number>(defaultIndex ?? 1);
+
+  useInput(
+    (input, key) => {
+      if (
+        key.leftArrow ||
+        key.rightArrow ||
+        key.upArrow ||
+        key.downArrow ||
+        key.tab
+      ) {
+        setSelectedIndex((prev) => (prev === 0 ? 1 : 0));
+        return;
+      }
+
+      if (key.return) {
+        onSubmit(selectedIndex === 0 ? "y" : "n");
+        return;
+      }
+
+      if (input === "y" || input === "Y") {
+        setSelectedIndex(0);
+        onSubmit("y");
+        return;
+      }
+
+      if (input === "n" || input === "N" || key.escape) {
+        setSelectedIndex(1);
+        onSubmit("n");
+        return;
+      }
+    },
+    { isActive: true }
+  );
+
   const isFileEdit =
     toolName === "edit_file" ||
     toolName === "write_file" ||
@@ -236,17 +272,33 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
         </Box>
       )}
 
-      {/* Approval Input Prompt with Strict Safe Defaults */}
-      <Box marginTop={1}>
-        <Text color="yellow" bold>
-          Allow? [y/N]:{" "}
-        </Text>
-        <TextInput
-          value={value}
-          onChange={onChange}
-          onSubmit={onSubmit}
-          placeholder="n"
-        />
+      {/* Approval Selection Prompt with Interactive Arrow Navigation */}
+      <Box marginTop={1} flexDirection="column">
+        <Box>
+          <Text color="yellow" bold>
+            Allow? [y/N]:{" "}
+          </Text>
+          <Box marginLeft={1}>
+            <Text
+              color={selectedIndex === 0 ? "green" : "gray"}
+              bold={selectedIndex === 0}
+            >
+              {selectedIndex === 0 ? "▶ ● Yes (Approve)" : "  ○ Yes (Approve)"}
+            </Text>
+            <Text>   </Text>
+            <Text
+              color={selectedIndex === 1 ? "red" : "gray"}
+              bold={selectedIndex === 1}
+            >
+              {selectedIndex === 1 ? "▶ ● No (Deny)" : "  ○ No (Deny)"}
+            </Text>
+          </Box>
+        </Box>
+        <Box marginTop={0}>
+          <Text color="gray" dimColor>
+            (Use ←/→ or Tab to select, Enter to confirm, or press y/n)
+          </Text>
+        </Box>
       </Box>
     </Box>
   );

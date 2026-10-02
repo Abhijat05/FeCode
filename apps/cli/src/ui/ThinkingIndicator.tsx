@@ -26,9 +26,9 @@ export const ThinkingIndicator: React.FC<ThinkingIndicatorProps> = ({
   if (!isActive) return null;
 
   return (
-    <Box>
+    <Box height={1}>
       <Text color="cyan">{SPINNER_FRAMES[frame]} </Text>
-      <Text color="cyan">{label}</Text>
+      <Text color="cyan" wrap="truncate-end">{label}</Text>
     </Box>
   );
 };

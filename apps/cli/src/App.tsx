@@ -321,6 +321,7 @@ export const App: React.FC<AppProps> = ({
   });
 
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isThinking, setIsThinking] = useState(false);
   const [executionStartTime, setExecutionStartTime] = useState<number | undefined>(undefined);
   const [activeElapsedMs, setActiveElapsedMs] = useState<number | undefined>(undefined);
   const [pendingQuery, setPendingQuery] = useState<string | null>(null);
@@ -689,6 +690,7 @@ export const App: React.FC<AppProps> = ({
         if (isGenerating && agent) {
           agent.cancel().catch(() => {});
           setIsGenerating(false);
+          setIsThinking(false);
           setPendingQuery(null);
           setLastTaskStatus("cancelled");
           setActiveRequest(undefined);
@@ -2431,44 +2433,44 @@ export const App: React.FC<AppProps> = ({
               accumulatedRawText.startsWith("<think"));
 
           if (thinkingMatch) {
+            setIsThinking(false);
             const thinkingContent = thinkingMatch[1].trim();
             const firstLine = thinkingContent.split("\n")[0]?.trim() || "";
             const cleanContent = accumulatedRawText
               .replace(/<(?:think|thinking)>[\s\S]*?<\/(?:think|thinking)>/g, "")
               .replace(/<\/?(?:think|thinking)>/g, "")
-              .trim();
+              .replace(/^\n+/, "");
             setTurns((prev) =>
               prev.map((t) =>
                 t.id === turnId
                   ? {
                       ...t,
+                      status: "streaming",
                       thinkingMs:
                         t.thinkingMs !== undefined
                           ? t.thinkingMs
                           : elapsed > 0
                             ? elapsed
                             : 1000,
-                      thinkingSummary: firstLine,
+                      thinkingSummary: t.thinkingSummary || firstLine,
                       response: initialResponse ? initialResponse + cleanContent : cleanContent
                     }
                   : t
               )
             );
           } else if (inProgressThinking) {
-            const partialThinking = accumulatedRawText.replace(/[\s\S]*<(?:think|thinking)>/, "").trim();
-            const firstLine = partialThinking.split("\n")[0]?.trim() || "Thinking...";
-            setTurns((prev) =>
-              prev.map((t) =>
-                t.id === turnId
-                  ? {
-                      ...t,
-                      thinkingMs: elapsed > 0 ? elapsed : 1000,
-                      thinkingSummary: firstLine
-                    }
-                  : t
-              )
-            );
+            setIsThinking(true);
+            setTurns((prev) => {
+              const turn = prev.find((t) => t.id === turnId);
+              if (turn && turn.status !== "thinking") {
+                return prev.map((t) =>
+                  t.id === turnId ? { ...t, status: "thinking" } : t
+                );
+              }
+              return prev;
+            });
           } else {
+            setIsThinking(false);
             setTurns((prev) => {
               const turn = prev.find((t) => t.id === turnId);
               const isFirstToken = !turn?.response || turn.response === initialResponse;
@@ -2477,6 +2479,7 @@ export const App: React.FC<AppProps> = ({
                 t.id === turnId
                   ? {
                       ...t,
+                      status: "streaming",
                       thinkingMs:
                         t.thinkingMs !== undefined
                           ? t.thinkingMs
@@ -2939,6 +2942,7 @@ export const App: React.FC<AppProps> = ({
       setLastTaskStatus("blocked");
     } finally {
       setIsGenerating(false);
+      setIsThinking(false);
       setExecutionStartTime(undefined);
       setActiveElapsedMs(undefined);
       setActiveRequest(undefined);
@@ -3223,7 +3227,10 @@ export const App: React.FC<AppProps> = ({
             {/* Thinking Indicator — shown while generating */}
             {isGenerating && (
               <Box marginTop={0}>
-                <ThinkingIndicator isActive={isGenerating} label="Agent is working..." />
+                <ThinkingIndicator
+                  isActive={isGenerating}
+                  label={isThinking ? "Thinking..." : "Agent is working..."}
+                />
               </Box>
             )}
           </>

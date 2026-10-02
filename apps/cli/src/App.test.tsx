@@ -199,6 +199,119 @@ describe("CLI App Component", () => {
     expect(finalFrame).toContain("✓ tool");
   });
 
+  it("approves tool execution via interactive arrow keys and Enter key submission", async () => {
+    const mockAgent = new MockAgent();
+    const resolver = new InteractiveApprovalResolver();
+
+    mockAgent.runFn = async function* () {
+      yield {
+        type: "approval_required",
+        request: {
+          id: "req-arrow-1",
+          toolName: "mock_write",
+          category: "write",
+          arguments: { path: "test.txt", content: "hello" },
+          reason: "Tool 'mock_write' requires approval for write permission."
+        }
+      };
+
+      const decision = await resolver.resolve({
+        id: "req-arrow-1",
+        toolName: "mock_write",
+        category: "write",
+        arguments: { path: "test.txt", content: "hello" }
+      });
+
+      if (decision.approved) {
+        yield {
+          type: "tool_result",
+          result: { success: true, output: { path: "test.txt" } },
+          callId: "call-arrow-1"
+        };
+      }
+      yield { type: "done" };
+    };
+
+    const { lastFrame, stdin } = render(
+      <App agent={mockAgent} approvalResolver={resolver} cwd="/test" />
+    );
+    await delay(50);
+
+    await typeAndSubmit(stdin, "Write test file");
+    await delay(100);
+
+    let promptFrame = lastFrame() ?? "";
+    expect(promptFrame).toContain("Allow? [y/N]:");
+    expect(promptFrame).toContain("▶ ● No (Deny)");
+
+    // Navigate left to Yes
+    stdin.write("\u001B[D");
+    await delay(50);
+
+    promptFrame = lastFrame() ?? "";
+    expect(promptFrame).toContain("▶ ● Yes (Approve)");
+
+    // Press Enter to confirm Yes selection
+    stdin.write("\r");
+    await delay(200);
+
+    const finalFrame = lastFrame();
+    expect(finalFrame).toContain("✓ tool");
+  });
+
+  it("denies tool execution by default when user presses Enter without navigating", async () => {
+    const mockAgent = new MockAgent();
+    const resolver = new InteractiveApprovalResolver();
+
+    mockAgent.runFn = async function* () {
+      yield {
+        type: "approval_required",
+        request: {
+          id: "req-deny-1",
+          toolName: "mock_write",
+          category: "write",
+          arguments: { path: "test.txt", content: "hello" },
+          reason: "Tool 'mock_write' requires approval for write permission."
+        }
+      };
+
+      const decision = await resolver.resolve({
+        id: "req-deny-1",
+        toolName: "mock_write",
+        category: "write",
+        arguments: { path: "test.txt", content: "hello" }
+      });
+
+      if (!decision.approved) {
+        yield {
+          type: "tool_result",
+          result: { success: false, error: { message: "Tool execution was denied by the user." } },
+          callId: "call-deny-1"
+        };
+      }
+      yield { type: "done" };
+    };
+
+    const { lastFrame, stdin } = render(
+      <App agent={mockAgent} approvalResolver={resolver} cwd="/test" />
+    );
+    await delay(50);
+
+    await typeAndSubmit(stdin, "Write test file");
+    await delay(100);
+
+    const promptFrame = lastFrame() ?? "";
+    expect(promptFrame).toContain("Allow? [y/N]:");
+    expect(promptFrame).toContain("▶ ● No (Deny)");
+
+    // Press Enter directly to confirm default denial
+    stdin.write("\r");
+    await delay(200);
+
+    const finalFrame = lastFrame();
+    expect(finalFrame).toContain("✗ tool");
+  });
+
   it("renders file edit approval specifically with structured change review", async () => {
     const mockAgent = new MockAgent();
     const resolver = new InteractiveApprovalResolver();
@@ -2432,6 +2545,31 @@ describe("CLI App Component", () => {
       expect(frame).toContain("Here is the architecture overview.");
       expect(frame).not.toContain("</think>");
       expect(frame).not.toContain("<think>");
+    });
+
+    it("stabilizes reasoning tokens during in-progress thinking without leaking or flashing raw tags", async () => {
+      const mockAgent = new MockAgent();
+      mockAgent.runFn = async function* () {
+        yield { type: "text", content: "<think>\nInvestigating database" };
+        await delay(50);
+        yield { type: "text", content: " schema and relations...\n" };
+        await delay(50);
+        yield { type: "text", content: "</think>\nDatabase schema verified." };
+        yield { type: "done" };
+      };
+
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      await typeAndSubmit(stdin, "Check schema");
+      await delay(250);
+
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("Database schema verified.");
+      expect(frame).toContain("Thought for");
+      expect(frame).toContain("Investigating database schema");
+      expect(frame).not.toContain("<think>");
+      expect(frame).not.toContain("</think>");
     });
 
     it("dismisses pendingPlanBlocked modal on Ctrl+C without exiting", async () => {

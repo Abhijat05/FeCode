@@ -58,6 +58,17 @@ describe("ThinkingBlock", () => {
     );
     expect(lastFrame()).toBe("");
   });
+
+  it("truncates long thinking summaries to prevent multi-line layout jumping", () => {
+    const longSummary = "A".repeat(120);
+    const { lastFrame } = render(
+      <ThinkingBlock durationMs={1500} summary={longSummary} />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("Thought for 1.5s");
+    expect(frame).toContain("...");
+    expect(frame).not.toContain("A".repeat(120));
+  });
 });
 
 
@@ -669,6 +680,61 @@ describe("Phase 5AD: Modular UI Components", () => {
     expect(frame).toContain("Change: +3 -1");
     expect(frame).toContain("+const db = connect();");
     expect(frame).toContain("Allow? [y/N]:");
+    expect(frame).toContain("Yes (Approve)");
+    expect(frame).toContain("No (Deny)");
+  });
+
+  it("handles interactive arrow-key navigation and submission in ApprovalPrompt", async () => {
+    let submittedValue = "";
+    const { lastFrame, stdin, unmount } = render(
+      <ApprovalPrompt
+        toolName="execute_command"
+        reason="Run test suite"
+        onSubmit={(val) => {
+          submittedValue = val;
+        }}
+      />
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+    let frame = lastFrame() ?? "";
+    expect(frame).toContain("Allow? [y/N]:");
+    expect(frame).toContain("○ Yes (Approve)");
+    expect(frame).toContain("▶ ● No (Deny)");
+
+    // Press left arrow to switch to Yes
+    stdin.write("\u001B[D");
+    await new Promise((r) => setTimeout(r, 50));
+
+    frame = lastFrame() ?? "";
+    expect(frame).toContain("▶ ● Yes (Approve)");
+    expect(frame).toContain("○ No (Deny)");
+
+    // Press Enter to submit Yes
+    stdin.write("\r");
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(submittedValue).toBe("y");
+    unmount();
+  });
+
+  it("submits approval immediately when user presses y or n hotkey", async () => {
+    let submittedValue = "";
+    const { stdin, unmount } = render(
+      <ApprovalPrompt
+        toolName="execute_command"
+        reason="Run test suite"
+        onSubmit={(val) => {
+          submittedValue = val;
+        }}
+      />
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+    stdin.write("y");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(submittedValue).toBe("y");
+    unmount();
   });
 
   it("renders RiskNotice with reasons and checkpoint requirement", () => {
