@@ -16,6 +16,8 @@ export interface OpenAICompatibleProviderOptions {
   client?: OpenAI;
   extraBody?: Record<string, unknown>;
   maxContextTokens?: number;
+  timeoutMs?: number;
+  streamIdleTimeoutMs?: number;
 }
 
 interface AccumulatedToolCall {
@@ -28,6 +30,8 @@ export class OpenAICompatibleModelProvider implements ModelProvider {
   public readonly id = "openai-compatible";
   public readonly baseUrl: string;
   public readonly model: string;
+  public readonly timeoutMs: number;
+  public readonly streamIdleTimeoutMs: number;
   private readonly apiKey: string;
   private readonly client: OpenAI;
   private readonly extraBody?: Record<string, unknown>;
@@ -87,6 +91,32 @@ export class OpenAICompatibleModelProvider implements ModelProvider {
 
     this.extraBody = options.extraBody;
 
+    const envTimeout = process.env.FE_REQUEST_TIMEOUT_MS || process.env.OPENAI_TIMEOUT_MS;
+    let parsedEnvTimeout: number | undefined;
+    if (envTimeout) {
+      const parsed = parseInt(envTimeout, 10);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        parsedEnvTimeout = parsed;
+      }
+    }
+    this.timeoutMs =
+      typeof options.timeoutMs === "number" && options.timeoutMs >= 0
+        ? options.timeoutMs
+        : (parsedEnvTimeout ?? 60000);
+
+    const envIdleTimeout = process.env.FE_STREAM_IDLE_TIMEOUT_MS;
+    let parsedEnvIdleTimeout: number | undefined;
+    if (envIdleTimeout) {
+      const parsed = parseInt(envIdleTimeout, 10);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        parsedEnvIdleTimeout = parsed;
+      }
+    }
+    this.streamIdleTimeoutMs =
+      typeof options.streamIdleTimeoutMs === "number" && options.streamIdleTimeoutMs >= 0
+        ? options.streamIdleTimeoutMs
+        : (parsedEnvIdleTimeout ?? 45000);
+
     const maxContextTokens =
       typeof options.maxContextTokens === "number" && options.maxContextTokens > 0
         ? options.maxContextTokens
@@ -103,7 +133,8 @@ export class OpenAICompatibleModelProvider implements ModelProvider {
       options.client ||
       new OpenAI({
         apiKey: this.apiKey,
-        baseURL: this.baseUrl
+        baseURL: this.baseUrl,
+        timeout: this.timeoutMs > 0 ? this.timeoutMs : undefined
       });
   }
 
@@ -111,11 +142,24 @@ export class OpenAICompatibleModelProvider implements ModelProvider {
     request: ModelRequest,
     signal?: AbortSignal
   ): AsyncIterable<ModelEvent> {
-    try {
-      if (signal?.aborted) {
-        throw new Error("Request aborted");
-      }
+    const timeoutController = new AbortController();
+    let timeoutError: Error | null = null;
+    let requestTimer: NodeJS.Timeout | null = null;
+    let streamIdleTimer: NodeJS.Timeout | null = null;
 
+    const onCallerAbort = () => {
+      timeoutController.abort(signal?.reason || new Error("Request aborted"));
+    };
+
+    if (signal) {
+      if (signal.aborted) {
+        yield { type: "error", error: new Error("Request aborted") };
+        return;
+      }
+      signal.addEventListener("abort", onCallerAbort, { once: true });
+    }
+
+    try {
       const openAiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
 
       if (request.system) {
@@ -182,84 +226,140 @@ export class OpenAICompatibleModelProvider implements ModelProvider {
           }))
         : undefined;
 
-      const stream = await this.client.chat.completions.create(
-        {
-          model: this.model,
-          messages: openAiMessages,
-          tools: openAiTools,
-          stream: true,
-          stream_options: {
-            include_usage: true
-          },
-          ...(this.extraBody || {})
-        } as unknown as OpenAI.Chat.ChatCompletionCreateParamsStreaming,
-        { signal }
-      );
+      if (this.timeoutMs > 0) {
+        requestTimer = setTimeout(() => {
+          timeoutError = new Error(
+            `OpenAI-compatible request timed out after ${this.timeoutMs}ms (model: "${this.model}", baseUrl: "${this.baseUrl}").`
+          );
+          timeoutController.abort(timeoutError);
+        }, this.timeoutMs);
+      }
+
+      let stream: AsyncIterable<OpenAI.Chat.ChatCompletionChunk>;
+      try {
+        stream = (await this.client.chat.completions.create(
+          {
+            model: this.model,
+            messages: openAiMessages,
+            tools: openAiTools,
+            stream: true,
+            stream_options: {
+              include_usage: true
+            },
+            ...(this.extraBody || {})
+          } as unknown as OpenAI.Chat.ChatCompletionCreateParamsStreaming,
+          {
+            signal: timeoutController.signal,
+            timeout: this.timeoutMs > 0 ? this.timeoutMs : undefined
+          }
+        )) as unknown as AsyncIterable<OpenAI.Chat.ChatCompletionChunk>;
+      } catch (err: unknown) {
+        if (timeoutError) {
+          throw timeoutError;
+        }
+        throw err;
+      } finally {
+        if (requestTimer) {
+          clearTimeout(requestTimer);
+          requestTimer = null;
+        }
+      }
 
       let usage: TokenUsage | undefined;
       let isThinking = false;
       const accumulatedToolCalls = new Map<number, AccumulatedToolCall>();
 
-      for await (const chunk of stream) {
-        if (signal?.aborted) {
-          throw new Error("Request aborted");
+      const resetStreamIdleTimer = () => {
+        if (streamIdleTimer) {
+          clearTimeout(streamIdleTimer);
+          streamIdleTimer = null;
         }
-
-        const delta = chunk.choices[0]?.delta;
-        const deltaAny = delta as
-          | (typeof delta & {
-              reasoning?: string;
-              reasoning_content?: string;
-            })
-          | undefined;
-        const reasoningChunk =
-          deltaAny?.reasoning || deltaAny?.reasoning_content;
-
-        if (reasoningChunk) {
-          if (!isThinking) {
-            isThinking = true;
-            yield { type: "text_delta", content: "<think>" };
-          }
-          yield { type: "text_delta", content: reasoningChunk };
+        if (this.streamIdleTimeoutMs > 0) {
+          streamIdleTimer = setTimeout(() => {
+            timeoutError = new Error(
+              `OpenAI-compatible stream stalled: no data received for ${this.streamIdleTimeoutMs}ms (model: "${this.model}").`
+            );
+            timeoutController.abort(timeoutError);
+          }, this.streamIdleTimeoutMs);
         }
+      };
 
-        if (delta?.content) {
-          if (isThinking) {
-            isThinking = false;
-            yield { type: "text_delta", content: "</think>" };
+      resetStreamIdleTimer();
+
+      try {
+        for await (const chunk of stream) {
+          resetStreamIdleTimer();
+
+          if (signal?.aborted) {
+            throw new Error("Request aborted");
           }
-          yield { type: "text_delta", content: delta.content };
-        }
 
-        if (delta?.tool_calls) {
-          if (isThinking) {
-            isThinking = false;
-            yield { type: "text_delta", content: "</think>" };
-          }
-          for (const tcDelta of delta.tool_calls) {
-            const index = typeof tcDelta.index === "number" ? tcDelta.index : 0;
-            const existing = accumulatedToolCalls.get(index) || {
-              id: "",
-              name: "",
-              arguments: ""
-            };
+          const delta = chunk.choices[0]?.delta;
+          const deltaAny = delta as
+            | (typeof delta & {
+                reasoning?: string;
+                reasoning_content?: string;
+              })
+            | undefined;
+          const reasoningChunk =
+            deltaAny?.reasoning || deltaAny?.reasoning_content;
 
-            if (tcDelta.id) existing.id += tcDelta.id;
-            if (tcDelta.function?.name) existing.name += tcDelta.function.name;
-            if (tcDelta.function?.arguments) {
-              existing.arguments += tcDelta.function.arguments;
+          if (reasoningChunk) {
+            if (!isThinking) {
+              isThinking = true;
+              yield { type: "text_delta", content: "<think>" };
             }
+            yield { type: "text_delta", content: reasoningChunk };
+          }
 
-            accumulatedToolCalls.set(index, existing);
+          if (delta?.content) {
+            if (isThinking) {
+              isThinking = false;
+              yield { type: "text_delta", content: "</think>" };
+            }
+            yield { type: "text_delta", content: delta.content };
+          }
+
+          if (delta?.tool_calls) {
+            if (isThinking) {
+              isThinking = false;
+              yield { type: "text_delta", content: "</think>" };
+            }
+            for (const tcDelta of delta.tool_calls) {
+              const index = typeof tcDelta.index === "number" ? tcDelta.index : 0;
+              const existing = accumulatedToolCalls.get(index) || {
+                id: "",
+                name: "",
+                arguments: ""
+              };
+
+              if (tcDelta.id) existing.id += tcDelta.id;
+              if (tcDelta.function?.name) existing.name += tcDelta.function.name;
+              if (tcDelta.function?.arguments) {
+                existing.arguments += tcDelta.function.arguments;
+              }
+
+              accumulatedToolCalls.set(index, existing);
+            }
+          }
+
+          if (chunk.usage) {
+            usage = {
+              inputTokens: chunk.usage.prompt_tokens,
+              outputTokens: chunk.usage.completion_tokens,
+              totalTokens: chunk.usage.total_tokens
+            };
           }
         }
-
-        if (chunk.usage) {
-          usage = {
-            inputTokens: chunk.usage.prompt_tokens,
-            outputTokens: chunk.usage.completion_tokens,
-            totalTokens: chunk.usage.total_tokens
-          };
+      } catch (err: unknown) {
+        if (timeoutError) {
+          throw timeoutError;
+        }
+        throw err;
+      } finally {
+        if (streamIdleTimer) {
+          clearTimeout(streamIdleTimer);
+          streamIdleTimer = null;
         }
       }
 
@@ -298,7 +398,17 @@ export class OpenAICompatibleModelProvider implements ModelProvider {
       }
       let message = sanitized;
 
-      if (
+      if (timeoutError) {
+        message = (timeoutError as Error).message;
+      } else if (
+        sanitized.toLowerCase().includes("timed out") ||
+        sanitized.toLowerCase().includes("timeout") ||
+        sanitized.toLowerCase().includes("stream stalled") ||
+        error.name === "TimeoutError" ||
+        error.name === "APIConnectionTimeoutError"
+      ) {
+        message = sanitized;
+      } else if (
         sanitized.includes("401") ||
         sanitized.toLowerCase().includes("unauthorized") ||
         sanitized.toLowerCase().includes("invalid api key") ||
@@ -322,6 +432,16 @@ export class OpenAICompatibleModelProvider implements ModelProvider {
       }
 
       yield { type: "error", error: new Error(message) };
+    } finally {
+      if (requestTimer) {
+        clearTimeout(requestTimer);
+      }
+      if (streamIdleTimer) {
+        clearTimeout(streamIdleTimer);
+      }
+      if (signal) {
+        signal.removeEventListener("abort", onCallerAbort);
+      }
     }
   }
 }

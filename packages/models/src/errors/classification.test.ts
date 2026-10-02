@@ -78,6 +78,38 @@ describe("Provider Error Classification", () => {
       expect(res2.isRetryable).toBe(true);
       expect(res2.category).toBe("transient_network");
     });
+
+    it("classifies request timeouts and stream stalls as transient network errors", () => {
+      // OpenAI APIConnectionTimeoutError pattern
+      const openAiTimeout = new Error("Request timed out.");
+      openAiTimeout.name = "APIConnectionTimeoutError";
+      const resOpenAi = classifyProviderError(openAiTimeout);
+      expect(resOpenAi.category).toBe("transient_network");
+      expect(resOpenAi.isRetryable).toBe(true);
+      expect(resOpenAi.isFallbackEligible).toBe(false);
+
+      // DOMException / AbortController timeout pattern
+      const fetchTimeout = new Error("The operation was aborted due to timeout");
+      fetchTimeout.name = "TimeoutError";
+      const resFetch = classifyProviderError(fetchTimeout);
+      expect(resFetch.category).toBe("transient_network");
+      expect(resFetch.isRetryable).toBe(true);
+      expect(resFetch.isFallbackEligible).toBe(false);
+
+      // FeCode request timeout pattern
+      const reqTimeout = new Error("OpenAI-compatible provider request timed out after 60000ms (model: deepseek-ai/deepseek-v4.1-flash)");
+      const resReq = classifyProviderError(reqTimeout);
+      expect(resReq.category).toBe("transient_network");
+      expect(resReq.isRetryable).toBe(true);
+      expect(resReq.isFallbackEligible).toBe(false);
+
+      // FeCode stream stalled pattern
+      const streamStall = new Error("OpenAI-compatible provider stream stalled: no data received for 45000ms (model: deepseek-ai/deepseek-v4.1-flash)");
+      const resStream = classifyProviderError(streamStall);
+      expect(resStream.category).toBe("transient_network");
+      expect(resStream.isRetryable).toBe(true);
+      expect(resStream.isFallbackEligible).toBe(false);
+    });
   });
 
   describe("Non-fallback errors", () => {

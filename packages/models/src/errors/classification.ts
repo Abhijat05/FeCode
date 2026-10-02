@@ -63,12 +63,22 @@ export function classifyProviderError(err: unknown): ProviderErrorClassification
     code = (errorObj.error as Record<string, unknown>).code as string;
   }
 
+  const isTimeout =
+    name === "TimeoutError" ||
+    name === "APIConnectionTimeoutError" ||
+    statusCode === 408 ||
+    code === "ETIMEDOUT" ||
+    lowerMessage.includes("timed out") ||
+    lowerMessage.includes("timeout") ||
+    lowerMessage.includes("stream stalled");
+
   // 1. Cancellation / Abort
   if (
-    name === "AbortError" ||
-    lowerMessage.includes("aborted") ||
-    lowerMessage.includes("cancelled") ||
-    lowerMessage.includes("request was aborted")
+    !isTimeout &&
+    (name === "AbortError" ||
+      lowerMessage.includes("aborted") ||
+      lowerMessage.includes("cancelled") ||
+      lowerMessage.includes("request was aborted"))
   ) {
     return {
       category: "cancelled",
@@ -189,6 +199,7 @@ export function classifyProviderError(err: unknown): ProviderErrorClassification
 
   // 6. Transient Network Failures (Retryable on same provider, but NOT fallback-required)
   if (
+    isTimeout ||
     statusCode === 502 ||
     statusCode === 503 ||
     statusCode === 504 ||
@@ -208,8 +219,8 @@ export function classifyProviderError(err: unknown): ProviderErrorClassification
       category: "transient_network",
       isFallbackEligible: false,
       isRetryable: true,
-      statusCode,
-      code,
+      statusCode: statusCode ?? (isTimeout ? 408 : undefined),
+      code: code ?? (isTimeout ? "ETIMEDOUT" : undefined),
       reason: sanitizedMessage
     };
   }

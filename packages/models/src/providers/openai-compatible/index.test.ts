@@ -414,5 +414,85 @@ describe("OpenAICompatibleModelProvider", () => {
       expect(err.message).toContain("429");
       expect(err.message).toContain("quota exceeded or rate limit reached");
     });
+
+    it("times out cleanly when chat.completions.create hangs beyond timeoutMs", async () => {
+      const mockClient = {
+        chat: {
+          completions: {
+            create: vi.fn().mockImplementation((_body: unknown, options?: { signal?: AbortSignal }) => {
+              return new Promise((_, reject) => {
+                if (options?.signal) {
+                  options.signal.addEventListener("abort", () => {
+                    reject(new Error("Request aborted due to timeout"));
+                  });
+                }
+              });
+            })
+          }
+        }
+      } as unknown as OpenAI;
+
+      const provider = new OpenAICompatibleModelProvider({
+        baseUrl: "https://integrate.api.nvidia.com/v1",
+        apiKey: "test-key",
+        model: "deepseek-ai/deepseek-v4.1-flash",
+        client: mockClient,
+        timeoutMs: 50
+      });
+
+      const events = [];
+      for await (const event of provider.generate({ messages: [{ role: "user", content: "Hi" }] })) {
+        events.push(event);
+      }
+
+      expect(events).toHaveLength(1);
+      expect(events[0].type).toBe("error");
+      const err = (events[0] as { error: Error }).error;
+      expect(err.message.toLowerCase()).toContain("timed out");
+      expect(err.message).toContain("deepseek-ai/deepseek-v4.1-flash");
+    });
+
+    it("times out cleanly when stream stalls mid-stream beyond streamIdleTimeoutMs", async () => {
+      async function* stallingStream(signal?: AbortSignal) {
+        yield { choices: [{ delta: { content: "Initial chunk" } }] };
+        await new Promise((_, reject) => {
+          if (signal) {
+            signal.addEventListener("abort", () => {
+              reject(new Error("Stream aborted due to idle timeout"));
+            });
+          }
+        });
+      }
+
+      const mockClient = {
+        chat: {
+          completions: {
+            create: vi.fn().mockImplementation((_body: unknown, options?: { signal?: AbortSignal }) => {
+              return Promise.resolve(stallingStream(options?.signal));
+            })
+          }
+        }
+      } as unknown as OpenAI;
+
+      const provider = new OpenAICompatibleModelProvider({
+        baseUrl: "https://integrate.api.nvidia.com/v1",
+        apiKey: "test-key",
+        model: "deepseek-ai/deepseek-v4.1-flash",
+        client: mockClient,
+        streamIdleTimeoutMs: 50
+      });
+
+      const events = [];
+      for await (const event of provider.generate({ messages: [{ role: "user", content: "Hi" }] })) {
+        events.push(event);
+      }
+
+      expect(events.length).toBeGreaterThanOrEqual(2);
+      expect(events[0]).toEqual({ type: "text_delta", content: "Initial chunk" });
+      const lastEvent = events[events.length - 1];
+      expect(lastEvent.type).toBe("error");
+      const err = (lastEvent as { error: Error }).error;
+      expect(err.message.toLowerCase()).toMatch(/stalled|timed out/);
+    });
   });
 });

@@ -89,7 +89,10 @@ describe("OpenAIModelProvider (offline unit tests)", () => {
         stream: true,
         stream_options: { include_usage: true }
       },
-      { signal: undefined }
+      expect.objectContaining({
+        signal: expect.any(Object),
+        timeout: 60000
+      })
     );
   });
 
@@ -279,5 +282,84 @@ describe("OpenAIModelProvider (offline unit tests)", () => {
         usage: { inputTokens: 5, outputTokens: 10, totalTokens: 15 }
       }
     ]);
+  });
+
+  it("times out cleanly when chat.completions.create hangs beyond timeoutMs", async () => {
+    const mockClient = {
+      chat: {
+        completions: {
+          create: vi.fn().mockImplementation((_body: unknown, options?: { signal?: AbortSignal }) => {
+            return new Promise((_, reject) => {
+              if (options?.signal) {
+                options.signal.addEventListener("abort", () => {
+                  reject(new Error("Request aborted due to timeout"));
+                });
+              }
+            });
+          })
+        }
+      }
+    } as unknown as OpenAI;
+
+    const provider = new OpenAIModelProvider({
+      apiKey: "sk-fake-key",
+      client: mockClient,
+      timeoutMs: 50
+    });
+
+    const events: ModelEvent[] = [];
+    for await (const event of provider.generate({
+      messages: [{ role: "user", content: "Hello" }]
+    })) {
+      events.push(event);
+    }
+
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("error");
+    const err = (events[0] as { error: Error }).error;
+    expect(err.message.toLowerCase()).toContain("timed out");
+  });
+
+  it("times out cleanly when stream stalls mid-stream beyond streamIdleTimeoutMs", async () => {
+    async function* stallingStream(signal?: AbortSignal) {
+      yield { choices: [{ delta: { content: "Initial chunk" } }] };
+      await new Promise((_, reject) => {
+        if (signal) {
+          signal.addEventListener("abort", () => {
+            reject(new Error("Stream aborted due to idle timeout"));
+          });
+        }
+      });
+    }
+
+    const mockClient = {
+      chat: {
+        completions: {
+          create: vi.fn().mockImplementation((_body: unknown, options?: { signal?: AbortSignal }) => {
+            return Promise.resolve(stallingStream(options?.signal));
+          })
+        }
+      }
+    } as unknown as OpenAI;
+
+    const provider = new OpenAIModelProvider({
+      apiKey: "sk-fake-key",
+      client: mockClient,
+      streamIdleTimeoutMs: 50
+    });
+
+    const events: ModelEvent[] = [];
+    for await (const event of provider.generate({
+      messages: [{ role: "user", content: "Hello" }]
+    })) {
+      events.push(event);
+    }
+
+    expect(events.length).toBeGreaterThanOrEqual(2);
+    expect(events[0]).toEqual({ type: "text_delta", content: "Initial chunk" });
+    const lastEvent = events[events.length - 1];
+    expect(lastEvent.type).toBe("error");
+    const err = (lastEvent as { error: Error }).error;
+    expect(err.message.toLowerCase()).toMatch(/stalled|timed out/);
   });
 });
