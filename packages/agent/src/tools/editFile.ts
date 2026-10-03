@@ -149,7 +149,29 @@ export class EditFileTool
         };
       }
 
-      const matchCount = countOccurrences(originalContent, input.oldText);
+      let effectiveOldText = input.oldText;
+      let effectiveNewText = input.newText;
+      let matchCount = countOccurrences(originalContent, effectiveOldText);
+
+      if (matchCount === 0) {
+        const isFileCrlf = originalContent.includes("\r\n");
+        if (isFileCrlf && input.oldText.includes("\n")) {
+          const crlfOld = input.oldText.replace(/\r?\n/g, "\r\n");
+          if (countOccurrences(originalContent, crlfOld) > 0) {
+            effectiveOldText = crlfOld;
+            effectiveNewText = input.newText.replace(/\r?\n/g, "\r\n");
+            matchCount = countOccurrences(originalContent, effectiveOldText);
+          }
+        } else if (!isFileCrlf && input.oldText.includes("\r\n")) {
+          const lfOld = input.oldText.replace(/\r\n/g, "\n");
+          if (countOccurrences(originalContent, lfOld) > 0) {
+            effectiveOldText = lfOld;
+            effectiveNewText = input.newText.replace(/\r\n/g, "\n");
+            matchCount = countOccurrences(originalContent, effectiveOldText);
+          }
+        }
+      }
+
       if (matchCount === 0) {
         return {
           success: false,
@@ -170,7 +192,7 @@ export class EditFileTool
         };
       }
 
-      const proposedContent = originalContent.replace(input.oldText, () => input.newText);
+      const proposedContent = originalContent.replace(effectiveOldText, () => effectiveNewText);
       const bytesWritten = Buffer.byteLength(proposedContent, "utf-8");
 
       if (bytesWritten > this.maxBytes) {
@@ -191,7 +213,7 @@ export class EditFileTool
 
       // Post-approval second-read conflict check to verify file was not mutated on disk
       const freshContent = await fs.readFile(targetPath, "utf-8");
-      const freshMatchCount = countOccurrences(freshContent, input.oldText);
+      const freshMatchCount = countOccurrences(freshContent, effectiveOldText);
       if (freshMatchCount !== 1) {
         return {
           success: false,

@@ -134,4 +134,29 @@ describe("SearchFilesTool", () => {
     // Total matches should be bounded by collection cap (<= 1000), not full 2500
     expect(result.output!.totalMatches!).toBeLessThanOrEqual(1000);
   });
+
+  it("ignores files and directories specified in project .gitignore", async () => {
+    await fs.mkdir(path.join(tmpDir, "custom_logs"));
+    await fs.writeFile(
+      path.join(tmpDir, "custom_logs", "error.log"),
+      "error: Dashboard failed to load"
+    );
+    await fs.writeFile(
+      path.join(tmpDir, "src", "temporary.log"),
+      "temporary Dashboard log entry"
+    );
+
+    await fs.writeFile(
+      path.join(tmpDir, ".gitignore"),
+      "custom_logs/\n*.log\n"
+    );
+
+    const result = await tool.execute({ query: "Dashboard" }, context);
+    expect(result.success).toBe(true);
+
+    const matches = result.output?.matches || [];
+    expect(matches.some((m) => m.path.includes("custom_logs"))).toBe(false);
+    expect(matches.some((m) => m.path.includes("temporary.log"))).toBe(false);
+    expect(matches.some((m) => m.path.includes("Dashboard.tsx"))).toBe(true);
+  });
 });

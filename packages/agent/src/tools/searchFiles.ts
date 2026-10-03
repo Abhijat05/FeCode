@@ -4,7 +4,12 @@ import * as path from "path";
 import * as readline from "readline";
 import type { Tool, ToolContext, ToolResult } from "@fecode/models";
 import { resolveSafePath } from "./pathUtils.js";
-import { isIgnoredDirectory, isIgnoredFile } from "./ignoreUtils.js";
+import {
+  isIgnoredDirectory,
+  isIgnoredFile,
+  loadGitignore,
+  type GitignoreMatcher
+} from "./ignoreUtils.js";
 
 export interface SearchFilesInput {
   query: string;
@@ -145,6 +150,8 @@ export class SearchFilesTool
       const stats = await fs.stat(targetPath);
       const allMatches: SearchMatch[] = [];
 
+      const gitignoreMatcher = await loadGitignore(rootDir);
+
       if (stats.isFile()) {
         await this.searchFile(
           targetPath,
@@ -161,7 +168,8 @@ export class SearchFilesTool
           queryLower,
           allMatches,
           context.signal,
-          maxCollect
+          maxCollect,
+          gitignoreMatcher
         );
       } else {
         return {
@@ -232,7 +240,8 @@ export class SearchFilesTool
     queryLower: string,
     matches: SearchMatch[],
     signal: AbortSignal,
-    maxCollect: number
+    maxCollect: number,
+    gitignoreMatcher?: GitignoreMatcher | null
   ): Promise<void> {
     if (signal.aborted || matches.length >= maxCollect) return;
 
@@ -250,7 +259,10 @@ export class SearchFilesTool
       const relPath = path.relative(rootDir, fullPath);
 
       if (entry.isDirectory()) {
-        if (isIgnoredDirectory(entry.name)) {
+        if (
+          isIgnoredDirectory(entry.name) ||
+          gitignoreMatcher?.isIgnored(relPath, true)
+        ) {
           continue;
         }
         await this.searchDirectory(
@@ -259,10 +271,14 @@ export class SearchFilesTool
           queryLower,
           matches,
           signal,
-          maxCollect
+          maxCollect,
+          gitignoreMatcher
         );
       } else if (entry.isFile()) {
-        if (isIgnoredFile(entry.name)) {
+        if (
+          isIgnoredFile(entry.name) ||
+          gitignoreMatcher?.isIgnored(relPath, false)
+        ) {
           continue;
         }
         const ext = path.extname(entry.name).toLowerCase();

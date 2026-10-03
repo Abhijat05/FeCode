@@ -170,4 +170,29 @@ describe("prepareModelMessages", () => {
     const tool4 = prepared.find((m) => m.role === "tool" && m.toolCallId === "call_t2_4");
     expect(tool4?.content).toContain("Search result 4");
   });
+
+  it("scales tool result char limit dynamically with large token budgets", () => {
+    // 20,000 char tool output (approx 4,500 tokens)
+    const largeToolOutput = "function complexComponent() {\n" + "  console.log('line');\n".repeat(800) + "}";
+    expect(largeToolOutput.length).toBeGreaterThan(15000);
+
+    const messages: ModelMessage[] = [
+      { role: "user", content: "Read complexComponent" },
+      {
+        role: "assistant",
+        toolCalls: [{ id: "call_read_1", name: "read_file", arguments: { path: "src/Complex.tsx" } }]
+      },
+      {
+        role: "tool",
+        toolCallId: "call_read_1",
+        content: largeToolOutput
+      }
+    ];
+
+    // With a generous budget (e.g. 64,000 tokens as in Gemini / GPT-4o)
+    const prepared = prepareModelMessages(messages, 64000);
+    const toolMsg = prepared.find((m) => m.role === "tool");
+    expect(toolMsg?.content).toBe(largeToolOutput);
+    expect(toolMsg?.content).not.toContain("output truncated for context budget");
+  });
 });

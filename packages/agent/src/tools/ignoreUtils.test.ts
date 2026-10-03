@@ -3,7 +3,8 @@ import {
   isIgnoredDirectory,
   isIgnoredFile,
   DEFAULT_IGNORED_DIRS,
-  DEFAULT_IGNORED_FILES
+  DEFAULT_IGNORED_FILES,
+  parseGitignoreContent
 } from "./ignoreUtils.js";
 
 describe("ignoreUtils", () => {
@@ -28,5 +29,26 @@ describe("ignoreUtils", () => {
   it("exposes customizable ignore sets", () => {
     expect(DEFAULT_IGNORED_DIRS.has("node_modules")).toBe(true);
     expect(DEFAULT_IGNORED_FILES.has(".env")).toBe(true);
+  });
+
+  it("parses gitignore content and matches ignored directories and wildcards", () => {
+    const gitignoreContent = `
+      # Comments should be ignored
+      temp/
+      *.log
+      /artifacts/
+      build-output
+      !important.log
+    `;
+
+    const matcher = parseGitignoreContent(gitignoreContent);
+    expect(matcher.isIgnored("temp", true)).toBe(true);
+    expect(matcher.isIgnored("sub/temp", true)).toBe(true);
+    expect(matcher.isIgnored("app.log", false)).toBe(true);
+    expect(matcher.isIgnored("logs/debug.log", false)).toBe(true);
+    expect(matcher.isIgnored("artifacts", true)).toBe(true);
+    expect(matcher.isIgnored("sub/artifacts", true)).toBe(false); // Rooted pattern
+    expect(matcher.isIgnored("important.log", false)).toBe(false); // Negated pattern
+    expect(matcher.isIgnored("src/main.ts", false)).toBe(false);
   });
 });

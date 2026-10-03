@@ -146,4 +146,48 @@ describe("EditFileTool", () => {
     const diskContent = await fs.readFile(path.join(tmpDir, fileRel), "utf-8");
     expect(diskContent).toBe("line 1\r\n✨ new line 2\r\nline 3");
   });
+
+  it("matches and replaces multi-line oldText when disk file has CRLF but input uses LF", async () => {
+    const fileRel = "windows_crlf.ts";
+    const diskContent = "function hello() {\r\n  console.log('first');\r\n  console.log('second');\r\n}\r\n";
+    await fs.writeFile(path.join(tmpDir, fileRel), diskContent);
+
+    // LLM sends LF only
+    const oldTextWithLf = "  console.log('first');\n  console.log('second');";
+    const newTextWithLf = "  console.log('replaced 1');\n  console.log('replaced 2');";
+
+    const result = await tool.execute(
+      { path: fileRel, oldText: oldTextWithLf, newText: newTextWithLf },
+      context
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.output?.changed).toBe(true);
+
+    const updatedOnDisk = await fs.readFile(path.join(tmpDir, fileRel), "utf-8");
+    // Verify content on disk retains CRLF line endings
+    expect(updatedOnDisk).toBe("function hello() {\r\n  console.log('replaced 1');\r\n  console.log('replaced 2');\r\n}\r\n");
+  });
+
+  it("matches and replaces multi-line oldText when disk file has LF but input uses CRLF", async () => {
+    const fileRel = "posix_lf.ts";
+    const diskContent = "const a = 1;\nconst b = 2;\nconst c = 3;\n";
+    await fs.writeFile(path.join(tmpDir, fileRel), diskContent);
+
+    // Input payload has CRLF
+    const oldTextWithCrlf = "const b = 2;\r\nconst c = 3;";
+    const newTextWithCrlf = "const b = 20;\r\nconst c = 30;";
+
+    const result = await tool.execute(
+      { path: fileRel, oldText: oldTextWithCrlf, newText: newTextWithCrlf },
+      context
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.output?.changed).toBe(true);
+
+    const updatedOnDisk = await fs.readFile(path.join(tmpDir, fileRel), "utf-8");
+    // Verify content on disk retains LF line endings
+    expect(updatedOnDisk).toBe("const a = 1;\nconst b = 20;\nconst c = 30;\n");
+  });
 });

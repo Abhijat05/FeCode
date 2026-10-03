@@ -30,11 +30,18 @@ export class DefaultToolExecutor implements ToolExecutor {
 
     try {
       let parsedArgs = call.arguments;
-      if (typeof call.arguments === "string") {
+      if (typeof call.arguments === "string" && call.arguments.trim()) {
         try {
           parsedArgs = JSON.parse(call.arguments);
-        } catch {
-          // keep string if JSON parse fails
+        } catch (jsonErr: unknown) {
+          const parseMsg = jsonErr instanceof Error ? jsonErr.message : String(jsonErr);
+          return {
+            success: false,
+            error: {
+              message: `Tool arguments failed JSON parsing: ${parseMsg}. Raw payload: "${call.arguments}". Please reissue the tool call with valid JSON.`,
+              code: "INVALID_JSON_ARGUMENTS"
+            }
+          };
         }
       }
 

@@ -328,6 +328,9 @@ export const App: React.FC<AppProps> = ({
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const [scrollOffset, setScrollOffset] = useState(0);
   const [scrolledTurnId, setScrolledTurnId] = useState<string | null>(null);
+  const [promptHistory, setPromptHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState<number>(-1);
+  const draftPromptRef = useRef<string>("");
   const prevIsGeneratingRef = useRef(false);
   const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(
     null
@@ -419,11 +422,24 @@ export const App: React.FC<AppProps> = ({
       setScrollOffset(0);
       setScrolledTurnId(null);
     }
-    // Sanitize any raw ANSI or mouse escape sequences from leaking into input
+    // Sanitize any raw ANSI, bracketed paste, or mouse escape sequences from leaking into input
     let val = rawVal;
-    if (val.includes("[<") || val.includes("\x1b")) {
-      // eslint-disable-next-line no-control-regex
-      val = val.replace(/\x1b?\[<\d+;\d+;\d+[Mm]/g, "").replace(/\x1b/g, "");
+    /* eslint-disable no-control-regex */
+    if (
+      val.includes("[200~") ||
+      val.includes("[201~") ||
+      val.includes("[<") ||
+      val.includes("\x1b")
+    ) {
+      val = val
+        .replace(/\x1b?\[200~/g, "")
+        .replace(/\x1b?\[201~/g, "")
+        .replace(/\x1b?\[<\d+;\d+;\d+[Mm]/g, "")
+        .replace(/\x1b/g, "");
+    }
+    /* eslint-enable no-control-regex */
+    if (val.includes("\n") || val.includes("\r")) {
+      val = val.replace(/\r?\n/g, " ");
     }
 
     if (!hasModal && !isGenerating && activeView === "main" && query === "" && val === "?") {
@@ -631,6 +647,33 @@ export const App: React.FC<AppProps> = ({
         setSelectedSuggestion((prev) =>
           prev <= 0 ? commandSuggestions.length - 1 : prev - 1
         );
+        return;
+      }
+
+      // Ctrl+P / Ctrl+N: Navigate shell-style prompt history
+      if (key.ctrl && input === "p" && activeView === "main" && !isGenerating && !hasModal) {
+        if (promptHistory.length > 0) {
+          const nextIndex = historyIndex === -1 ? promptHistory.length - 1 : Math.max(0, historyIndex - 1);
+          if (historyIndex === -1) {
+            draftPromptRef.current = query;
+          }
+          setHistoryIndex(nextIndex);
+          setQuery(promptHistory[nextIndex]);
+        }
+        return;
+      }
+
+      if (key.ctrl && input === "n" && activeView === "main" && !isGenerating && !hasModal) {
+        if (historyIndex !== -1) {
+          if (historyIndex >= promptHistory.length - 1) {
+            setHistoryIndex(-1);
+            setQuery(draftPromptRef.current);
+          } else {
+            const nextIndex = historyIndex + 1;
+            setHistoryIndex(nextIndex);
+            setQuery(promptHistory[nextIndex]);
+          }
+        }
         return;
       }
 
@@ -930,7 +973,14 @@ export const App: React.FC<AppProps> = ({
   const handleSubmit = async (value: string) => {
     setScrollOffset(0);
     setScrolledTurnId(null);
-    let trimmed = value.trim();
+    /* eslint-disable no-control-regex */
+    let trimmed = value
+      .replace(/\x1b?\[200~/g, "")
+      .replace(/\x1b?\[201~/g, "")
+      .replace(/\x1b?\[<\d+;\d+;\d+[Mm]/g, "")
+      .replace(/\x1b/g, "")
+      .trim();
+    /* eslint-enable no-control-regex */
 
     if (
       commandSuggestions.length > 0 &&
@@ -948,6 +998,15 @@ export const App: React.FC<AppProps> = ({
       }
     }
     setSelectedSuggestion(0);
+
+    if (trimmed && !trimmed.startsWith("/")) {
+      setPromptHistory((prev) => {
+        const filtered = prev.filter((p) => p !== trimmed);
+        return [...filtered, trimmed];
+      });
+      setHistoryIndex(-1);
+      draftPromptRef.current = "";
+    }
 
     // Queue the prompt if agent is currently running and no modal is active
     const modalActive =

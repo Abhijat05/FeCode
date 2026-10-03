@@ -22,7 +22,11 @@ export function prepareModelMessages(
 ): ModelMessage[] {
   if (messages.length === 0) return [];
 
-  const maxToolChars = options.maxToolResultChars ?? 3500;
+  const defaultMaxToolChars = Math.max(
+    3500,
+    Math.min(120_000, Math.floor(maxBudgetTokens * 2.5))
+  );
+  const maxToolChars = options.maxToolResultChars ?? defaultMaxToolChars;
 
   // Step 1: Clean each message (strip think tags from assistant, truncate oversized tool results)
   const cleanedMessages: ModelMessage[] = messages.map((m) => {

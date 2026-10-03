@@ -2817,6 +2817,73 @@ describe("CLI App Component", () => {
       expect(frame).toContain("History turn 2");
     });
 
+    it("navigates previously submitted prompts using Ctrl+P and Ctrl+N", async () => {
+      const mockAgent = new MockAgent();
+      mockAgent.runFn = async function* (input: AgentInput) {
+        yield { type: "text", content: `Done: ${input.message}` };
+        yield { type: "done" };
+      };
+
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      // Submit prompt 1
+      await typeAndSubmit(stdin, "first command");
+      await delay(150);
+
+      // Submit prompt 2
+      await typeAndSubmit(stdin, "second command");
+      await delay(150);
+
+      // Press Ctrl+P (\x10) to recall latest prompt
+      stdin.write("\x10");
+      await delay(50);
+
+      let frame = lastFrame() ?? "";
+      expect(frame).toContain("second command");
+
+      // Press Ctrl+P again to recall earlier prompt
+      stdin.write("\x10");
+      await delay(50);
+
+      frame = lastFrame() ?? "";
+      expect(frame).toContain("first command");
+
+      // Press Ctrl+N (\x0E) to navigate forward to second prompt
+      stdin.write("\x0E");
+      await delay(50);
+
+      frame = lastFrame() ?? "";
+      expect(frame).toContain("second command");
+    });
+
+    it("sanitizes multi-line paste and bracketed paste without premature line submission", async () => {
+      const mockAgent = new MockAgent();
+      const submitted: string[] = [];
+      mockAgent.runFn = async function* (input: AgentInput) {
+        submitted.push(input.message);
+        yield { type: "text", content: "Result" };
+        yield { type: "done" };
+      };
+
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      // Paste text wrapped in bracketed paste markers with internal newlines
+      stdin.write("\x1B[200~line1\nline2\x1B[201~");
+      await delay(50);
+
+      // Verify that query contains the pasted content sanitized without newline split
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("line1 line2");
+
+      // Press Enter to submit the combined paste
+      stdin.write("\r");
+      await delay(150);
+
+      expect(submitted).toEqual(["line1 line2"]);
+    });
+
     it("dismisses pendingPlanBlocked modal on Ctrl+C without exiting", async () => {
       let exited = false;
       const mockAgent = new MockAgent();

@@ -80,4 +80,26 @@ describe("DefaultToolExecutor", () => {
     expect(result.success).toBe(false);
     expect(result.error?.message).toContain("Tool not found: missing_tool");
   });
+
+  it("returns structured feedback error when stringified arguments fail JSON parsing", async () => {
+    const registry = new DefaultToolRegistry();
+    registry.register(new EchoTool());
+
+    const executor = new DefaultToolExecutor(registry);
+    const controller = new AbortController();
+
+    const result = await executor.execute(
+      {
+        id: "call-invalid-json",
+        name: "echo",
+        arguments: "{ invalid_json: unquoted_value "
+      },
+      { cwd: "/test", signal: controller.signal }
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe("INVALID_JSON_ARGUMENTS");
+    expect(result.error?.message).toContain("Tool arguments failed JSON parsing");
+    expect(result.error?.message).toContain("Please reissue the tool call with valid JSON.");
+  });
 });
