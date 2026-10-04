@@ -19,7 +19,7 @@ const formatSummary = (raw?: string): string | null => {
   return firstLine;
 };
 
-export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({
+const ThinkingBlockComponent: React.FC<ThinkingBlockProps> = ({
   durationMs,
   tokenCount,
   summary
@@ -50,3 +50,6 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({
     </Box>
   );
 };
+
+export const ThinkingBlock = React.memo(ThinkingBlockComponent);
+

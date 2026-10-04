@@ -16,7 +16,7 @@ export interface TurnViewProps {
 
 const SEPARATOR = "─".repeat(48);
 
-export const TurnView: React.FC<TurnViewProps> = ({
+const TurnViewComponent: React.FC<TurnViewProps> = ({
   prompt,
   response,
   status,
@@ -70,3 +70,6 @@ export const TurnView: React.FC<TurnViewProps> = ({
     </Box>
   );
 };
+
+export const TurnView = React.memo(TurnViewComponent);
+

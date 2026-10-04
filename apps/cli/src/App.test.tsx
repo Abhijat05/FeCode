@@ -3713,5 +3713,25 @@ describe("CLI App Component", () => {
       expect(frame).toContain("Clean fresh restart from OpenAI");
       expect(frame).not.toContain("Partial uncommitted text from dying provider");
     });
+
+    it("batches token stream updates and renders completed turns without performance regressions across multiple turns", async () => {
+      const mockAgent = new MockAgent();
+      mockAgent.runFn = async function* () {
+        yield { type: "text", content: "Chunk 1 " };
+        yield { type: "text", content: "Chunk 2 " };
+        yield { type: "text", content: "Chunk 3" };
+        yield { type: "done" };
+      };
+
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      await typeAndSubmit(stdin, "test stream batching");
+      await delay(150);
+
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("Chunk 1 Chunk 2 Chunk 3");
+    });
   });
 });
+

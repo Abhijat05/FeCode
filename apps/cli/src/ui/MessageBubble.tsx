@@ -58,7 +58,7 @@ function parseBlocks(content: string): Block[] {
   return blocks;
 }
 
-export const MessageBubble: React.FC<MessageBubbleProps> = ({
+const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
   role,
   content,
   isStreaming = false,
@@ -81,7 +81,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   }
 
   // Agent role
-  const blocks = content ? parseBlocks(content) : [];
+  const blocks = React.useMemo(() => (content ? parseBlocks(content) : []), [content]);
 
   return (
     <Box flexDirection="column" marginY={0}>
@@ -151,3 +151,6 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
     </Box>
   );
 };
+
+export const MessageBubble = React.memo(MessageBubbleComponent);
+

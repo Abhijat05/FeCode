@@ -2604,6 +2604,8 @@ export const App: React.FC<AppProps> = ({
     };
     setTurns((prev) => [...prev, newTurn]);
 
+    let flushTextUpdates = (_force = false) => {};
+
     try {
       if (!agent) {
         throw new Error(configError || "Agent runtime is not initialized.");
@@ -2617,6 +2619,105 @@ export const App: React.FC<AppProps> = ({
 
       let accumulatedRawText = "";
       const toolCallMap = new Map<string, string>();
+      let pendingTextChunk = "";
+      let lastRenderMs = 0;
+      const THROTTLE_MS = isTestEnv ? 0 : 50;
+
+      flushTextUpdates = () => {
+        if (!pendingTextChunk) return;
+        const chunkToFlush = pendingTextChunk;
+        pendingTextChunk = "";
+        lastRenderMs = Date.now();
+        const elapsed = Date.now() - turnStartMs;
+
+        const thinkingMatch = accumulatedRawText.match(
+          /<(?:think|thinking)>([\s\S]*?)<\/(?:think|thinking)>/
+        );
+        const inProgressThinking =
+          !thinkingMatch &&
+          (accumulatedRawText.includes("<think>") ||
+            accumulatedRawText.includes("<thinking>") ||
+            accumulatedRawText.startsWith("<think"));
+
+        if (thinkingMatch) {
+          setIsThinking(false);
+          const thinkingContent = thinkingMatch[1].trim();
+          const firstLine = thinkingContent.split("\n")[0]?.trim() || "";
+          const cleanContent = accumulatedRawText
+            .replace(/<(?:think|thinking)>[\s\S]*?<\/(?:think|thinking)>/g, "")
+            .replace(/<\/?(?:think|thinking)>/g, "")
+            .replace(/^\n+/, "");
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    status:
+                      t.status === "error" ||
+                      t.status === "done" ||
+                      t.status === "cancelled"
+                        ? t.status
+                        : "streaming",
+                    error: t.error,
+                    thinkingMs:
+                      t.thinkingMs !== undefined
+                        ? t.thinkingMs
+                        : elapsed > 0
+                          ? elapsed
+                          : 1000,
+                    thinkingSummary: t.thinkingSummary || firstLine,
+                    response: initialResponse
+                      ? initialResponse + cleanContent
+                      : cleanContent
+                  }
+                : t
+            )
+          );
+        } else if (inProgressThinking) {
+          setIsThinking(true);
+          setTurns((prev) => {
+            const turn = prev.find((t) => t.id === turnId);
+            if (turn && turn.status !== "thinking") {
+              return prev.map((t) =>
+                t.id === turnId ? { ...t, status: "thinking" } : t
+              );
+            }
+            return prev;
+          });
+        } else {
+          setIsThinking(false);
+          setTurns((prev) => {
+            const turn = prev.find((t) => t.id === turnId);
+            const isFirstToken =
+              !turn?.response || turn.response === initialResponse;
+            const sanitizedChunk = chunkToFlush.replace(
+              /<\/?(?:think|thinking)>/g,
+              ""
+            );
+            return prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    status:
+                      t.status === "error" ||
+                      t.status === "done" ||
+                      t.status === "cancelled"
+                        ? t.status
+                        : "streaming",
+                    error: t.error,
+                    thinkingMs:
+                      t.thinkingMs !== undefined
+                        ? t.thinkingMs
+                        : isFirstToken && elapsed > 500
+                          ? elapsed
+                          : undefined,
+                    response: t.response + sanitizedChunk
+                  }
+                : t
+            );
+          });
+        }
+      };
 
       for await (const event of stream) {
         setUiState((prev) =>
@@ -2630,77 +2731,36 @@ export const App: React.FC<AppProps> = ({
           )
         );
 
+        if (event.type !== "text") {
+          if (
+            event.type === "provider_fallback_attempt" &&
+            event.partialTextInterrupted
+          ) {
+            pendingTextChunk = "";
+            accumulatedRawText = "";
+          } else {
+            flushTextUpdates(true);
+          }
+        }
+
         if (event.type === "text") {
           const chunk = event.content;
           accumulatedRawText += chunk;
-          const elapsed = Date.now() - turnStartMs;
+          pendingTextChunk += chunk;
 
-          const thinkingMatch = accumulatedRawText.match(/<(?:think|thinking)>([\s\S]*?)<\/(?:think|thinking)>/);
-          const inProgressThinking =
-            !thinkingMatch &&
-            (accumulatedRawText.includes("<think>") ||
-              accumulatedRawText.includes("<thinking>") ||
-              accumulatedRawText.startsWith("<think"));
+          const hasThinkingTagChange =
+            chunk.includes("<think") ||
+            chunk.includes("</think") ||
+            chunk.includes("<thinking") ||
+            chunk.includes("</thinking>");
 
-          if (thinkingMatch) {
-            setIsThinking(false);
-            const thinkingContent = thinkingMatch[1].trim();
-            const firstLine = thinkingContent.split("\n")[0]?.trim() || "";
-            const cleanContent = accumulatedRawText
-              .replace(/<(?:think|thinking)>[\s\S]*?<\/(?:think|thinking)>/g, "")
-              .replace(/<\/?(?:think|thinking)>/g, "")
-              .replace(/^\n+/, "");
-            setTurns((prev) =>
-              prev.map((t) =>
-                t.id === turnId
-                  ? {
-                      ...t,
-                      status: "streaming",
-                      thinkingMs:
-                        t.thinkingMs !== undefined
-                          ? t.thinkingMs
-                          : elapsed > 0
-                            ? elapsed
-                            : 1000,
-                      thinkingSummary: t.thinkingSummary || firstLine,
-                      response: initialResponse ? initialResponse + cleanContent : cleanContent
-                    }
-                  : t
-              )
-            );
-          } else if (inProgressThinking) {
-            setIsThinking(true);
-            setTurns((prev) => {
-              const turn = prev.find((t) => t.id === turnId);
-              if (turn && turn.status !== "thinking") {
-                return prev.map((t) =>
-                  t.id === turnId ? { ...t, status: "thinking" } : t
-                );
-              }
-              return prev;
-            });
-          } else {
-            setIsThinking(false);
-            setTurns((prev) => {
-              const turn = prev.find((t) => t.id === turnId);
-              const isFirstToken = !turn?.response || turn.response === initialResponse;
-              const sanitizedChunk = chunk.replace(/<\/?(?:think|thinking)>/g, "");
-              return prev.map((t) =>
-                t.id === turnId
-                  ? {
-                      ...t,
-                      status: "streaming",
-                      thinkingMs:
-                        t.thinkingMs !== undefined
-                          ? t.thinkingMs
-                          : isFirstToken && elapsed > 500
-                            ? elapsed
-                            : undefined,
-                      response: t.response + sanitizedChunk
-                    }
-                  : t
-              );
-            });
+          const now = Date.now();
+          if (
+            THROTTLE_MS === 0 ||
+            hasThinkingTagChange ||
+            now - lastRenderMs >= THROTTLE_MS
+          ) {
+            flushTextUpdates(true);
           }
         } else if (event.type === "skills_activated") {
           if (event.skills && event.skills.length > 0) {
@@ -3151,6 +3211,7 @@ export const App: React.FC<AppProps> = ({
       );
       setLastTaskStatus("blocked");
     } finally {
+      flushTextUpdates(true);
       setIsGenerating(false);
       setIsThinking(false);
       setExecutionStartTime(undefined);
