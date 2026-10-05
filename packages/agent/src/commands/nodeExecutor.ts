@@ -8,13 +8,39 @@ import type {
   CommandResult
 } from "./types.js";
 
-const SENSITIVE_ENV_KEYS = new Set([
+const KNOWN_SENSITIVE_KEYS = new Set([
+  "DATABASE_URL",
+  "DB_URL",
+  "MONGO_URI",
+  "MONGODB_URI",
+  "REDIS_URL",
+  "POSTGRES_URL",
+  "MYSQL_URL",
+  "SSH_AUTH_SOCK",
+  "SSH_AGENT_PID",
+  "AWS_SESSION_TOKEN",
+  "AWS_ACCESS_KEY_ID",
+  "AWS_SECRET_ACCESS_KEY",
   "OPENAI_API_KEY",
   "GEMINI_API_KEY",
   "ANTHROPIC_API_KEY",
-  "AWS_SECRET_ACCESS_KEY",
   "SECRET_KEY"
 ]);
+
+const SENSITIVE_KEY_PATTERN =
+  /(?:_KEY|^KEY|_SECRET|^SECRET|_TOKEN|^TOKEN|_PASSWORD|^PASSWORD|_PASSWD|^PASSWD|AUTH|CREDENTIAL|PRIVATE)/i;
+
+export function isSensitiveEnvKey(key: string): boolean {
+  const upper = key.toUpperCase();
+  if (KNOWN_SENSITIVE_KEYS.has(upper)) return true;
+  if (SENSITIVE_KEY_PATTERN.test(upper)) {
+    if (upper.includes("AUTHOR") && !upper.includes("AUTHORIZATION")) {
+      return false;
+    }
+    return true;
+  }
+  return false;
+}
 
 export function prepareChildEnvironment(
   overrides: Record<string, string> = {}
@@ -22,13 +48,13 @@ export function prepareChildEnvironment(
   const env: Record<string, string> = {};
 
   for (const [key, value] of Object.entries(process.env)) {
-    if (value !== undefined && !SENSITIVE_ENV_KEYS.has(key.toUpperCase())) {
+    if (value !== undefined && !isSensitiveEnvKey(key)) {
       env[key] = value;
     }
   }
 
   for (const [key, value] of Object.entries(overrides)) {
-    if (!SENSITIVE_ENV_KEYS.has(key.toUpperCase())) {
+    if (!isSensitiveEnvKey(key)) {
       env[key] = value;
     }
   }

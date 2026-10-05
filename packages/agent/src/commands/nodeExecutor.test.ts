@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "fs/promises";
 import * as path from "path";
 import * as os from "os";
-import { NodeCommandExecutor } from "./nodeExecutor.js";
+import { NodeCommandExecutor, prepareChildEnvironment } from "./nodeExecutor.js";
 
 describe("NodeCommandExecutor", () => {
   let tmpDir: string;
@@ -157,5 +157,37 @@ describe("NodeCommandExecutor", () => {
     expect(res.timedOut).toBe(true);
     expect(res.exitCode).toBeNull();
     expect(res.error?.toLowerCase()).toContain("timed out");
+  });
+
+  it("filters sensitive tokens, passwords, database URLs, and SSH keys from child environment", () => {
+    try {
+      process.env.GITHUB_TOKEN = "ghp_mock_token_123";
+      process.env.DATABASE_URL = "postgres://user:pass@localhost:5432/prod";
+      process.env.POSTGRES_PASSWORD = "secret_db_password";
+      process.env.SSH_AUTH_SOCK = "/tmp/ssh-agent.sock";
+      process.env.AWS_SESSION_TOKEN = "aws_session_123";
+      process.env.NPM_TOKEN = "npm_token_123";
+      process.env.CUSTOM_CLIENT_SECRET = "secret_abc";
+
+      const childEnv = prepareChildEnvironment();
+
+      expect(childEnv.GITHUB_TOKEN).toBeUndefined();
+      expect(childEnv.DATABASE_URL).toBeUndefined();
+      expect(childEnv.POSTGRES_PASSWORD).toBeUndefined();
+      expect(childEnv.SSH_AUTH_SOCK).toBeUndefined();
+      expect(childEnv.AWS_SESSION_TOKEN).toBeUndefined();
+      expect(childEnv.NPM_TOKEN).toBeUndefined();
+      expect(childEnv.CUSTOM_CLIENT_SECRET).toBeUndefined();
+      // Safe environment variables must still be preserved
+      expect(childEnv.PATH).toBeDefined();
+    } finally {
+      delete process.env.GITHUB_TOKEN;
+      delete process.env.DATABASE_URL;
+      delete process.env.POSTGRES_PASSWORD;
+      delete process.env.SSH_AUTH_SOCK;
+      delete process.env.AWS_SESSION_TOKEN;
+      delete process.env.NPM_TOKEN;
+      delete process.env.CUSTOM_CLIENT_SECRET;
+    }
   });
 });
