@@ -14,6 +14,10 @@ export function hasUnquotedForbiddenChars(commandStr: string): boolean {
   for (let i = 0; i < commandStr.length; i++) {
     const char = commandStr[i];
 
+    if (char === "\r" || char === "\n") {
+      return true;
+    }
+
     if (isEscaped) {
       isEscaped = false;
       continue;

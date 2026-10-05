@@ -86,4 +86,18 @@ describe("DefaultCommandPolicy", () => {
     expect(resEmpty.type).toBe("denied");
     expect(resEmpty.code).toBe("INVALID_COMMAND");
   });
+
+  it("rejects newline command injection (\\n, \\r, \\r\\n)", () => {
+    const resLf = policy.validate("npm test\ncalc.exe");
+    expect(resLf.type).toBe("denied");
+    expect(resLf.code).toBe("UNSUPPORTED_SHELL_SYNTAX");
+
+    const resCrlf = policy.validate("npm test\r\necho pwned");
+    expect(resCrlf.type).toBe("denied");
+    expect(resCrlf.code).toBe("UNSUPPORTED_SHELL_SYNTAX");
+
+    const resCr = policy.validate("npm test\rcalc.exe");
+    expect(resCr.type).toBe("denied");
+    expect(resCr.code).toBe("UNSUPPORTED_SHELL_SYNTAX");
+  });
 });
