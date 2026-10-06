@@ -1,5 +1,6 @@
 import type { ModelMessage } from "@fecode/models";
 import { estimateTokens } from "../optimization/estimator.js";
+import { sanitizeToolResultForContext } from "./toolResultSanitizer.js";
 
 export interface PrepareModelMessagesOptions {
   maxToolResultChars?: number;
@@ -43,17 +44,26 @@ export function prepareModelMessages(
 
     // Truncate oversized tool results
     if (m.role === "tool" && m.content && m.content.length > maxToolChars) {
-      const originalLen = m.content.length;
-      const headLen = Math.floor(maxToolChars * 0.65);
-      const tailLen = Math.floor(maxToolChars * 0.25);
-      const head = m.content.slice(0, headLen);
-      const tail = m.content.slice(originalLen - tailLen);
-      const omitted = originalLen - (headLen + tailLen);
-      const truncatedNotice = `\n... [output truncated for context budget: ${omitted} characters omitted] ...\n`;
-      return {
-        ...m,
-        content: head + truncatedNotice + tail
-      };
+      try {
+        const parsed = JSON.parse(m.content);
+        return {
+          ...m,
+          content: sanitizeToolResultForContext(parsed, { maxChars: maxToolChars })
+        };
+      } catch {
+        // Plain text fallback
+        const originalLen = m.content.length;
+        const headLen = Math.floor(maxToolChars * 0.65);
+        const tailLen = Math.floor(maxToolChars * 0.25);
+        const head = m.content.slice(0, headLen);
+        const tail = m.content.slice(originalLen - tailLen);
+        const omitted = originalLen - (headLen + tailLen);
+        const truncatedNotice = `\n... [output truncated for context budget: ${omitted} characters omitted] ...\n`;
+        return {
+          ...m,
+          content: head + truncatedNotice + tail
+        };
+      }
     }
 
     return { ...m };

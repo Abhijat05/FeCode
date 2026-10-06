@@ -45,6 +45,42 @@ describe("prepareModelMessages", () => {
     expect(toolMsg!.content!.length).toBeLessThan(hugeToolOutput.length);
   });
 
+  it("truncates large JSON tool results while strictly maintaining valid JSON syntax", () => {
+    const jsonToolOutput = JSON.stringify({
+      success: true,
+      output: {
+        path: "huge_file.ts",
+        content: "const a = 1;\n" + "console.log('line');\n".repeat(2000) + "const z = 99;\n"
+      }
+    });
+
+    const messages: ModelMessage[] = [
+      { role: "user", content: "Read huge file" },
+      {
+        role: "assistant",
+        toolCalls: [{ id: "call_read", name: "read_file", arguments: { path: "huge_file.ts" } }]
+      },
+      {
+        role: "tool",
+        toolCallId: "call_read",
+        content: jsonToolOutput
+      }
+    ];
+
+    const prepared = prepareModelMessages(messages, 16000, { maxToolResultChars: 1500 });
+    const toolMsg = prepared.find((m) => m.role === "tool");
+    expect(toolMsg?.content).toBeDefined();
+
+    // Must be valid JSON (never throw SyntaxError)
+    expect(() => JSON.parse(toolMsg!.content!)).not.toThrow();
+
+    const parsed = JSON.parse(toolMsg!.content!);
+    expect(parsed.success).toBe(true);
+    expect(parsed.output?.truncated).toBe(true);
+    expect(toolMsg!.content!.length).toBeLessThanOrEqual(1500);
+  });
+
+
   it("compacts older turns at clean user boundaries when total tokens exceed budget", () => {
     // 3 distinct turns
     const messages: ModelMessage[] = [

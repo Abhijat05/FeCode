@@ -294,4 +294,60 @@ describe("AgentRuntime Tool Loop", () => {
       }
     }
   });
+
+  it("truncates oversized tool results (>16k chars) while strictly preserving valid JSON", async () => {
+    const provider = new MockToolModelProvider();
+    const registry = new DefaultToolRegistry();
+
+    // Create a mock tool returning 30,000 characters
+    class HugeTool {
+      public readonly name = "huge_tool";
+      public readonly description = "returns huge data";
+      public readonly inputSchema = { type: "object" };
+      async execute(): Promise<ToolResult<{ content: string }>> {
+        return {
+          success: true,
+          output: {
+            content: "START_CONTENT\n" + "y".repeat(30000) + "\nEND_CONTENT"
+          }
+        };
+      }
+    }
+    registry.register(new HugeTool());
+
+    let turn = 0;
+    provider.generateFn = async function* () {
+      turn++;
+      if (turn === 1) {
+        yield {
+          type: "tool_call",
+          call: { id: "call-huge", name: "huge_tool", arguments: {} }
+        };
+        yield { type: "completed" };
+      } else {
+        yield { type: "text_delta", content: "Processed huge tool output." };
+        yield { type: "completed" };
+      }
+    };
+
+    const runtime = new AgentRuntime(provider, { registry });
+    for await (const event of runtime.run({ message: "Run huge tool", cwd: "/test" })) {
+      void event;
+    }
+
+    const toolMsg = runtime.getState().messages.find((m) => m.role === "tool");
+    expect(toolMsg).toBeDefined();
+    expect(toolMsg?.content).toBeDefined();
+
+    // CRITICAL: Content must be valid JSON (JSON.parse must NOT throw SyntaxError)
+    expect(() => JSON.parse(toolMsg!.content!)).not.toThrow();
+
+    const parsed = JSON.parse(toolMsg!.content!);
+    expect(parsed.success).toBe(true);
+    expect(parsed.output?.truncated).toBe(true);
+    expect(parsed.output?.content).toContain("START_CONTENT");
+    expect(parsed.output?.content).toContain("END_CONTENT");
+    expect(toolMsg!.content!.length).toBeLessThanOrEqual(16000);
+  });
 });
+

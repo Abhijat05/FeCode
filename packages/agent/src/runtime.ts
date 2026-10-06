@@ -60,6 +60,7 @@ export interface AgentState {
 import type { RepositoryExplorer, ExplorationResult } from "./exploration/types.js";
 import type { CodeContextSelector, CodeContextResult } from "./context/types.js";
 import { prepareModelMessages } from "./context/messageOptimizer.js";
+import { sanitizeToolResultForContext } from "./context/toolResultSanitizer.js";
 import { estimateTokens } from "./optimization/estimator.js";
 import type { AgentExecutionStrategy } from "./strategy/types.js";
 import { DefaultAgentExecutionStrategy } from "./strategy/executionStrategy.js";
@@ -2127,14 +2128,9 @@ export class AgentRuntime implements Agent {
       }
     }
 
-    let toolResultContent = JSON.stringify(result);
-    const MAX_STORED_TOOL_CHARS = 16000;
-    if (toolResultContent.length > MAX_STORED_TOOL_CHARS) {
-      const head = toolResultContent.slice(0, 10000);
-      const tail = toolResultContent.slice(toolResultContent.length - 4000);
-      const omitted = toolResultContent.length - 14000;
-      toolResultContent = `${head}\n... [stored tool output truncated: ${omitted} characters omitted] ...\n${tail}`;
-    }
+    const toolResultContent = sanitizeToolResultForContext(result, {
+      maxChars: 16000
+    });
 
     this.state.messages.push({
       role: "tool",
