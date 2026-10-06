@@ -22,6 +22,7 @@ export interface ReadFileOutput {
 export interface ReadFileToolOptions {
   maxBytes?: number;
   maxDefaultLines?: number;
+  statFn?: (path: string) => Promise<fsSync.Stats>;
 }
 
 const BINARY_EXTENSIONS = new Set([
@@ -104,10 +105,12 @@ export class ReadFileTool
 
   private readonly maxBytes: number;
   private readonly maxDefaultLines: number;
+  private readonly statFn: (path: string) => Promise<fsSync.Stats>;
 
   constructor(options: ReadFileToolOptions = {}) {
     this.maxBytes = options.maxBytes ?? 100 * 1024; // 100 KB default
     this.maxDefaultLines = options.maxDefaultLines ?? 400;
+    this.statFn = options.statFn ?? fs.stat;
   }
 
   async execute(
@@ -146,12 +149,21 @@ export class ReadFileTool
     }
 
     try {
-      const stats = await fs.stat(targetPath);
-      if (stats.isDirectory()) {
+      const stats = await this.statFn(targetPath);
+      if (!stats.isFile()) {
+        const typeStr = stats.isDirectory()
+          ? "directory"
+          : stats.isFIFO?.()
+            ? "FIFO pipe"
+            : stats.isSocket?.()
+              ? "socket"
+              : stats.isCharacterDevice?.() || stats.isBlockDevice?.()
+                ? "device"
+                : "special file";
         return {
           success: false,
           error: {
-            message: `Path is a directory, not a file: ${input.path}`,
+            message: `Path is a ${typeStr}, not a regular file: ${input.path}`,
             code: "NOT_A_FILE"
           }
         };

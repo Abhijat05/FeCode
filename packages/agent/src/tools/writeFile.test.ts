@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "fs/promises";
+import type { Stats } from "fs";
 import * as path from "path";
 import * as os from "os";
 import { WriteFileTool } from "./writeFile.js";
@@ -105,4 +106,27 @@ describe("WriteFileTool", () => {
     const diskContent = await fs.readFile(path.join(tmpDir, fileRel), "utf-8");
     expect(diskContent).toBe(specialContent);
   });
+
+  it("rejects non-regular files like FIFOs, sockets, or devices with NOT_A_FILE before writing", async () => {
+    const mockStat = {
+      isDirectory: () => false,
+      isFile: () => false,
+      isFIFO: () => true,
+      isSocket: () => false,
+      isCharacterDevice: () => false,
+      isBlockDevice: () => false,
+      size: 0
+    } as unknown as Stats;
+
+    const fifoTool = new WriteFileTool({ statFn: async () => mockStat });
+    const result = await fifoTool.execute(
+      { path: "pipe", content: "data" },
+      context
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe("NOT_A_FILE");
+    expect(result.error?.message).toMatch(/FIFO pipe/i);
+  });
 });
+

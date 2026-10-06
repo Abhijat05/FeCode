@@ -1,4 +1,5 @@
 import * as fs from "fs/promises";
+import * as fsSync from "fs";
 import type { Tool, ToolContext, ToolResult } from "@fecode/models";
 import { resolveSafePath } from "./pathUtils.js";
 import { writeAtomic } from "../editing/atomicWriter.js";
@@ -18,6 +19,7 @@ export interface WriteFileOutput {
 
 export interface WriteFileToolOptions {
   maxBytes?: number;
+  statFn?: (path: string) => Promise<fsSync.Stats>;
 }
 
 export class WriteFileTool
@@ -43,9 +45,11 @@ export class WriteFileTool
   };
 
   private readonly maxBytes: number;
+  private readonly statFn: (path: string) => Promise<fsSync.Stats>;
 
   constructor(options: WriteFileToolOptions = {}) {
     this.maxBytes = options.maxBytes ?? 10 * 1024 * 1024; // 10 MB default
+    this.statFn = options.statFn ?? fs.stat;
   }
 
   async execute(
@@ -96,12 +100,21 @@ export class WriteFileTool
     try {
       let fileExists = false;
       try {
-        const stats = await fs.stat(targetPath);
-        if (stats.isDirectory()) {
+        const stats = await this.statFn(targetPath);
+        if (!stats.isFile()) {
+          const typeStr = stats.isDirectory()
+            ? "directory"
+            : stats.isFIFO?.()
+              ? "FIFO pipe"
+              : stats.isSocket?.()
+                ? "socket"
+                : stats.isCharacterDevice?.() || stats.isBlockDevice?.()
+                  ? "device"
+                  : "special file";
           return {
             success: false,
             error: {
-              message: `Cannot write to path because it is a directory: ${input.path}`,
+              message: `Cannot write to path because it is a ${typeStr}, not a regular file: ${input.path}`,
               code: "NOT_A_FILE"
             }
           };

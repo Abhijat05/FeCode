@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "fs/promises";
+import type { Stats } from "fs";
 import * as path from "path";
 import * as os from "os";
 import { EditFileTool } from "./editFile.js";
@@ -190,4 +191,27 @@ describe("EditFileTool", () => {
     // Verify content on disk retains LF line endings
     expect(updatedOnDisk).toBe("const a = 1;\nconst b = 20;\nconst c = 30;\n");
   });
+
+  it("rejects non-regular files like FIFOs, sockets, or devices with NOT_A_FILE before reading", async () => {
+    const mockStat = {
+      isDirectory: () => false,
+      isFile: () => false,
+      isFIFO: () => true,
+      isSocket: () => false,
+      isCharacterDevice: () => false,
+      isBlockDevice: () => false,
+      size: 0
+    } as unknown as Stats;
+
+    const fifoTool = new EditFileTool({ statFn: async () => mockStat });
+    const result = await fifoTool.execute(
+      { path: "hello.txt", oldText: "foo", newText: "bar" },
+      context
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe("NOT_A_FILE");
+    expect(result.error?.message).toMatch(/FIFO pipe/i);
+  });
 });
+

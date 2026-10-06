@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "fs/promises";
+import type { Stats } from "fs";
 import * as path from "path";
 import * as os from "os";
 import { ReadFileTool } from "./readFile.js";
@@ -159,5 +160,24 @@ describe("ReadFileTool", () => {
     expect(result.output?.content).toBe(
       Array.from({ length: 6 }, (_, i) => `Line ${50 + i}: ${"x".repeat(15)}`).join("\n")
     );
+  });
+
+  it("rejects non-regular files like FIFOs, sockets, or devices with NOT_A_FILE before opening", async () => {
+    const mockStat = {
+      isDirectory: () => false,
+      isFile: () => false,
+      isFIFO: () => true,
+      isSocket: () => false,
+      isCharacterDevice: () => false,
+      isBlockDevice: () => false,
+      size: 0
+    } as unknown as Stats;
+
+    const fifoTool = new ReadFileTool({ statFn: async () => mockStat });
+    const result = await fifoTool.execute({ path: "hello.txt" }, context);
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe("NOT_A_FILE");
+    expect(result.error?.message).toMatch(/FIFO pipe/i);
   });
 });
