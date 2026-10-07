@@ -295,4 +295,39 @@ describe("SessionHistoryFormatter — Phase 5C", () => {
     const yesterday = new Date(now.getTime() - 25 * 3600 * 1000);
     expect(formatTimeRelative(yesterday.toISOString())).toBe("yesterday");
   });
+
+  it("formats sessions list with pagination and page indicator footer when exceeding limit", () => {
+    const fakeSessions = Array.from({ length: 25 }, (_, i) => ({
+      sessionId: `session-${i + 1}`,
+      workingDirectory: `/work/project-${i + 1}`,
+      provider: "openai",
+      model: "gpt-4o",
+      taskCount: i + 1,
+      status: "idle" as const,
+      startedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }));
+
+    // Page 1 (default limit 10)
+    const page1 = SessionHistoryFormatter.formatSessionsList(fakeSessions, { limit: 10, page: 1 });
+    expect(page1).toContain("Saved Sessions");
+    expect(page1).toContain("1. session-1");
+    expect(page1).toContain("10. session-10");
+    expect(page1).not.toContain("11. session-11");
+    expect(page1).toContain("Showing 1–10 of 25 sessions (Page 1 of 3)");
+
+    // Page 2
+    const page2 = SessionHistoryFormatter.formatSessionsList(fakeSessions, { limit: 10, page: 2 });
+    expect(page2).toContain("11. session-11");
+    expect(page2).toContain("20. session-20");
+    expect(page2).not.toContain("\n1. session-1\n");
+    expect(page2).toContain("Showing 11–20 of 25 sessions (Page 2 of 3)");
+
+    // Page 3
+    const page3 = SessionHistoryFormatter.formatSessionsList(fakeSessions, { limit: 10, page: 3 });
+    expect(page3).toContain("21. session-21");
+    expect(page3).toContain("25. session-25");
+    expect(page3).toContain("Showing 21–25 of 25 sessions (Page 3 of 3)");
+  });
 });

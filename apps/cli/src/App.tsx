@@ -393,7 +393,7 @@ export const App: React.FC<AppProps> = ({
       startIndex = i;
     }
     const sliced = turns.slice(startIndex);
-    if (!isTestEnv && isGenerating && sliced.length > 0) {
+    if (!isTestEnv && sliced.length > 0) {
       const lastIdx = sliced.length - 1;
       const last = sliced[lastIdx];
       const rLines = (last.response || "").split("\n");
@@ -402,7 +402,9 @@ export const App: React.FC<AppProps> = ({
       if (rLines.length > maxRespLines) {
         sliced[lastIdx] = {
           ...last,
-          response: "… [earlier output hidden while generating]\n" + rLines.slice(-maxRespLines).join("\n")
+          response: isGenerating
+            ? "… [earlier output hidden while generating]\n" + rLines.slice(-maxRespLines).join("\n")
+            : rLines.slice(0, maxRespLines).join("\n") + `\n… [${rLines.length - maxRespLines} lines omitted; use PageUp/Down to scroll]`
         };
       }
     }
@@ -2213,7 +2215,12 @@ export const App: React.FC<AppProps> = ({
       if (cmd === "/sessions") {
         try {
           const list = await store.list();
-          const formatted = SessionHistoryFormatter.formatSessionsList(list);
+          const pageNum = arg ? parseInt(arg, 10) : 1;
+          const validPage = Number.isFinite(pageNum) && pageNum > 0 ? pageNum : 1;
+          const formatted = SessionHistoryFormatter.formatSessionsList(list, {
+            limit: 10,
+            page: validPage
+          });
           setTurns((prev) => [
             ...prev,
             {

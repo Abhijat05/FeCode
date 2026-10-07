@@ -1231,8 +1231,25 @@ describe("CLI App Component", () => {
     await typeAndSubmit(stdin, "/sessions");
     await delay(100);
     expect(lastFrame()).toContain("Saved Sessions");
-    expect(lastFrame()).toContain("session-demo-1");
-    expect(lastFrame()).toContain("gemini-2.5-flash");
+    // Test /sessions page 2 when sessions exceed page limit
+    for (let i = 2; i <= 15; i++) {
+      savedSessions.set(`session-demo-${i}`, {
+        version: 1,
+        sessionId: `session-demo-${i}`,
+        workingDirectory: process.cwd(),
+        provider: "gemini",
+        model: "gemini-2.5-flash",
+        taskCount: i,
+        status: "idle",
+        completedTaskSummaries: [],
+        messages: [],
+        startedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+    }
+    await typeAndSubmit(stdin, "/sessions 2");
+    await delay(100);
+    expect(lastFrame()).toContain("Showing 11–16 of 16 sessions (Page 2 of 2)");
 
     // Test /resume with missing directory
     await typeAndSubmit(stdin, "/resume session-missing-dir");

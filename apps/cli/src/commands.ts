@@ -20,7 +20,7 @@ export const COMMANDS: CommandDef[] = [
   { command: "/checkpoints",    description: "List available rollback checkpoints" },
   { command: "/checkpoint",     description: "Create a new manual checkpoint" },
   { command: "/recover",        description: "Inspect or initiate checkpoint recovery" },
-  { command: "/sessions",       description: "List saved CLI sessions" },
+  { command: "/sessions",       description: "List saved CLI sessions (/sessions [page])" },
   { command: "/delete-session", description: "Delete a specific saved session (/delete-session <id>)" },
   { command: "/clear",          description: "Clear current terminal conversation history" },
   { command: "/exit",           description: "Persist session and exit FeCode" }

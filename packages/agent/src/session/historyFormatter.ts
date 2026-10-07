@@ -375,17 +375,25 @@ export class SessionHistoryFormatter {
   }
 
   public static formatSessionsList(
-    sessions: SessionSummaryWithLatestTask[]
+    sessions: SessionSummaryWithLatestTask[],
+    options: { limit?: number; page?: number } = {}
   ): string {
     if (!sessions || sessions.length === 0) {
       return "Saved Sessions\n\nNo saved sessions found.\n";
     }
 
+    const limit = Math.max(1, options.limit ?? 10);
+    const totalPages = Math.ceil(sessions.length / limit);
+    const page = Math.min(totalPages, Math.max(1, options.page ?? 1));
+    const startIndex = (page - 1) * limit;
+    const pageSessions = sessions.slice(startIndex, startIndex + limit);
+
     let text = "Saved Sessions\n\n";
 
-    for (let i = 0; i < sessions.length; i++) {
-      const s = sessions[i];
-      text += `${i + 1}. ${s.sessionId}\n`;
+    for (let i = 0; i < pageSessions.length; i++) {
+      const s = pageSessions[i];
+      const globalIndex = startIndex + i + 1;
+      text += `${globalIndex}. ${s.sessionId}\n`;
       text += `   ${s.workingDirectory}\n`;
       text += `   ${s.model}\n`;
       text += `   ${s.taskCount} task${s.taskCount === 1 ? "" : "s"}\n`;
@@ -403,6 +411,15 @@ export class SessionHistoryFormatter {
       }
 
       text += "\n";
+    }
+
+    if (sessions.length > limit) {
+      const startNum = startIndex + 1;
+      const endNum = Math.min(sessions.length, startIndex + limit);
+      text += `Showing ${startNum}–${endNum} of ${sessions.length} sessions (Page ${page} of ${totalPages}).\n`;
+      if (totalPages > 1) {
+        text += `Use /sessions <page> (e.g. /sessions ${page < totalPages ? page + 1 : 1}) to navigate pages.\n`;
+      }
     }
 
     return text;
