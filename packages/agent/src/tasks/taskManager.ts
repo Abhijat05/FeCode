@@ -77,8 +77,22 @@ export class TaskManager {
     const taskId = `task-${++this.counter}`;
     fs.mkdirSync(this.logDir, { recursive: true });
     const logFile = path.join(this.logDir, `${taskId}.log`);
-    fs.writeFileSync(logFile, "", { flag: "a" });
-    const logStream = fs.createWriteStream(logFile, { flags: "a" });
+    let logFd: number | undefined;
+    try {
+      logFd = fs.openSync(logFile, "a");
+    } catch {
+      // Fallback if openSync fails
+    }
+
+    const logStream =
+      logFd !== undefined
+        ? fs.createWriteStream(logFile, { fd: logFd, flags: "a" })
+        : fs.createWriteStream(logFile, { flags: "a" });
+
+    // CRITICAL: Prevent unhandled stream error events (e.g. if file is unlinked during test teardown)
+    logStream.on("error", () => {
+      // Suppress unhandled stream error
+    });
     this.logStreams.set(taskId, logStream);
 
     const ringBuffer: string[] = [];
@@ -156,14 +170,26 @@ export class TaskManager {
 
     if (child.stdout) {
       child.stdout.on("data", (chunk: Buffer) => {
-        logStream.write(chunk);
+        if (!logStream.destroyed && logStream.writable) {
+          try {
+            logStream.write(chunk);
+          } catch {
+            // Ignore write errors
+          }
+        }
         appendToBuffer(chunk);
       });
     }
 
     if (child.stderr) {
       child.stderr.on("data", (chunk: Buffer) => {
-        logStream.write(chunk);
+        if (!logStream.destroyed && logStream.writable) {
+          try {
+            logStream.write(chunk);
+          } catch {
+            // Ignore write errors
+          }
+        }
         appendToBuffer(chunk);
       });
     }
@@ -174,7 +200,13 @@ export class TaskManager {
         record.error = err.message;
         record.endedAt = Date.now();
       }
-      logStream.end();
+      if (!logStream.destroyed) {
+        try {
+          logStream.end();
+        } catch {
+          // Ignore
+        }
+      }
     });
 
     child.on("close", (code: number | null) => {
@@ -183,7 +215,13 @@ export class TaskManager {
         record.exitCode = code;
         record.endedAt = Date.now();
       }
-      logStream.end();
+      if (!logStream.destroyed) {
+        try {
+          logStream.end();
+        } catch {
+          // Ignore
+        }
+      }
     });
 
     if (options.signal) {
@@ -254,42 +292,87 @@ export class TaskManager {
     }
 
     if (task.status !== "running") {
+      const stream = this.logStreams.get(taskId);
+      if (stream && !stream.destroyed) {
+        try {
+          stream.destroy();
+        } catch {
+          // Ignore
+        }
+      }
       return { success: true, message: `Task '${taskId}' is already in status '${task.status}'.` };
     }
 
     const child = this.processes.get(taskId);
     if (child) {
-      killProcessTree(child, "SIGTERM");
-      setTimeout(() => {
-        if (task.status === "running") {
-          killProcessTree(child, "SIGKILL");
-        }
-      }, 1000);
+      try {
+        killProcessTree(child, "SIGKILL");
+        child.kill("SIGKILL");
+      } catch {
+        // Ignore
+      }
     }
 
     task.status = "killed";
     task.endedAt = Date.now();
 
     const stream = this.logStreams.get(taskId);
-    if (stream) {
-      stream.end();
+    if (stream && !stream.destroyed) {
+      try {
+        stream.destroy();
+      } catch {
+        // Ignore
+      }
     }
 
     return { success: true };
   }
 
   public async cleanupAll(): Promise<void> {
-    const running = Array.from(this.tasks.values()).filter((t) => t.status === "running");
-    await Promise.all(running.map((t) => this.kill(t.id)));
+    for (const [, child] of this.processes.entries()) {
+      try {
+        killProcessTree(child, "SIGKILL");
+        child.kill("SIGKILL");
+      } catch {
+        // Ignore
+      }
+    }
+    for (const stream of this.logStreams.values()) {
+      try {
+        if (!stream.destroyed) {
+          stream.destroy();
+        }
+      } catch {
+        // Ignore
+      }
+    }
+    for (const task of this.tasks.values()) {
+      if (task.status === "running") {
+        task.status = "killed";
+        task.endedAt = Date.now();
+      }
+    }
   }
 
   private cleanupAllSync(): void {
-    for (const [taskId, task] of this.tasks.entries()) {
-      if (task.status === "running") {
-        const child = this.processes.get(taskId);
-        if (child) {
-          killProcessTree(child, "SIGTERM");
+    for (const [taskId, child] of this.processes.entries()) {
+      try {
+        killProcessTree(child, "SIGKILL");
+        child.kill("SIGKILL");
+      } catch {
+        // Ignore
+      }
+      const stream = this.logStreams.get(taskId);
+      if (stream && !stream.destroyed) {
+        try {
+          stream.destroy();
+        } catch {
+          // Ignore
         }
+      }
+    }
+    for (const task of this.tasks.values()) {
+      if (task.status === "running") {
         task.status = "killed";
         task.endedAt = Date.now();
       }

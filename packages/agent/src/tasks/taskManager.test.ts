@@ -15,6 +15,7 @@ describe("TaskManager", () => {
 
   afterEach(async () => {
     await taskManager.cleanupAll();
+    await new Promise((r) => setTimeout(r, 50));
     try {
       fs.rmSync(tempDir, { recursive: true, force: true });
     } catch {
