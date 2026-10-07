@@ -14,6 +14,10 @@ export interface CommandResult {
   timedOut: boolean;
   truncated: boolean;
   error?: string;
+  taskId?: string;
+  isDaemon?: boolean;
+  pid?: number | null;
+  logFile?: string;
 }
 
 export interface CommandExecutor {

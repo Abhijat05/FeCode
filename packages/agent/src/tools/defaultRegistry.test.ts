@@ -12,6 +12,8 @@ describe("createDefaultToolRegistry", () => {
     expect(registry.get("edit_file")).toBeDefined();
     expect(registry.get("execute_command")).toBeDefined();
     expect(registry.get("execute_command")?.permissionCategory).toBe("execute");
+    expect(registry.get("manage_task")).toBeDefined();
+    expect(registry.get("manage_task")?.permissionCategory).toBe("execute");
 
     const names = registry.list().map((t) => t.name);
     expect(names).toEqual([
@@ -20,7 +22,8 @@ describe("createDefaultToolRegistry", () => {
       "search_files",
       "write_file",
       "edit_file",
-      "execute_command"
+      "execute_command",
+      "manage_task"
     ]);
   });
 });

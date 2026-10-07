@@ -5,6 +5,7 @@ import { SearchFilesTool } from "./searchFiles.js";
 import { WriteFileTool } from "./writeFile.js";
 import { EditFileTool } from "./editFile.js";
 import { ExecuteCommandTool } from "../commands/executeCommandTool.js";
+import { ManageTaskTool } from "../tasks/manageTaskTool.js";
 
 export function createDefaultToolRegistry(): ToolRegistry {
   const registry = new DefaultToolRegistry();
@@ -14,5 +15,6 @@ export function createDefaultToolRegistry(): ToolRegistry {
   registry.register(new WriteFileTool());
   registry.register(new EditFileTool());
   registry.register(new ExecuteCommandTool());
+  registry.register(new ManageTaskTool());
   return registry;
 }

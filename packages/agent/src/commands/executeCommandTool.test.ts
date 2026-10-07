@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { ExecuteCommandTool } from "./executeCommandTool.js";
 import { MockCommandExecutor } from "./mockExecutor.js";
+import { getGlobalTaskManager } from "../tasks/taskManager.js";
 import type { ToolContext } from "@fecode/models";
 
 describe("ExecuteCommandTool", () => {
@@ -63,5 +64,21 @@ describe("ExecuteCommandTool", () => {
     expect(res.success).toBe(false);
     expect(res.error?.code).toBe("EXECUTION_FAILED");
     expect(res.output?.stderr).toBe("1 error found");
+  });
+
+  it("spawns a background task and returns task metadata when isDaemon is true", async () => {
+    const res = await tool.execute(
+      { command: "node -e \"setInterval(()=>{},1000)\"", isDaemon: true },
+      { cwd: process.cwd(), signal: controller.signal }
+    );
+    expect(res.success).toBe(true);
+    expect(res.output?.isDaemon).toBe(true);
+    expect(res.output?.taskId).toMatch(/^task-\d+$/);
+    expect(res.output?.pid).toBeTypeOf("number");
+    expect(res.output?.stdout).toContain("Background task started");
+
+    if (res.output?.taskId) {
+      await getGlobalTaskManager().kill(res.output.taskId);
+    }
   });
 });
