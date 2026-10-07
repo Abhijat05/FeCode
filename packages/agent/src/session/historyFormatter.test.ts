@@ -330,4 +330,47 @@ describe("SessionHistoryFormatter — Phase 5C", () => {
     expect(page3).toContain("25. session-25");
     expect(page3).toContain("Showing 21–25 of 25 sessions (Page 3 of 3)");
   });
+
+  it("paginates formatHistory when exceeding limit", () => {
+    const tasks: TaskCompletionSummary[] = Array.from({ length: 25 }, (_, i) => ({
+      taskIndex: i + 1,
+      request: `Task request number ${i + 1}`,
+      status: "completed",
+      completedFiles: [],
+      verifiedCommands: [],
+      completedRequirements: [],
+      remainingRequirements: []
+    }));
+
+    const page1 = SessionHistoryFormatter.formatHistory(tasks, { limit: 10, page: 1 });
+    expect(page1).toContain("Showing 1–10 of 25 tasks (Page 1 of 3)");
+    expect(page1).toContain("25. ✓ Task request number 25");
+    expect(page1).toContain("/history <page>");
+
+    const page2 = SessionHistoryFormatter.formatHistory(tasks, { limit: 10, page: 2 });
+    expect(page2).toContain("Showing 11–20 of 25 tasks (Page 2 of 3)");
+    expect(page2).toContain("15. ✓ Task request number 15");
+  });
+
+  it("paginates formatTaskList when exceeding limit", () => {
+    const tasks: TaskCompletionSummary[] = Array.from({ length: 25 }, (_, i) => ({
+      taskIndex: i + 1,
+      request: `Task request number ${i + 1}`,
+      status: "completed",
+      completedFiles: [],
+      verifiedCommands: [],
+      completedRequirements: [],
+      remainingRequirements: []
+    }));
+
+    const page1 = SessionHistoryFormatter.formatTaskList(tasks, { limit: 10, page: 1 });
+    expect(page1).toContain("Showing 1–10 of 25 tasks (Page 1 of 3)");
+    expect(page1).toContain("✓ 1  Task request number 1");
+    expect(page1).toContain("✓ 10  Task request number 10");
+    expect(page1).toContain("/tasks <page>");
+
+    const page2 = SessionHistoryFormatter.formatTaskList(tasks, { limit: 10, page: 2 });
+    expect(page2).toContain("Showing 11–20 of 25 tasks (Page 2 of 3)");
+    expect(page2).toContain("✓ 11  Task request number 11");
+  });
 });

@@ -62,10 +62,11 @@ export function getTaskStatusSymbol(status: string): string {
 export class SessionHistoryFormatter {
   public static formatHistory(
     tasks: TaskCompletionSummary[],
-    options: { limit?: number; maxChangedFiles?: number } = {}
+    options: { limit?: number; maxChangedFiles?: number; page?: number } = {}
   ): string {
     const limit = options.limit || 20;
     const maxFiles = options.maxChangedFiles || 3;
+    const page = options.page && options.page > 0 ? options.page : 1;
 
     if (!tasks || tasks.length === 0) {
       return "Session History\n\nNo task history available.\n";
@@ -73,16 +74,24 @@ export class SessionHistoryFormatter {
 
     let text = "Session History\n";
 
+    const totalPages = Math.max(1, Math.ceil(tasks.length / limit));
+    const validPage = Math.min(page, totalPages);
+    const start = (validPage - 1) * limit;
+
+    const reversed = [...tasks].reverse();
+    const paged = reversed.slice(start, start + limit);
+
     if (tasks.length > limit) {
-      text += `\nShowing ${limit} of ${tasks.length} tasks\n`;
+      if (options.page) {
+        text += `\nShowing ${start + 1}–${Math.min(start + limit, tasks.length)} of ${tasks.length} tasks (Page ${validPage} of ${totalPages})\n`;
+      } else {
+        text += `\nShowing ${limit} of ${tasks.length} tasks\n`;
+      }
     }
 
-    // Newest task first
-    const reversed = [...tasks].reverse().slice(0, limit);
-
-    for (let i = 0; i < reversed.length; i++) {
-      const task = reversed[i];
-      const taskNum = task.taskIndex !== undefined ? task.taskIndex : tasks.length - i;
+    for (let i = 0; i < paged.length; i++) {
+      const task = paged[i];
+      const taskNum = task.taskIndex !== undefined ? task.taskIndex : tasks.length - (start + i);
       const symbol = getTaskStatusSymbol(task.status);
       const req = task.request
         ? sanitizeText(task.request.split("\n")[0])
@@ -144,14 +153,19 @@ export class SessionHistoryFormatter {
       }
     }
 
+    if (tasks.length > limit) {
+      text += `\nUse /history <page> to navigate pages.\n`;
+    }
+
     return text + "\n";
   }
 
   public static formatTaskList(
     tasks: TaskCompletionSummary[],
-    options: { limit?: number } = {}
+    options: { limit?: number; page?: number } = {}
   ): string {
     const limit = options.limit || 50;
+    const page = options.page && options.page > 0 ? options.page : 1;
 
     if (!tasks || tasks.length === 0) {
       return "Tasks\n\nNo tasks recorded in this session.\n";
@@ -159,21 +173,32 @@ export class SessionHistoryFormatter {
 
     let text = "Tasks\n";
 
-    if (tasks.length > limit) {
-      text += `\nShowing ${limit} of ${tasks.length} tasks\n`;
-    }
+    const totalPages = Math.max(1, Math.ceil(tasks.length / limit));
+    const validPage = Math.min(page, totalPages);
+    const start = (validPage - 1) * limit;
+    const displayed = tasks.slice(start, start + limit);
 
-    const displayed = tasks.slice(0, limit);
+    if (tasks.length > limit) {
+      if (options.page) {
+        text += `\nShowing ${start + 1}–${Math.min(start + limit, tasks.length)} of ${tasks.length} tasks (Page ${validPage} of ${totalPages})\n`;
+      } else {
+        text += `\nShowing ${limit} of ${tasks.length} tasks\n`;
+      }
+    }
 
     for (let i = 0; i < displayed.length; i++) {
       const task = displayed[i];
-      const taskNum = task.taskIndex !== undefined ? task.taskIndex : i + 1;
+      const taskNum = task.taskIndex !== undefined ? task.taskIndex : start + i + 1;
       const symbol = getTaskStatusSymbol(task.status);
       const req = task.request
         ? sanitizeText(task.request.split("\n")[0])
         : "Untitled task";
 
       text += `\n${symbol} ${taskNum}  ${req}`;
+    }
+
+    if (tasks.length > limit) {
+      text += `\n\nUse /tasks <page> to navigate pages.`;
     }
 
     return text + "\n";

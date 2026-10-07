@@ -1,7 +1,15 @@
-import React from "react";
-import { Box, Text } from "ink";
+import React, { useState } from "react";
+import { Box, Text, useInput } from "ink";
 
-export const HelpView: React.FC = () => {
+export interface HelpViewProps {
+  terminalRows?: number;
+  terminalColumns?: number;
+}
+
+export const HelpView: React.FC<HelpViewProps> = ({
+  terminalRows,
+  terminalColumns
+}) => {
   const commands = [
     { cmd: "/help", desc: "Show available commands & keyboard shortcuts" },
     { cmd: "/status", desc: "Show current session, model, and project context" },
@@ -34,6 +42,42 @@ export const HelpView: React.FC = () => {
     { key: "Esc", desc: "Return to Main Execution View / dismiss modal" }
   ];
 
+  const stdoutRows =
+    terminalRows ??
+    (typeof process !== "undefined" && process.stdout?.rows
+      ? process.stdout.rows
+      : 24);
+
+  const cols =
+    terminalColumns ??
+    (typeof process !== "undefined" && process.stdout?.columns
+      ? process.stdout.columns
+      : 80);
+
+  const isNarrow = cols < 70;
+  const [page, setPage] = useState(1);
+  const pageSize = Math.max(5, Math.min(10, Math.floor(stdoutRows - 12)));
+  const totalPages = Math.ceil(commands.length / pageSize);
+
+  useInput((input, key) => {
+    if (isNarrow) {
+      if (key.leftArrow || input === "p" || input === "P" || key.pageUp) {
+        setPage((prev) => Math.max(1, prev - 1));
+      } else if (
+        key.rightArrow ||
+        input === "n" ||
+        input === "N" ||
+        key.pageDown
+      ) {
+        setPage((prev) => Math.min(totalPages, prev + 1));
+      }
+    }
+  });
+
+  const half = Math.ceil(commands.length / 2);
+  const col1 = commands.slice(0, half);
+  const col2 = commands.slice(half);
+
   return (
     <Box
       flexDirection="column"
@@ -42,29 +86,100 @@ export const HelpView: React.FC = () => {
       paddingX={1}
       marginY={1}
     >
-      <Box marginBottom={1}>
+      <Box marginBottom={1} justifyContent="space-between">
         <Text bold color="cyan">Available Commands:</Text>
+        {isNarrow && (
+          <Text color="yellow">
+            (Page {page} of {totalPages}) [← / →]
+          </Text>
+        )}
       </Box>
-      {commands.map((c, i) => (
-        <Box key={`cmd-${i}`}>
-          <Box width={18}>
-            <Text bold color="white">{c.cmd}</Text>
-          </Box>
-          <Text color="gray">{c.desc}</Text>
+
+      {isNarrow ? (
+        // Narrow viewport: Paginated single column
+        <Box flexDirection="column">
+          {commands
+            .slice((page - 1) * pageSize, page * pageSize)
+            .map((c, i) => (
+              <Box key={`cmd-narrow-${i}`}>
+                <Box width={16}>
+                  <Text bold color="white">{c.cmd}</Text>
+                </Box>
+                <Text color="gray">{c.desc}</Text>
+              </Box>
+            ))}
         </Box>
-      ))}
+      ) : (
+        // Standard viewport: 2-column balanced grid
+        <Box flexDirection="column">
+          {col1.map((c, i) => {
+            const c2 = col2[i];
+            return (
+              <Box key={`cmd-row-${i}`} justifyContent="space-between">
+                <Box width="48%">
+                  <Box width={15}>
+                    <Text bold color="white">{c.cmd}</Text>
+                  </Box>
+                  <Text color="gray">{c.desc}</Text>
+                </Box>
+                {c2 ? (
+                  <Box width="48%">
+                    <Box width={15}>
+                      <Text bold color="white">{c2.cmd}</Text>
+                    </Box>
+                    <Text color="gray">{c2.desc}</Text>
+                  </Box>
+                ) : (
+                  <Box width="48%" />
+                )}
+              </Box>
+            );
+          })}
+        </Box>
+      )}
 
       <Box marginTop={1} marginBottom={0}>
         <Text bold color="yellow">Keyboard Shortcuts:</Text>
       </Box>
-      {shortcuts.map((s, i) => (
-        <Box key={`sc-${i}`}>
-          <Box width={18}>
-            <Text bold color="yellow">{s.key}</Text>
+      {isNarrow ? (
+        shortcuts.map((s, i) => (
+          <Box key={`sc-narrow-${i}`}>
+            <Box width={16}>
+              <Text bold color="yellow">{s.key}</Text>
+            </Box>
+            <Text color="gray">{s.desc}</Text>
           </Box>
-          <Text color="gray">{s.desc}</Text>
+        ))
+      ) : (
+        <Box flexDirection="column">
+          {[0, 1, 2].map((rowIdx) => {
+            const s1 = shortcuts[rowIdx];
+            const s2 = shortcuts[rowIdx + 3];
+            return (
+              <Box key={`sc-row-${rowIdx}`} justifyContent="space-between">
+                {s1 && (
+                  <Box width="48%">
+                    <Box width={15}>
+                      <Text bold color="yellow">{s1.key}</Text>
+                    </Box>
+                    <Text color="gray">{s1.desc}</Text>
+                  </Box>
+                )}
+                {s2 ? (
+                  <Box width="48%">
+                    <Box width={15}>
+                      <Text bold color="yellow">{s2.key}</Text>
+                    </Box>
+                    <Text color="gray">{s2.desc}</Text>
+                  </Box>
+                ) : (
+                  <Box width="48%" />
+                )}
+              </Box>
+            );
+          })}
         </Box>
-      ))}
+      )}
     </Box>
   );
 };

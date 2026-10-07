@@ -1,5 +1,5 @@
-import React from "react";
-import { Box, Text } from "ink";
+import React, { useState } from "react";
+import { Box, Text, useInput } from "ink";
 
 export interface HistoricalRunItem {
   runId: string;
@@ -15,13 +15,17 @@ export interface RunHistoryViewProps {
   formattedOutput?: string;
   projectId?: string;
   isAll?: boolean;
+  terminalRows?: number;
+  pageSize?: number;
 }
 
 export const RunHistoryView: React.FC<RunHistoryViewProps> = ({
   runs = [],
   formattedOutput,
   projectId,
-  isAll = false
+  isAll = false,
+  terminalRows,
+  pageSize
 }) => {
   if (formattedOutput) {
     return (
@@ -70,6 +74,36 @@ export const RunHistoryView: React.FC<RunHistoryViewProps> = ({
     return `${min}m ${remSec}s`;
   };
 
+  const stdoutRows =
+    terminalRows ??
+    (typeof process !== "undefined" && process.stdout?.rows
+      ? process.stdout.rows
+      : 24);
+
+  const calculatedPageSize =
+    pageSize ?? Math.max(4, Math.min(10, Math.floor(stdoutRows - 12)));
+
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(runs.length / calculatedPageSize));
+  const currentPage = Math.min(Math.max(1, page), totalPages);
+  const pagedRuns = runs.slice(
+    (currentPage - 1) * calculatedPageSize,
+    currentPage * calculatedPageSize
+  );
+
+  useInput((input, key) => {
+    if (key.leftArrow || input === "p" || input === "P" || key.pageUp) {
+      setPage((prev) => Math.max(1, prev - 1));
+    } else if (
+      key.rightArrow ||
+      input === "n" ||
+      input === "N" ||
+      key.pageDown
+    ) {
+      setPage((prev) => Math.min(totalPages, prev + 1));
+    }
+  });
+
   return (
     <Box
       flexDirection="column"
@@ -108,7 +142,7 @@ export const RunHistoryView: React.FC<RunHistoryViewProps> = ({
               <Text bold color="gray">TIME</Text>
             </Box>
           </Box>
-          {runs.map((r, idx) => (
+          {pagedRuns.map((r, idx) => (
             <Box key={`run-${r.runId || idx}`} justifyContent="space-between">
               <Box width="15%">{getStatusDisplay(r.status)}</Box>
               <Box width="25%">
@@ -127,7 +161,17 @@ export const RunHistoryView: React.FC<RunHistoryViewProps> = ({
         </Box>
       )}
 
-      <Box marginTop={1}>
+      {totalPages > 1 && (
+        <Box marginTop={1}>
+          <Text color="yellow">
+            Showing {(currentPage - 1) * calculatedPageSize + 1}–
+            {Math.min(currentPage * calculatedPageSize, runs.length)} of {runs.length} runs (Page {currentPage} of {totalPages})
+            {"  "}[← / → or p / n] Navigate pages
+          </Text>
+        </Box>
+      )}
+
+      <Box marginTop={totalPages > 1 ? 0 : 1}>
         <Text color="gray">
           Inspect run details: <Text color="cyan">/run &lt;id&gt;</Text> | Resume run:{" "}
           <Text color="cyan">/resume &lt;id&gt;</Text>

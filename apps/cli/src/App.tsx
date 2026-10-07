@@ -1869,8 +1869,11 @@ export const App: React.FC<AppProps> = ({
       }
 
       if (cmd === "/history") {
+        const pageNum = arg ? parseInt(arg, 10) : 1;
+        const validPage = Number.isFinite(pageNum) && pageNum > 0 ? pageNum : 1;
         const historyText = SessionHistoryFormatter.formatHistory(
-          completedSummaries
+          completedSummaries,
+          { limit: 10, page: validPage }
         );
         setTurns((prev) => [
           ...prev,
@@ -1885,8 +1888,11 @@ export const App: React.FC<AppProps> = ({
       }
 
       if (cmd === "/tasks") {
+        const pageNum = arg ? parseInt(arg, 10) : 1;
+        const validPage = Number.isFinite(pageNum) && pageNum > 0 ? pageNum : 1;
         const tasksText = SessionHistoryFormatter.formatTaskList(
-          completedSummaries
+          completedSummaries,
+          { limit: 10, page: validPage }
         );
         setTurns((prev) => [
           ...prev,
