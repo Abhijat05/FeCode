@@ -231,4 +231,50 @@ describe("prepareModelMessages", () => {
     expect(toolMsg?.content).toBe(largeToolOutput);
     expect(toolMsg?.content).not.toContain("output truncated for context budget");
   });
+
+  it("extracts structured task and file summary when turns are compacted", () => {
+    const messages: ModelMessage[] = [
+      { role: "user", content: "Implement authentication service in src/auth.ts" },
+      {
+        role: "assistant",
+        toolCalls: [
+          { id: "call_write", name: "write_file", arguments: { path: "src/auth.ts" } },
+          { id: "call_cmd", name: "execute_command", arguments: { command: "npm test" } }
+        ]
+      },
+      { role: "tool", toolCallId: "call_write", content: "File written successfully" },
+      { role: "tool", toolCallId: "call_cmd", content: "Tests passed: 5" },
+      { role: "assistant", content: "Authentication is implemented and tests pass. " + "X".repeat(5000) },
+      // Active turn
+      { role: "user", content: "Now write integration tests" }
+    ];
+
+    const prepared = prepareModelMessages(messages, 1000);
+
+    const userMessages = prepared.filter((m) => m.role === "user");
+    const notice = userMessages.find((m) => m.content?.includes("Earlier conversation history was compacted"));
+    expect(notice).toBeDefined();
+    expect(notice?.content).toContain("• Previous Tasks:");
+    expect(notice?.content).toContain("Implement authentication service");
+    expect(notice?.content).toContain("• Modified Files:");
+    expect(notice?.content).toContain("src/auth.ts");
+    expect(notice?.content).toContain("• Executed Commands:");
+    expect(notice?.content).toContain("npm test");
+  });
+
+  it("uses custom summarizeCompactedTurns option when provided", () => {
+    const messages: ModelMessage[] = [
+      { role: "user", content: "Task 1 " + "A".repeat(5000) },
+      { role: "assistant", content: "Done 1 " + "B".repeat(5000) },
+      { role: "user", content: "Task 2 (active)" }
+    ];
+
+    const prepared = prepareModelMessages(messages, 1000, {
+      summarizeCompactedTurns: () => "Custom LLM Summary: User completed task 1 successfully."
+    });
+
+    const notice = prepared.find((m) => m.role === "user" && m.content?.includes("Custom LLM Summary"));
+    expect(notice).toBeDefined();
+    expect(notice?.content).toContain("Custom LLM Summary: User completed task 1 successfully.");
+  });
 });

@@ -4,6 +4,75 @@ import { sanitizeToolResultForContext } from "./toolResultSanitizer.js";
 
 export interface PrepareModelMessagesOptions {
   maxToolResultChars?: number;
+  summarizeCompactedTurns?: (messages: ModelMessage[]) => string;
+}
+
+export function extractCompactedHistorySummary(
+  droppedMessages: ModelMessage[],
+  customSummarizer?: (messages: ModelMessage[]) => string
+): string {
+  if (customSummarizer) {
+    try {
+      const custom = customSummarizer(droppedMessages);
+      if (custom && custom.trim()) {
+        return custom.trim();
+      }
+    } catch {
+      // Fallback to structured extractor
+    }
+  }
+
+  const userGoals: string[] = [];
+  const modifiedFiles = new Set<string>();
+  const readFiles = new Set<string>();
+  const commandsRun = new Set<string>();
+
+  for (const msg of droppedMessages) {
+    if (msg.role === "user" && msg.content) {
+      const firstLine = msg.content.trim().split(/\r?\n/)[0]?.trim();
+      const taskSummary = firstLine ? firstLine.replace(/^Turn\s+\d+:\s*/i, "").trim() : "";
+      if (taskSummary && !firstLine?.startsWith("[Context notice")) {
+        userGoals.push(taskSummary.length > 80 ? taskSummary.slice(0, 80) + "..." : taskSummary);
+      }
+    }
+
+    if (msg.role === "assistant" && msg.toolCalls) {
+      for (const tc of msg.toolCalls) {
+        const args = (tc.arguments && typeof tc.arguments === "object" ? tc.arguments : {}) as Record<string, unknown>;
+        const filePath = (args.path || args.filePath || args.targetFile || args.file) as string | undefined;
+        if (filePath && typeof filePath === "string") {
+          if (tc.name === "edit_file" || tc.name === "write_file") {
+            modifiedFiles.add(filePath);
+          } else if (tc.name === "read_file") {
+            readFiles.add(filePath);
+          }
+        }
+        if (tc.name === "execute_command" && typeof args.command === "string") {
+          commandsRun.add(args.command.length > 50 ? args.command.slice(0, 50) + "..." : args.command);
+        }
+      }
+    }
+  }
+
+  const sections: string[] = [];
+  if (userGoals.length > 0) {
+    sections.push("• Previous Tasks:\n" + userGoals.slice(0, 10).map((g) => `  - ${g}`).join("\n"));
+  }
+  if (modifiedFiles.size > 0) {
+    sections.push("• Modified Files:\n" + Array.from(modifiedFiles).slice(0, 10).map((f) => `  - ${f}`).join("\n"));
+  }
+  if (readFiles.size > 0) {
+    sections.push("• Examined Files:\n" + Array.from(readFiles).slice(0, 10).map((f) => `  - ${f}`).join("\n"));
+  }
+  if (commandsRun.size > 0) {
+    sections.push("• Executed Commands:\n" + Array.from(commandsRun).slice(0, 10).map((c) => `  - ${c}`).join("\n"));
+  }
+
+  if (sections.length === 0) {
+    return "";
+  }
+
+  return `[Structured Context Digest of Compacted Turns]\n${sections.join("\n")}`;
 }
 
 /**
@@ -125,14 +194,20 @@ export function prepareModelMessages(
 
   // Try dropping turns from oldest to newest until within budget
   for (const cutoffIdx of userIndices) {
+    const dropped = cleanedMessages.slice(0, cutoffIdx);
+    const summary = extractCompactedHistorySummary(dropped, options.summarizeCompactedTurns);
+    const noticeContent = summary
+      ? `[Context notice: Earlier conversation history was compacted to fit within the model context budget.]\n\n${summary}`
+      : `[Context notice: Earlier conversation history was compacted to fit within the model context budget.]`;
+
     const candidateMessages: ModelMessage[] = [
       {
         role: "user",
-        content: "[Context notice: Earlier conversation history was compacted to fit within the model context budget.]"
+        content: noticeContent
       },
       {
         role: "assistant",
-        content: "Understood. I have the context of the recent discussion and will continue."
+        content: "Understood. I have absorbed the context of earlier tasks and touched files and will continue."
       },
       ...cleanedMessages.slice(cutoffIdx)
     ];
@@ -144,14 +219,20 @@ export function prepareModelMessages(
   }
 
   // If still over budget, retain only the active turn from lastUserIdx
+  const dropped = cleanedMessages.slice(0, lastUserIdx);
+  const summary = extractCompactedHistorySummary(dropped, options.summarizeCompactedTurns);
+  const noticeContent = summary
+    ? `[Context notice: Earlier conversation history was compacted to fit within the model context budget.]\n\n${summary}`
+    : `[Context notice: Earlier conversation history was compacted to fit within the model context budget.]`;
+
   const finalActiveTurn: ModelMessage[] = [
     {
       role: "user",
-      content: "[Context notice: Earlier conversation history was compacted to fit within the model context budget.]"
+      content: noticeContent
     },
     {
       role: "assistant",
-      content: "Understood. I will proceed with your latest request."
+      content: "Understood. I have absorbed the context of earlier tasks and touched files and will proceed with your latest request."
     },
     ...cleanedMessages.slice(lastUserIdx)
   ];
