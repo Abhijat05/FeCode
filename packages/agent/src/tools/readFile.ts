@@ -169,9 +169,34 @@ export class ReadFileTool
         };
       }
 
-      const handle = await fs.open(targetPath, "r");
+      const openFlags =
+        process.platform === "win32"
+          ? fsSync.constants.O_RDONLY
+          : fsSync.constants.O_RDONLY | (fsSync.constants.O_NONBLOCK || 0);
+
+      const handle = await fs.open(targetPath, openFlags);
       try {
-        const sampleSize = Math.min(stats.size, 1024);
+        const fstats = await handle.stat();
+        if (!fstats.isFile()) {
+          const typeStr = fstats.isDirectory()
+            ? "directory"
+            : fstats.isFIFO?.()
+              ? "FIFO pipe"
+              : fstats.isSocket?.()
+                ? "socket"
+                : fstats.isCharacterDevice?.() || fstats.isBlockDevice?.()
+                  ? "device"
+                  : "special file";
+          return {
+            success: false,
+            error: {
+              message: `Path is a ${typeStr}, not a regular file: ${input.path}`,
+              code: "NOT_A_FILE"
+            }
+          };
+        }
+
+        const sampleSize = Math.min(fstats.size, 1024);
         const sampleBuf = Buffer.alloc(sampleSize);
         if (sampleSize > 0) {
           await handle.read(sampleBuf, 0, sampleSize, 0);
@@ -185,86 +210,87 @@ export class ReadFileTool
             };
           }
         }
-      } finally {
-        await handle.close();
-      }
 
-      const hasLineRange =
-        typeof input.startLine === "number" || typeof input.endLine === "number";
+        const hasLineRange =
+          typeof input.startLine === "number" || typeof input.endLine === "number";
 
-      if (hasLineRange) {
-        const reqStart = Math.max(1, input.startLine ?? 1);
-        const reqEnd =
-          input.endLine !== undefined
-            ? Math.max(reqStart, input.endLine)
-            : reqStart + this.maxDefaultLines - 1;
+        if (hasLineRange) {
+          const reqStart = Math.max(1, input.startLine ?? 1);
+          const reqEnd =
+            input.endLine !== undefined
+              ? Math.max(reqStart, input.endLine)
+              : reqStart + this.maxDefaultLines - 1;
 
-        const fileStream = fsSync.createReadStream(targetPath, {
-          encoding: "utf-8"
-        });
-        const rl = readline.createInterface({
-          input: fileStream,
-          crlfDelay: Infinity
-        });
+          const fileStream = handle.createReadStream({
+            encoding: "utf-8"
+          });
+          fileStream.on("error", () => {
+            // Suppress unhandled stream error to prevent process crash
+          });
+          const rl = readline.createInterface({
+            input: fileStream,
+            crlfDelay: Infinity
+          });
 
-        const collected: string[] = [];
-        let currentLine = 0;
-        let bytesCollected = 0;
-        let byteTruncated = false;
+          const collected: string[] = [];
+          let currentLine = 0;
+          let bytesCollected = 0;
+          let byteTruncated = false;
 
-        for await (const line of rl) {
-          if (context.signal?.aborted) {
+          try {
+            for await (const line of rl) {
+              if (context.signal?.aborted) {
+                rl.close();
+                fileStream.destroy();
+                throw new Error("Read file aborted");
+              }
+              currentLine++;
+              if (currentLine >= reqStart && currentLine <= reqEnd) {
+                const lineBytes = Buffer.byteLength(line, "utf-8") + 1;
+                if (bytesCollected + lineBytes > this.maxBytes && collected.length > 0) {
+                  byteTruncated = true;
+                  break;
+                }
+                collected.push(line);
+                bytesCollected += lineBytes;
+              }
+              if (currentLine >= reqEnd) {
+                break;
+              }
+            }
+          } finally {
             rl.close();
             fileStream.destroy();
-            throw new Error("Read file aborted");
           }
-          currentLine++;
-          if (currentLine >= reqStart && currentLine <= reqEnd) {
-            const lineBytes = Buffer.byteLength(line, "utf-8") + 1;
-            if (bytesCollected + lineBytes > this.maxBytes && collected.length > 0) {
-              byteTruncated = true;
-              break;
+
+          const content = collected.join("\n");
+          const startLine = reqStart;
+          const endLine =
+            collected.length > 0 ? reqStart + collected.length - 1 : reqStart;
+          const truncated =
+            byteTruncated ||
+            (input.endLine !== undefined && currentLine >= reqEnd) ||
+            (input.startLine !== undefined && reqStart > 1);
+
+          return {
+            success: true,
+            output: {
+              path: displayPath,
+              content,
+              startLine,
+              endLine,
+              truncated
             }
-            collected.push(line);
-            bytesCollected += lineBytes;
-          }
-          if (currentLine >= reqEnd) {
-            break;
-          }
+          };
         }
-        rl.close();
-        fileStream.destroy();
 
-        const content = collected.join("\n");
-        const startLine = reqStart;
-        const endLine =
-          collected.length > 0 ? reqStart + collected.length - 1 : reqStart;
-        const truncated =
-          byteTruncated ||
-          (input.endLine !== undefined && currentLine >= reqEnd) ||
-          (input.startLine !== undefined && reqStart > 1);
-
-        return {
-          success: true,
-          output: {
-            path: displayPath,
-            content,
-            startLine,
-            endLine,
-            truncated
-          }
-        };
-      }
-
-      // No line range requested: read up to maxBytes and clamp to maxDefaultLines
-      const contentHandle = await fs.open(targetPath, "r");
-      try {
-        const bytesToRead = Math.min(stats.size, this.maxBytes);
-        const isByteTruncated = stats.size > this.maxBytes;
+        // No line range requested: read up to maxBytes and clamp to maxDefaultLines
+        const bytesToRead = Math.min(fstats.size, this.maxBytes);
+        const isByteTruncated = fstats.size > this.maxBytes;
         const contentBuf = Buffer.alloc(bytesToRead);
 
         if (bytesToRead > 0) {
-          await contentHandle.read(contentBuf, 0, bytesToRead, 0);
+          await handle.read(contentBuf, 0, bytesToRead, 0);
         }
 
         const rawContent = contentBuf.toString("utf-8");
@@ -296,7 +322,7 @@ export class ReadFileTool
           }
         };
       } finally {
-        await contentHandle.close();
+        await handle.close();
       }
     } catch (err: unknown) {
       const error = err as NodeJS.ErrnoException;

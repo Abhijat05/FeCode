@@ -180,4 +180,15 @@ describe("ReadFileTool", () => {
     expect(result.error?.code).toBe("NOT_A_FILE");
     expect(result.error?.message).toMatch(/FIFO pipe/i);
   });
+
+  it("safely reads with line ranges without unhandled stream errors", async () => {
+    const testFile = path.join(tmpDir, "stream-test.txt");
+    await fs.writeFile(testFile, "Line 1\nLine 2\nLine 3\nLine 4\nLine 5\n");
+
+    const result = await tool.execute({ path: "stream-test.txt", startLine: 2, endLine: 4 }, context);
+    expect(result.success).toBe(true);
+    expect(result.output?.content).toBe("Line 2\nLine 3\nLine 4");
+    expect(result.output?.startLine).toBe(2);
+    expect(result.output?.endLine).toBe(4);
+  });
 });
