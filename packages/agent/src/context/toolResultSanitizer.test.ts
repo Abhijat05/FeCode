@@ -103,4 +103,28 @@ describe("sanitizeToolResultForContext", () => {
     const parsed = JSON.parse(sanitized);
     expect(parsed.success).toBe(true);
   });
+
+  it("truncates strings with surrogate pairs without creating invalid lone surrogates", () => {
+    const textWithSurrogates = "🚀".repeat(5000);
+    const result: ToolResult<{ content: string }> = {
+      success: true,
+      output: { content: textWithSurrogates }
+    };
+
+    const sanitized = sanitizeToolResultForContext(result, { maxChars: 1200 });
+    expect(() => JSON.parse(sanitized)).not.toThrow();
+    const parsed = JSON.parse(sanitized);
+    const content = parsed.output.content as string;
+    for (let i = 0; i < content.length; i++) {
+      const code = content.charCodeAt(i);
+      if (code >= 0xd800 && code <= 0xdbff) {
+        const next = content.charCodeAt(i + 1);
+        expect(next).toBeGreaterThanOrEqual(0xdc00);
+        expect(next).toBeLessThanOrEqual(0xdfff);
+        i++;
+      } else {
+        expect(code < 0xdc00 || code > 0xdfff).toBe(true);
+      }
+    }
+  });
 });

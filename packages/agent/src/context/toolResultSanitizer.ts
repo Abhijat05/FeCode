@@ -4,6 +4,22 @@ export interface SanitizeToolResultOptions {
   maxChars?: number;
 }
 
+function safeSliceHead(str: string, maxLen: number): string {
+  let cut = Math.min(str.length, maxLen);
+  if (cut > 0 && str.charCodeAt(cut - 1) >= 0xd800 && str.charCodeAt(cut - 1) <= 0xdbff) {
+    cut--;
+  }
+  return str.slice(0, cut);
+}
+
+function safeSliceTail(str: string, maxLen: number): string {
+  let startIndex = Math.max(0, str.length - maxLen);
+  if (startIndex < str.length && str.charCodeAt(startIndex) >= 0xdc00 && str.charCodeAt(startIndex) <= 0xdfff) {
+    startIndex++;
+  }
+  return str.slice(startIndex);
+}
+
 /**
  * Serializes and bounds tool results so they fit within context window limits
  * while GUARANTEEING that the resulting string is ALWAYS valid, well-formed JSON.
@@ -22,8 +38,8 @@ export function sanitizeToolResultForContext(
   if (result === null || typeof result !== "object") {
     const raw = String(result);
     if (raw.length <= maxChars) return raw;
-    const head = raw.slice(0, Math.floor(maxChars * 0.65));
-    const tail = raw.slice(raw.length - Math.floor(maxChars * 0.25));
+    const head = safeSliceHead(raw, Math.floor(maxChars * 0.65));
+    const tail = safeSliceTail(raw, Math.floor(maxChars * 0.25));
     return `${head}\n... [output truncated: ${raw.length - (head.length + tail.length)} characters omitted] ...\n${tail}`;
   }
 
@@ -50,8 +66,8 @@ export function sanitizeToolResultForContext(
           // Allocate remaining budget for this string
           const targetBudget = Math.max(500, maxChars - 2000);
           if (str.length > targetBudget) {
-            const head = str.slice(0, Math.floor(targetBudget * 0.65));
-            const tail = str.slice(str.length - Math.floor(targetBudget * 0.25));
+            const head = safeSliceHead(str, Math.floor(targetBudget * 0.65));
+            const tail = safeSliceTail(str, Math.floor(targetBudget * 0.25));
             const omitted = str.length - (head.length + tail.length);
             outObj[key] = `${head}\n... [content truncated: ${omitted} characters omitted] ...\n${tail}`;
             outObj.truncated = true;

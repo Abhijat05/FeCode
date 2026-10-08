@@ -190,4 +190,40 @@ describe("NodeCommandExecutor", () => {
       delete process.env.CUSTOM_CLIENT_SECRET;
     }
   });
+
+  it("sanitizes hostile OSC and screen clear ANSI sequences while preserving safe colors", async () => {
+    const nodeCmd = `node -e "const esc = String.fromCharCode(27); const bel = String.fromCharCode(7); process.stdout.write(esc + '[31mError message' + esc + '[0m' + esc + ']52;c;evil_data' + bel + esc + '[2J' + esc + '[H' + esc + '[32mCleaned output' + esc + '[0m');"`;
+    const res = await executor.execute(nodeCmd, { cwd: tmpDir });
+
+    expect(res.stdout).toContain("\x1b[31mError message\x1b[0m");
+    expect(res.stdout).toContain("\x1b[32mCleaned output\x1b[0m");
+    expect(res.stdout).not.toContain("evil_data");
+    expect(res.stdout).not.toContain("\x1b[2J");
+    expect(res.stdout).not.toContain("\x1b[H");
+  });
+
+  it("normalizes deceptive carriage returns in stdout", async () => {
+    const nodeCmd = `node -e "process.stdout.write('FAILED tests: 10' + String.fromCharCode(13) + 'PASSED tests: 100' + String.fromCharCode(10));"`;
+    const res = await executor.execute(nodeCmd, { cwd: tmpDir });
+
+    expect(res.stdout).toBe("FAILED tests: 10\nPASSED tests: 100\n");
+  });
+
+  it("truncates multi-byte Unicode characters safely without leaving invalid lone surrogates", async () => {
+    const script = `
+      process.stdout.write('AAAA 🚀🚀🚀🚀🚀 BBBB');
+    `;
+    const res = await executor.execute(
+      `node -e "${script.replace(/\n/g, " ").replace(/"/g, '\\"')}"`,
+      {
+        cwd: tmpDir,
+        maxOutputBytes: 11
+      }
+    );
+
+    expect(res.truncated).toBe(true);
+    expect(res.stdout).toContain("... [output truncated due to size limit]");
+    // Ensure serialization in JSON doesn't throw or contain broken surrogates
+    expect(() => JSON.stringify(res)).not.toThrow();
+  });
 });

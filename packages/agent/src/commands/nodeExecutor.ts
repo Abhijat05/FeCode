@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "child_process";
 import { killProcessTree } from "./processTree.js";
 import { DefaultCommandPolicy } from "./policy.js";
+import { sanitizeCommandOutput } from "./outputSanitizer.js";
 import type {
   CommandExecutionOptions,
   CommandExecutor,
@@ -221,22 +222,20 @@ export class NodeCommandExecutor implements CommandExecutor {
           options.signal.removeEventListener("abort", onAbort);
         }
 
-        let stdoutStr = Buffer.concat(stdoutChunks).toString("utf-8");
-        let stderrStr = Buffer.concat(stderrChunks).toString("utf-8");
+        const rawStdout = Buffer.concat(stdoutChunks).toString("utf-8");
+        const rawStderr = Buffer.concat(stderrChunks).toString("utf-8");
 
-        if (stdoutBytes > maxOutputBytes) {
-          stdoutStr =
-            stdoutStr.slice(0, maxOutputBytes) +
-            "\n... [output truncated due to size limit]";
-          truncated = true;
-        }
+        const sanitizedStdout = sanitizeCommandOutput(rawStdout, {
+          maxOutputBytes
+        });
+        const sanitizedStderr = sanitizeCommandOutput(rawStderr, {
+          maxOutputBytes
+        });
 
-        if (stderrBytes > maxOutputBytes) {
-          stderrStr =
-            stderrStr.slice(0, maxOutputBytes) +
-            "\n... [output truncated due to size limit]";
-          truncated = true;
-        }
+        const isTruncated =
+          truncated ||
+          sanitizedStdout.truncated ||
+          sanitizedStderr.truncated;
 
         let errorMessage: string | undefined;
         if (aborted) {
@@ -248,10 +247,10 @@ export class NodeCommandExecutor implements CommandExecutor {
         resolve({
           command,
           exitCode: timedOut || aborted ? null : code,
-          stdout: stdoutStr,
-          stderr: stderrStr,
+          stdout: sanitizedStdout.text,
+          stderr: sanitizedStderr.text,
           timedOut,
-          truncated,
+          truncated: isTruncated,
           error: errorMessage
         });
       });

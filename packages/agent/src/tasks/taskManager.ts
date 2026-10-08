@@ -5,6 +5,7 @@ import * as os from "os";
 import { killProcessTree } from "../commands/processTree.js";
 import { prepareChildEnvironment } from "../commands/nodeExecutor.js";
 import { DefaultCommandPolicy } from "../commands/policy.js";
+import { sanitizeCommandOutput } from "../commands/outputSanitizer.js";
 import type { CommandPolicy } from "../commands/types.js";
 
 export type BackgroundTaskStatus = "running" | "exited" | "killed" | "failed";
@@ -250,7 +251,8 @@ export class TaskManager {
     if (!buffer || buffer.length === 0) {
       return "";
     }
-    return buffer.slice(-lines).join("\n");
+    const raw = buffer.slice(-lines).join("\n");
+    return sanitizeCommandOutput(raw).text;
   }
 
   public async sendInput(taskId: string, input: string): Promise<SendInputResult> {
