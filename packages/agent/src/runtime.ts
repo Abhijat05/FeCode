@@ -2128,8 +2128,12 @@ export class AgentRuntime implements Agent {
       }
     }
 
+    const callArgs = (call.arguments && typeof call.arguments === "object" ? call.arguments : {}) as Record<string, unknown>;
     const toolResultContent = sanitizeToolResultForContext(result, {
-      maxChars: 16000
+      maxChars: 16000,
+      source: call.name,
+      path: (callArgs.path || callArgs.filePath || callArgs.targetFile) as string | undefined,
+      command: callArgs.command as string | undefined
     });
 
     this.state.messages.push({
