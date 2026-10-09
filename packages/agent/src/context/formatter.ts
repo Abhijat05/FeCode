@@ -1,4 +1,5 @@
 import type { CodeContextResult } from "./types.js";
+import { neutralizeFenceTags } from "./toolResultSanitizer.js";
 
 export class CodeContextFormatter {
   public format(result: CodeContextResult): string {
@@ -39,7 +40,10 @@ export class CodeContextFormatter {
         if (region.reason) {
           lines.push(`Reason: ${region.reason}`);
         }
-        lines.push(`\`\`\`${lang}\n${region.content}\n\`\`\``);
+        const neutralized = neutralizeFenceTags(region.content);
+        lines.push(
+          `\`\`\`${lang}\n<untrusted_code_snippet path="${filePath}" lines="${region.startLine}-${region.endLine}">\n${neutralized}\n</untrusted_code_snippet>\n\`\`\``
+        );
       }
     }
 
