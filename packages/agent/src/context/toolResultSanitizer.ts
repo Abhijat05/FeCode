@@ -2,6 +2,10 @@ import type { ToolResult } from "@fecode/models";
 
 export interface SanitizeToolResultOptions {
   maxChars?: number;
+  source?: string;
+  path?: string;
+  command?: string;
+  fence?: boolean;
 }
 
 function safeSliceHead(str: string, maxLen: number): string {
@@ -21,35 +25,72 @@ function safeSliceTail(str: string, maxLen: number): string {
 }
 
 /**
+ * Neutralizes opening and closing boundary tags to prevent adversarial content
+ * from breaking out of or forging XML boundary fences.
+ */
+export function neutralizeFenceTags(str: string): string {
+  if (!str) return str;
+  return str
+    .replace(/<\/?untrusted_content\b/gi, (match) => `&lt;${match.slice(1)}`)
+    .replace(/<\/?untrusted_code_snippet\b/gi, (match) => `&lt;${match.slice(1)}`);
+}
+
+/**
+ * Wraps untrusted text in structural XML boundary tags (<untrusted_content>).
+ * Pre-emptively neutralizes any embedded fence tags within the content.
+ */
+export function fenceUntrustedContent(
+  content: string,
+  meta: { source?: string; path?: string; command?: string } = {}
+): string {
+  if (!content) return content;
+  // If already fenced, return as is
+  if (content.startsWith("<untrusted_content") && content.endsWith("</untrusted_content>")) {
+    return content;
+  }
+  const neutralized = neutralizeFenceTags(content);
+  const attrs: string[] = [];
+  if (meta.source) attrs.push(`source="${meta.source}"`);
+  if (meta.path) attrs.push(`path="${meta.path}"`);
+  if (meta.command) attrs.push(`command="${meta.command.replace(/"/g, "&quot;")}"`);
+  const attrStr = attrs.length > 0 ? " " + attrs.join(" ") : "";
+  return `<untrusted_content${attrStr}>\n${neutralized}\n</untrusted_content>`;
+}
+
+/**
  * Serializes and bounds tool results so they fit within context window limits
  * while GUARANTEEING that the resulting string is ALWAYS valid, well-formed JSON.
  *
- * Never performs raw string slicing across serialized JSON (which causes unclosed quotes,
- * broken escape sequences, and syntax errors). Instead, sanitizes inner data fields
- * or wraps the result structurally.
+ * Additionally wraps untrusted text fields (file content, command stdout/stderr, diffs)
+ * in structural XML boundary tags to defend against indirect prompt injection.
  */
 export function sanitizeToolResultForContext(
   result: ToolResult<unknown> | unknown,
   options: SanitizeToolResultOptions = {}
 ): string {
   const maxChars = options.maxChars ?? 16000;
+  const shouldFence = options.fence !== false;
+
+  let metaSource = options.source;
+  let metaPath = options.path;
+  const metaCommand = options.command;
 
   // If it's not an object, stringify directly or slice string safely
   if (result === null || typeof result !== "object") {
     const raw = String(result);
-    if (raw.length <= maxChars) return raw;
-    const head = safeSliceHead(raw, Math.floor(maxChars * 0.65));
-    const tail = safeSliceTail(raw, Math.floor(maxChars * 0.25));
-    return `${head}\n... [output truncated: ${raw.length - (head.length + tail.length)} characters omitted] ...\n${tail}`;
+    let body = raw;
+    if (raw.length > maxChars) {
+      const head = safeSliceHead(raw, Math.floor(maxChars * 0.65));
+      const tail = safeSliceTail(raw, Math.floor(maxChars * 0.25));
+      body = `${head}\n... [output truncated: ${raw.length - (head.length + tail.length)} characters omitted] ...\n${tail}`;
+    }
+    return shouldFence
+      ? fenceUntrustedContent(body, { source: metaSource, path: metaPath, command: metaCommand })
+      : body;
   }
 
-  // First check if unmodified serialization already fits comfortably
+  // Clone object to process fields and bound them
   const initialJson = JSON.stringify(result);
-  if (initialJson.length <= maxChars) {
-    return initialJson;
-  }
-
-  // It exceeds maxChars. We must prune inner fields while keeping JSON valid.
   const cloned = JSON.parse(initialJson) as Record<string, unknown>;
 
   // Check if it's a standard ToolResult with an output object
@@ -59,18 +100,37 @@ export function sanitizeToolResultForContext(
     if (output && typeof output === "object" && !Array.isArray(output)) {
       const outObj = output as Record<string, unknown>;
 
+      if (!metaPath && typeof outObj.path === "string") {
+        metaPath = outObj.path;
+      }
+      if (!metaSource) {
+        if (typeof outObj.content === "string") {
+          metaSource = "read_file";
+        } else if (outObj.stdout !== undefined || outObj.stderr !== undefined) {
+          metaSource = "execute_command";
+        } else if (outObj.diff !== undefined) {
+          metaSource = outObj.created ? "write_file" : "edit_file";
+        } else if (Array.isArray(outObj.matches)) {
+          metaSource = "search_files";
+        }
+      }
+
+      const meta = { source: metaSource, path: metaPath, command: metaCommand };
+
       // Check common high-volume string fields: content, stdout, stderr, text, diff
       for (const key of ["content", "stdout", "stderr", "text", "diff"]) {
         if (typeof outObj[key] === "string") {
-          const str = outObj[key] as string;
-          // Allocate remaining budget for this string
-          const targetBudget = Math.max(500, maxChars - 2000);
-          if (str.length > targetBudget) {
-            const head = safeSliceHead(str, Math.floor(targetBudget * 0.65));
-            const tail = safeSliceTail(str, Math.floor(targetBudget * 0.25));
-            const omitted = str.length - (head.length + tail.length);
-            outObj[key] = `${head}\n... [content truncated: ${omitted} characters omitted] ...\n${tail}`;
-            outObj.truncated = true;
+          let str = outObj[key] as string;
+          if (str.length > 0) {
+            const targetBudget = Math.max(500, maxChars - 2000);
+            if (str.length > targetBudget) {
+              const head = safeSliceHead(str, Math.floor(targetBudget * 0.65));
+              const tail = safeSliceTail(str, Math.floor(targetBudget * 0.25));
+              const omitted = str.length - (head.length + tail.length);
+              str = `${head}\n... [content truncated: ${omitted} characters omitted] ...\n${tail}`;
+              outObj.truncated = true;
+            }
+            outObj[key] = shouldFence ? fenceUntrustedContent(str, meta) : str;
           }
         }
       }
@@ -98,15 +158,18 @@ export function sanitizeToolResultForContext(
         cloned.truncated = true;
       }
     } else if (typeof output === "string") {
-      const str = output;
+      let str = output;
       const targetBudget = Math.max(500, maxChars - 1000);
       if (str.length > targetBudget) {
         const head = str.slice(0, Math.floor(targetBudget * 0.65));
         const tail = str.slice(str.length - Math.floor(targetBudget * 0.25));
         const omitted = str.length - (head.length + tail.length);
-        cloned.output = `${head}\n... [output truncated: ${omitted} characters omitted] ...\n${tail}`;
+        str = `${head}\n... [output truncated: ${omitted} characters omitted] ...\n${tail}`;
         cloned.truncated = true;
       }
+      cloned.output = shouldFence
+        ? fenceUntrustedContent(str, { source: metaSource, path: metaPath, command: metaCommand })
+        : str;
     }
 
     const prunedJson = JSON.stringify(cloned);
@@ -136,12 +199,16 @@ export function sanitizeToolResultForContext(
   const head = rawString.slice(0, Math.floor(previewBudget * 0.65));
   const tail = rawString.slice(rawString.length - Math.floor(previewBudget * 0.25));
   const omitted = rawString.length - (head.length + tail.length);
+  const previewBody = `${head}\n... [truncated: ${omitted} characters omitted] ...\n${tail}`;
+  const preview = shouldFence
+    ? fenceUntrustedContent(previewBody, { source: metaSource, path: metaPath, command: metaCommand })
+    : previewBody;
 
   return JSON.stringify({
     success: isSuccess,
     error: toolError,
     truncated: true,
     warning: `Tool output exceeded context budget and was safely truncated (${rawString.length} chars).`,
-    preview: `${head}\n... [truncated: ${omitted} characters omitted] ...\n${tail}`
+    preview
   });
 }
