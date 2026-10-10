@@ -92,9 +92,16 @@ export const RunHistoryView: React.FC<RunHistoryViewProps> = ({
   );
 
   useInput((input, key) => {
-    if (key.leftArrow || input === "p" || input === "P" || key.pageUp) {
+    if (
+      key.upArrow ||
+      key.leftArrow ||
+      input === "p" ||
+      input === "P" ||
+      key.pageUp
+    ) {
       setPage((prev) => Math.max(1, prev - 1));
     } else if (
+      key.downArrow ||
       key.rightArrow ||
       input === "n" ||
       input === "N" ||
@@ -166,7 +173,7 @@ export const RunHistoryView: React.FC<RunHistoryViewProps> = ({
           <Text color="yellow">
             Showing {(currentPage - 1) * calculatedPageSize + 1}–
             {Math.min(currentPage * calculatedPageSize, runs.length)} of {runs.length} runs (Page {currentPage} of {totalPages})
-            {"  "}[← / → or p / n] Navigate pages
+            {"  "}[↑ / ↓ or ← / → or p / n] Navigate pages
           </Text>
         </Box>
       )}

@@ -273,6 +273,44 @@ describe("MessageBubble", () => {
     expect(frame).toContain("Here is the code:");
     expect(frame).toContain("Done!");
   });
+
+  it("renders markdown bold and inline code without raw formatting characters", () => {
+    const text = "This is **bold text** and `inline_code_symbol` here.";
+    const { lastFrame } = render(
+      <MessageBubble role="agent" content={text} />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("bold text");
+    expect(frame).not.toContain("**bold text**");
+    expect(frame).toContain("inline_code_symbol");
+    expect(frame).not.toContain("`inline_code_symbol`");
+  });
+
+  it("renders markdown headings without raw hash prefixes", () => {
+    const text = "# Heading 1\n## Heading 2\n### Heading 3";
+    const { lastFrame } = render(
+      <MessageBubble role="agent" content={text} />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("Heading 1");
+    expect(frame).not.toContain("# Heading 1");
+    expect(frame).toContain("Heading 2");
+    expect(frame).not.toContain("## Heading 2");
+    expect(frame).toContain("Heading 3");
+    expect(frame).not.toContain("### Heading 3");
+  });
+
+  it("renders markdown lists with bullet points rather than raw hyphens", () => {
+    const text = "- First item\n- Second item\n1. Numbered item";
+    const { lastFrame } = render(
+      <MessageBubble role="agent" content={text} />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("• First item");
+    expect(frame).not.toContain("- First item");
+    expect(frame).toContain("• Second item");
+    expect(frame).toContain("1. Numbered item");
+  });
 });
 
 describe("ThinkingIndicator", () => {
@@ -927,6 +965,39 @@ describe("Phase 5AD: Modular UI Components", () => {
     const frame = lastFrame();
     expect(frame).toContain("Recent Runs (All Projects)");
     expect(frame).toContain("run-cross-1");
+  });
+
+  it("navigates RunHistoryView pages using Down and Up arrow keys", async () => {
+    const manyRuns = Array.from({ length: 15 }, (_, i) => ({
+      runId: `run-${i + 1}`,
+      status: "completed",
+      userRequestSummary: `Task ${i + 1}`,
+      durationMs: 1000
+    }));
+    const { lastFrame, stdin } = render(
+      <RunHistoryView runs={manyRuns} pageSize={5} />
+    );
+    await new Promise((r) => setTimeout(r, 50));
+    let frame = lastFrame() ?? "";
+    expect(frame).toContain("Page 1 of 3");
+    expect(frame).toContain("run-1");
+    expect(frame).not.toContain("run-6");
+
+    // Press Down arrow to navigate to Page 2
+    stdin.write("\u001B[B");
+    await new Promise((r) => setTimeout(r, 50));
+    frame = lastFrame() ?? "";
+    expect(frame).toContain("Page 2 of 3");
+    expect(frame).toContain("run-6");
+    expect(frame).not.toContain("Task 1 ");
+
+    // Press Up arrow to navigate back to Page 1
+    stdin.write("\u001B[A");
+    await new Promise((r) => setTimeout(r, 50));
+    frame = lastFrame() ?? "";
+    expect(frame).toContain("Page 1 of 3");
+    expect(frame).toContain("Task 1 ");
+    expect(frame).not.toContain("Task 6 ");
   });
 
   it("renders WorkspaceStatus with git branch and status details", () => {

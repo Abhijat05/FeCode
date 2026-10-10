@@ -83,6 +83,7 @@ export interface AppProps {
   recoveryManager?: RecoveryManager;
   executionPolicy?: ExecutionPolicy;
   historyStore?: RunHistoryStore;
+  clampResponses?: boolean;
 }
 
 export const App: React.FC<AppProps> = ({
@@ -101,7 +102,8 @@ export const App: React.FC<AppProps> = ({
   gitRepository: gitRepoProp,
   checkpointManager: checkpointManagerProp,
   recoveryManager: recoveryManagerProp,
-  executionPolicy: executionPolicyProp
+  executionPolicy: executionPolicyProp,
+  clampResponses
 }) => {
   const gitRepo = useMemo(
     () => gitRepoProp || new DefaultGitRepository(),
@@ -328,6 +330,7 @@ export const App: React.FC<AppProps> = ({
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const [scrollOffset, setScrollOffset] = useState(0);
   const [scrolledTurnId, setScrolledTurnId] = useState<string | null>(null);
+  const [responseScrollOffset, setResponseScrollOffset] = useState(0);
   const [promptHistory, setPromptHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
   const draftPromptRef = useRef<string>("");
@@ -372,11 +375,12 @@ export const App: React.FC<AppProps> = ({
     Boolean(pendingResume);
 
   const isTestEnv = Boolean(process.env.VITEST);
+  const shouldClampResponses = clampResponses ?? !isTestEnv;
   const terminalRows = process.stdout?.rows || 24;
   const availableTurnRows = Math.max(4, terminalRows - 14);
 
   const { visibleTurns, hiddenTurnsCount } = useMemo(() => {
-    if (isTestEnv || turns.length === 0) {
+    if (!shouldClampResponses || turns.length === 0) {
       return { visibleTurns: turns, hiddenTurnsCount: 0 };
     }
     let accumulatedLines = 0;
@@ -393,26 +397,41 @@ export const App: React.FC<AppProps> = ({
       startIndex = i;
     }
     const sliced = turns.slice(startIndex);
-    if (!isTestEnv && sliced.length > 0) {
+    if (shouldClampResponses && sliced.length > 0) {
       const lastIdx = sliced.length - 1;
       const last = sliced[lastIdx];
       const rLines = (last.response || "").split("\n");
       const pLinesCount = (last.prompt || "").split("\n").length;
       const maxRespLines = Math.max(3, availableTurnRows - pLinesCount - 4);
       if (rLines.length > maxRespLines) {
-        sliced[lastIdx] = {
-          ...last,
-          response: isGenerating
-            ? "… [earlier output hidden while generating]\n" + rLines.slice(-maxRespLines).join("\n")
-            : rLines.slice(0, maxRespLines).join("\n") + `\n… [${rLines.length - maxRespLines} lines omitted; use PageUp/Down to scroll]`
-        };
+        if (isGenerating) {
+          sliced[lastIdx] = {
+            ...last,
+            response: "… [earlier output hidden while generating]\n" + rLines.slice(-maxRespLines).join("\n")
+          };
+        } else {
+          const maxOffset = Math.max(0, rLines.length - maxRespLines);
+          const clampedOffset = Math.max(0, Math.min(responseScrollOffset, maxOffset));
+          const visibleSlice = rLines.slice(clampedOffset, clampedOffset + maxRespLines).join("\n");
+          const topIndicator = clampedOffset > 0
+            ? `▲ [${clampedOffset} earlier line(s) hidden; ↑ / PageUp to scroll up]\n`
+            : "";
+          const remaining = rLines.length - (clampedOffset + maxRespLines);
+          const bottomIndicator = remaining > 0
+            ? `\n▼ [${remaining} line(s) omitted; use ↓ / PageDown to scroll]`
+            : "";
+          sliced[lastIdx] = {
+            ...last,
+            response: topIndicator + visibleSlice + bottomIndicator
+          };
+        }
       }
     }
     return {
       visibleTurns: sliced,
       hiddenTurnsCount: startIndex
     };
-  }, [turns, isTestEnv, availableTurnRows, isGenerating]);
+  }, [turns, shouldClampResponses, availableTurnRows, isGenerating, responseScrollOffset]);
 
   const commandSuggestions: CommandDef[] =
     !isGenerating && !hasModal && query.startsWith("/") && !query.includes(" ")
@@ -420,9 +439,10 @@ export const App: React.FC<AppProps> = ({
       : [];
 
   const handleQueryChange = (rawVal: string) => {
-    if (scrollOffset > 0) {
+    if (scrollOffset > 0 || responseScrollOffset > 0) {
       setScrollOffset(0);
       setScrolledTurnId(null);
+      setResponseScrollOffset(0);
     }
     // Sanitize any raw ANSI, bracketed paste, or mouse escape sequences from leaking into input
     let val = rawVal;
@@ -679,9 +699,23 @@ export const App: React.FC<AppProps> = ({
         return;
       }
 
+      // Active target turn for line scrolling
+      const currentActiveTurn =
+        (scrolledTurnId ? turns.find((t) => t.id === scrolledTurnId) : null) ||
+        (turns.length > 0 ? turns[turns.length - 1 - scrollOffset] : null);
+      const activeRLines = (currentActiveTurn?.response || "").split("\n");
+      const activePLines = (currentActiveTurn?.prompt || "").split("\n").length;
+      const activeMaxRespLines = Math.max(3, availableTurnRows - activePLines - 4);
+      const activeMaxLineOffset = Math.max(0, activeRLines.length - activeMaxRespLines);
+
       // Mouse Wheel Up / PageUp / Shift+Up / Ctrl+U / Up Arrow: Scroll history up
       const isMouseWheelUp = input.includes("<64;") || input.startsWith("[<64;");
       const isMouseWheelDown = input.includes("<65;") || input.startsWith("[<65;");
+
+      const canUpArrow =
+        key.upArrow &&
+        (responseScrollOffset > 0 ||
+          (commandSuggestions.length === 0 && (!query || isGenerating || scrollOffset > 0)));
 
       const isUpScroll =
         (key.pageUp ||
@@ -689,7 +723,7 @@ export const App: React.FC<AppProps> = ({
           (key.ctrl && input === "u") ||
           input === "\u001B[5~" ||
           isMouseWheelUp ||
-          (key.upArrow && commandSuggestions.length === 0 && (!query || isGenerating || scrollOffset > 0))) &&
+          canUpArrow) &&
         activeView === "main" &&
         turns.length > 0;
 
@@ -699,6 +733,10 @@ export const App: React.FC<AppProps> = ({
           setScrollOffset(newOffset);
           const targetIndex = turns.length - 1 - newOffset;
           setScrolledTurnId(turns[targetIndex]?.id || null);
+          setResponseScrollOffset(0);
+        } else if (responseScrollOffset > 0) {
+          const step = key.pageUp || input === "\u001B[5~" || isMouseWheelUp ? Math.max(1, activeMaxRespLines - 2) : 1;
+          setResponseScrollOffset((prev) => Math.max(0, prev - step));
         } else {
           setScrollOffset((prev) => {
             const next = Math.min(prev + 1, Math.max(0, turns.length - 1));
@@ -706,9 +744,16 @@ export const App: React.FC<AppProps> = ({
             setScrolledTurnId(turns[targetIndex]?.id || null);
             return next;
           });
+          setResponseScrollOffset(0);
         }
         return;
       }
+
+      const canDownArrow =
+        key.downArrow &&
+        commandSuggestions.length === 0 &&
+        (!query || responseScrollOffset > 0 || scrollOffset > 0) &&
+        (scrollOffset > 0 || responseScrollOffset < activeMaxLineOffset);
 
       // Mouse Wheel Down / PageDown / Shift+Down / Ctrl+D / Down Arrow: Scroll history down towards live output
       const isDownScroll =
@@ -717,7 +762,7 @@ export const App: React.FC<AppProps> = ({
           (key.ctrl && input === "d") ||
           input === "\u001B[6~" ||
           isMouseWheelDown ||
-          (key.downArrow && scrollOffset > 0)) &&
+          canDownArrow) &&
         activeView === "main" &&
         turns.length > 0;
 
@@ -725,7 +770,11 @@ export const App: React.FC<AppProps> = ({
         if (key.ctrl && input === "d") {
           setScrollOffset(0);
           setScrolledTurnId(null);
-        } else {
+          setResponseScrollOffset(0);
+        } else if (responseScrollOffset < activeMaxLineOffset) {
+          const step = key.pageDown || input === "\u001B[6~" || isMouseWheelDown ? Math.max(1, activeMaxRespLines - 2) : 1;
+          setResponseScrollOffset((prev) => Math.min(activeMaxLineOffset, prev + step));
+        } else if (scrollOffset > 0) {
           setScrollOffset((prev) => {
             const next = Math.max(0, prev - 1);
             if (next === 0) {
@@ -736,6 +785,7 @@ export const App: React.FC<AppProps> = ({
             }
             return next;
           });
+          setResponseScrollOffset(0);
         }
         return;
       }
@@ -746,13 +796,15 @@ export const App: React.FC<AppProps> = ({
         setScrollOffset(newOffset);
         const targetIndex = turns.length - 1 - newOffset;
         setScrolledTurnId(turns[targetIndex]?.id || null);
+        setResponseScrollOffset(0);
         return;
       }
 
       // End: return to live bottom view
-      if ((input === "\u001B[F" || input === "\u001B[4~" || input === "\u001B[8~") && scrollOffset > 0) {
+      if ((input === "\u001B[F" || input === "\u001B[4~" || input === "\u001B[8~") && (scrollOffset > 0 || responseScrollOffset > 0)) {
         setScrollOffset(0);
         setScrolledTurnId(null);
+        setResponseScrollOffset(0);
         return;
       }
 
@@ -946,9 +998,10 @@ export const App: React.FC<AppProps> = ({
 
       // Escape returns to main view, clears scroll offset, or cancels active modal
       if (key.escape) {
-        if (scrollOffset > 0) {
+        if (scrollOffset > 0 || responseScrollOffset > 0) {
           setScrollOffset(0);
           setScrolledTurnId(null);
+          setResponseScrollOffset(0);
           return;
         }
         if (cancelActiveModal()) {
@@ -975,6 +1028,7 @@ export const App: React.FC<AppProps> = ({
   const handleSubmit = async (value: string) => {
     setScrollOffset(0);
     setScrolledTurnId(null);
+    setResponseScrollOffset(0);
     /* eslint-disable no-control-regex */
     let trimmed = value
       .replace(/\x1b?\[200~/g, "")
@@ -3514,12 +3568,22 @@ export const App: React.FC<AppProps> = ({
                     turns[turns.length - 1 - scrollOffset];
                   if (!targetTurn) return null;
                   let displayResponse = targetTurn.response;
-                  if (!isTestEnv && displayResponse) {
+                  if (shouldClampResponses && displayResponse) {
                     const rLines = displayResponse.split("\n");
                     const pLinesCount = (targetTurn.prompt || "").split("\n").length;
                     const maxRespLines = Math.max(4, availableTurnRows - pLinesCount - 4);
                     if (rLines.length > maxRespLines) {
-                      displayResponse = "… [Earlier lines truncated in compact view]\n" + rLines.slice(-maxRespLines).join("\n");
+                      const maxOffset = Math.max(0, rLines.length - maxRespLines);
+                      const clampedOffset = Math.max(0, Math.min(responseScrollOffset, maxOffset));
+                      const visibleSlice = rLines.slice(clampedOffset, clampedOffset + maxRespLines).join("\n");
+                      const topIndicator = clampedOffset > 0
+                        ? `▲ [${clampedOffset} earlier line(s) hidden; ↑ / PageUp to scroll up]\n`
+                        : "";
+                      const remaining = rLines.length - (clampedOffset + maxRespLines);
+                      const bottomIndicator = remaining > 0
+                        ? `\n▼ [${remaining} line(s) omitted; use ↓ / PageDown to scroll]`
+                        : "";
+                      displayResponse = topIndicator + visibleSlice + bottomIndicator;
                     }
                   }
                   return (

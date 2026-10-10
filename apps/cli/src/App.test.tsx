@@ -2834,6 +2834,50 @@ describe("CLI App Component", () => {
       expect(frame).toContain("History turn 2");
     });
 
+    it("supports scrolling through long response lines using Down and Up arrow keys", async () => {
+      const mockAgent = new MockAgent();
+      const longResponse = Array.from({ length: 25 }, (_, i) => `Line ${i + 1}: detailed output`).join("\n");
+      mockAgent.runFn = async function* () {
+        yield { type: "text", content: longResponse };
+        yield { type: "done" };
+      };
+
+      const { lastFrame, stdin } = render(
+        <App agent={mockAgent} cwd="/test" clampResponses={true} />
+      );
+      await delay(50);
+
+      await typeAndSubmit(stdin, "Generate long report");
+      await delay(200);
+
+      let frame = lastFrame() ?? "";
+      expect(frame).toContain("Line 1:");
+      expect(frame).toContain("line(s) omitted; use ↓ / PageDown to scroll");
+      expect(frame).not.toContain("Line 25:");
+
+      // Press Down Arrow to scroll down
+      stdin.write("\u001B[B");
+      await delay(50);
+
+      frame = lastFrame() ?? "";
+      expect(frame).toContain("earlier line(s) hidden; ↑ / PageUp to scroll up");
+
+      // Press PageDown to jump further down
+      stdin.write("\u001B[6~");
+      await delay(50);
+
+      frame = lastFrame() ?? "";
+      expect(frame).toContain("Line 5:");
+
+      // Press Up Arrow to scroll back up
+      stdin.write("\u001B[A");
+      await delay(50);
+
+      frame = lastFrame() ?? "";
+      expect(frame).toContain("earlier line(s) hidden");
+      expect(frame).toContain("Line 4:");
+    });
+
     it("navigates previously submitted prompts using Ctrl+P and Ctrl+N", async () => {
       const mockAgent = new MockAgent();
       mockAgent.runFn = async function* (input: AgentInput) {

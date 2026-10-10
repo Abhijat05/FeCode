@@ -61,9 +61,16 @@ export const HelpView: React.FC<HelpViewProps> = ({
 
   useInput((input, key) => {
     if (isNarrow) {
-      if (key.leftArrow || input === "p" || input === "P" || key.pageUp) {
+      if (
+        key.upArrow ||
+        key.leftArrow ||
+        input === "p" ||
+        input === "P" ||
+        key.pageUp
+      ) {
         setPage((prev) => Math.max(1, prev - 1));
       } else if (
+        key.downArrow ||
         key.rightArrow ||
         input === "n" ||
         input === "N" ||
@@ -90,7 +97,7 @@ export const HelpView: React.FC<HelpViewProps> = ({
         <Text bold color="cyan">Available Commands:</Text>
         {isNarrow && (
           <Text color="yellow">
-            (Page {page} of {totalPages}) [← / →]
+            (Page {page} of {totalPages}) [↑ / ↓ or ← / →]
           </Text>
         )}
       </Box>
