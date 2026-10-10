@@ -4,6 +4,46 @@ All notable changes to FeCode are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-10-10
+
+### Fixed & Security Hardening
+- **Path Traversal & Symlink Safety**:
+  - Resolved symlink and NTFS junction directory traversal vulnerabilities in `pathUtils` by enforcing strict canonical path boundary checks.
+  - Added checks to reject FIFOs, device files, and non-regular special files before opening.
+- **Process Isolation & Command Injection Defense**:
+  - Prevented shell newline command injection in command policy validation.
+  - Scrubbed and isolated sensitive environment variables from being leaked into child processes.
+  - Sanitized command output against hostile ANSI/OSC escape sequences with safe grapheme-aware Unicode slicing.
+- **Atomic File Writing & Concurrency Safety**:
+  - Hardened `atomicWriter` to handle `EXDEV` cross-device moves, Windows long paths (`\\?\`), and avoid file truncation/zeroing on `ENOSPC`.
+  - Enforced pre-rename content SHA-256 hash verification in `editFile` to prevent silent overwrite races.
+  - Hardened `readFile` with non-blocking opens and graceful stream error handling.
+- **Context Budgeting & Injection Defense**:
+  - Added prompt injection defense meta-rules to the default agent system prompt.
+  - Added XML boundary fencing and tag neutralization for untrusted tool outputs and repository code snippets.
+  - Prevented JSON corruption and malformed payloads during tool result truncation.
+  - Fixed CRLF normalization, gitignore search handling, dynamic context budgeting, and prompt history indexing.
+- **Provider Timeouts & Stream Watchdog**:
+  - Added configurable request timeout (`FE_REQUEST_TIMEOUT_MS` / `OPENAI_TIMEOUT_MS`, default 60s) to `OpenAIModelProvider` and `OpenAICompatibleModelProvider` to prevent indefinite hangs on stalled endpoints.
+  - Added stream chunk idle watchdog (`FE_STREAM_IDLE_TIMEOUT_MS`, default 45s) to safely detect and abort frozen SSE connections.
+  - Classified connection timeouts and stream stalls as retryable `transient_network` errors without confusing them with user cancellation.
+- **Dependency Audit**:
+  - Updated `source-map-js` to 1.2.2 to resolve npm audit vulnerability.
+
+### Added & Improved
+- **Background Task Management**:
+  - Implemented `TaskManager` and registered `manage_task` tool to support daemon background processes (`isDaemon`).
+  - Added robust teardown preventing stream `ENOENT` crashes during task termination.
+- **Context Compaction & Turn Summarization**:
+  - Implemented structured turn summarization and compaction digests to maintain coherence in long-running agent loops.
+- **CLI & TUI UX Improvements**:
+  - Stabilized terminal viewport rendering during LLM thinking blocks and reasoning token streams.
+  - Enabled arrow-key history scrolling and interactive approval selection via arrow keys and Enter.
+  - Added pagination for `/sessions` and secondary views with viewport height clamping to eliminate keystroke jitter.
+  - Optimized terminal rendering performance with turn memoization and stream batching.
+
+---
+
 ## [1.1.0] - 2026-10-01
 
 ### Added
