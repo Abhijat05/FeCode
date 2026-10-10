@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "child_process";
 import { killProcessTree } from "./processTree.js";
-import { DefaultCommandPolicy } from "./policy.js";
+import { DefaultCommandPolicy, hasUnquotedForbiddenChars } from "./policy.js";
 import { sanitizeCommandOutput } from "./outputSanitizer.js";
 import type {
   CommandExecutionOptions,
@@ -119,6 +119,24 @@ export class NodeCommandExecutor implements CommandExecutor {
       const BATCH_EXECUTABLES = new Set(["npm", "npx", "pnpm", "yarn", "bun"]);
       const useShell =
         process.platform === "win32" && BATCH_EXECUTABLES.has(executable.toLowerCase());
+
+      // cmd.exe (used below via shell:true for Windows batch executables) does not
+      // honor single quotes as a quoting mechanism, unlike the shell:false argv path.
+      // Re-scan with that relaxed-quoting assumption removed so that content like
+      // 'x & del /s /q C:\' cannot smuggle a shell metacharacter past policy.validate().
+      if (useShell && hasUnquotedForbiddenChars(command.trim(), { honorSingleQuotes: false })) {
+        resolve({
+          command,
+          exitCode: null,
+          stdout: "",
+          stderr: "",
+          timedOut: false,
+          truncated: false,
+          error:
+            "UNSUPPORTED_SHELL_SYNTAX: Command contains shell metacharacters that cannot be safely quoted for Windows batch execution."
+        });
+        return;
+      }
 
       try {
         if (useShell) {

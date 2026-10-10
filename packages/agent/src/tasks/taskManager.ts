@@ -4,7 +4,7 @@ import * as path from "path";
 import * as os from "os";
 import { killProcessTree } from "../commands/processTree.js";
 import { prepareChildEnvironment } from "../commands/nodeExecutor.js";
-import { DefaultCommandPolicy } from "../commands/policy.js";
+import { DefaultCommandPolicy, hasUnquotedForbiddenChars } from "../commands/policy.js";
 import { sanitizeCommandOutput } from "../commands/outputSanitizer.js";
 import type { CommandPolicy } from "../commands/types.js";
 
@@ -75,6 +75,20 @@ export class TaskManager {
     const args = decision.args || [];
     const childEnv = prepareChildEnvironment();
 
+    const BATCH_EXECUTABLES = new Set(["npm", "npx", "pnpm", "yarn", "bun"]);
+    const useShell =
+      process.platform === "win32" && BATCH_EXECUTABLES.has(executable.toLowerCase());
+
+    // cmd.exe (used below via shell:true for Windows batch executables) does not
+    // honor single quotes as a quoting mechanism, unlike the shell:false argv path.
+    // Re-scan with that relaxed-quoting assumption removed so that content like
+    // 'x & del /s /q C:\' cannot smuggle a shell metacharacter past policy.validate().
+    if (useShell && hasUnquotedForbiddenChars(command.trim(), { honorSingleQuotes: false })) {
+      throw new Error(
+        "UNSUPPORTED_SHELL_SYNTAX: Command contains shell metacharacters that cannot be safely quoted for Windows batch execution."
+      );
+    }
+
     const taskId = `task-${++this.counter}`;
     fs.mkdirSync(this.logDir, { recursive: true });
     const logFile = path.join(this.logDir, `${taskId}.log`);
@@ -98,10 +112,6 @@ export class TaskManager {
 
     const ringBuffer: string[] = [];
     this.ringBuffers.set(taskId, ringBuffer);
-
-    const BATCH_EXECUTABLES = new Set(["npm", "npx", "pnpm", "yarn", "bun"]);
-    const useShell =
-      process.platform === "win32" && BATCH_EXECUTABLES.has(executable.toLowerCase());
 
     let child: ChildProcess;
     try {

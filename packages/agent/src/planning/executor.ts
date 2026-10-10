@@ -16,6 +16,7 @@ import {
   canExecuteStep,
   completePlanStep,
   failPlanStep,
+  skipPlanStep,
   startPlanStep,
   transitionPlanStatus,
   unblockPlan
@@ -180,8 +181,9 @@ export class DefaultPlanExecutor implements PlanExecutor {
       const depCheck = canExecuteStep(activePlan, step.stepId);
       if (!depCheck.canExecute) {
         const skipReason = depCheck.reason || "Prerequisite dependencies not satisfied";
-        activePlan = failPlanStep(activePlan, step.stepId, skipReason);
-        // Step marked as skipped if prior step failed or prerequisite missing
+        activePlan = skipPlanStep(activePlan, step.stepId, skipReason);
+        // Step (and any transitive dependents) marked skipped; the plan itself
+        // has not failed — a prerequisite simply wasn't satisfied.
         const currentStepObj = activePlan.steps.find((s) => s.stepId === step.stepId);
         const effectiveStatus = currentStepObj?.status || "skipped";
 
@@ -734,7 +736,11 @@ export class DefaultPlanExecutor implements PlanExecutor {
       return;
     }
 
-    if (completedCount === activePlan.steps.length) {
+    const allStepsTerminal = activePlan.steps.every(
+      (s) => s.status === "completed" || s.status === "skipped"
+    );
+
+    if (allStepsTerminal) {
       // 10. Final Workspace Reconciliation
       if (this.reconciliationPolicy.required) {
         yield {
