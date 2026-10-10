@@ -44,10 +44,12 @@ export function fenceUntrustedContent(
   meta: { source?: string; path?: string; command?: string } = {}
 ): string {
   if (!content) return content;
-  // If already fenced, return as is
-  if (content.startsWith("<untrusted_content") && content.endsWith("</untrusted_content>")) {
-    return content;
-  }
+  // NOTE: content is always neutralized and (re-)wrapped here, even if it already
+  // looks fenced on its face. Adversarial content can be crafted to start with
+  // "<untrusted_content" and end with "</untrusted_content>" purely as literal
+  // text; trusting that shape without neutralizing it first would let a forged
+  // or premature closing tag embedded inside slip through unescaped, letting
+  // attacker-controlled text masquerade as sitting outside the untrusted boundary.
   const neutralized = neutralizeFenceTags(content);
   const attrs: string[] = [];
   if (meta.source) attrs.push(`source="${meta.source}"`);
