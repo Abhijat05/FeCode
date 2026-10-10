@@ -226,6 +226,17 @@ export class EditFileTool
 
       // Post-approval second-read conflict check to verify file was not mutated on disk
       const freshContent = await fs.readFile(targetPath, "utf-8");
+      const freshHash = createContentHash(freshContent);
+      if (freshHash !== currentHash) {
+        return {
+          success: false,
+          error: {
+            message: `File content was modified on disk during processing (${displayPath}). Please re-read the file before making edits.`,
+            code: "EDIT_CONFLICT"
+          }
+        };
+      }
+
       const freshMatchCount = countOccurrences(freshContent, effectiveOldText);
       if (freshMatchCount !== 1) {
         return {

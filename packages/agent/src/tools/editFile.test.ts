@@ -213,5 +213,37 @@ describe("EditFileTool", () => {
     expect(result.error?.code).toBe("NOT_A_FILE");
     expect(result.error?.message).toMatch(/FIFO pipe/i);
   });
+
+  it("detects external modifications to other lines during approval review and aborts with EDIT_CONFLICT", async () => {
+    const fileRel = "concurrent.txt";
+    const initialContent = "Header: line 1\nHeader: line 2\n\nBody: old content\n\nFooter: line 99\n";
+    await fs.writeFile(path.join(tmpDir, fileRel), initialContent);
+
+    // Simulate an external developer or linter modifying the Header during review
+    const concurrentTool = new EditFileTool({
+      onPreWrite: async () => {
+        const externallyModified = "Header: modified by linter\nHeader: line 2\n\nBody: old content\n\nFooter: line 99\n";
+        await fs.writeFile(path.join(tmpDir, fileRel), externallyModified);
+      }
+    });
+
+    const result = await concurrentTool.execute(
+      {
+        path: fileRel,
+        oldText: "Body: old content",
+        newText: "Body: new content"
+      },
+      context
+    );
+
+    // Must detect conflict and reject
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe("EDIT_CONFLICT");
+    expect(result.error?.message).toMatch(/modified on disk/i);
+
+    // Invariant: External modifications on disk MUST NOT be obliterated!
+    const diskContent = await fs.readFile(path.join(tmpDir, fileRel), "utf-8");
+    expect(diskContent).toBe("Header: modified by linter\nHeader: line 2\n\nBody: old content\n\nFooter: line 99\n");
+  });
 });
 
