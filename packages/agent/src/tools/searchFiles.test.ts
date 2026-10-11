@@ -210,6 +210,26 @@ describe("SearchFilesTool", () => {
     expect(depths.length).toBeGreaterThan(0);
     expect(depths.every((d) => d <= 5)).toBe(true);
   });
+
+  it("skips files exceeding maxFileSize limit to protect heap memory", async () => {
+    // Create a 50KB file
+    const largeContent = "match_token\n" + "x".repeat(50 * 1024);
+    await fs.writeFile(path.join(tmpDir, "src", "large.txt"), largeContent);
+
+    // Create a 1KB small file
+    const smallContent = "match_token small\n";
+    await fs.writeFile(path.join(tmpDir, "src", "small.txt"), smallContent);
+
+    // Tool with 20KB maxFileSize limit
+    const cappedTool = new SearchFilesTool({ maxFileSize: 20 * 1024 });
+    const result = await cappedTool.execute({ query: "match_token" }, context);
+
+    expect(result.success).toBe(true);
+    const paths = result.output?.matches.map((m) => m.path) || [];
+    expect(paths.some((p) => p.includes("small.txt"))).toBe(true);
+    expect(paths.some((p) => p.includes("large.txt"))).toBe(false);
+  });
 });
+
 
 

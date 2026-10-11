@@ -333,6 +333,11 @@ export class SearchFilesTool
     try {
       const handle = await fs.open(filePath, "r");
       try {
+        const stats = await handle.stat();
+        if (stats.size > this.maxFileSize) {
+          return;
+        }
+
         const sampleBuf = Buffer.alloc(1024);
         const { bytesRead } = await handle.read(sampleBuf, 0, 1024, 0);
         if (bytesRead > 0 && isBinaryBuffer(sampleBuf.subarray(0, bytesRead))) {
@@ -343,6 +348,10 @@ export class SearchFilesTool
       }
 
       const fileStream = fsSync.createReadStream(filePath, { encoding: "utf-8" });
+      fileStream.on("error", () => {
+        // Suppress unhandled stream error if file unlinked or modified mid-read
+      });
+
       const rl = readline.createInterface({
         input: fileStream,
         crlfDelay: Infinity
