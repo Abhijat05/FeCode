@@ -238,10 +238,18 @@ Interactive Commands (inside TUI):
     process.exit(1);
   }
 
-  // Clear terminal screen and ensure mouse reporting is disabled to prevent mouse escape leaks into input
+  // Clear terminal screen, disable mouse reporting, and enable bracketed paste mode
   if (process.stdout.isTTY && !process.env.VITEST && !process.env.CI_TEST_MODE) {
-    process.stdout.write("\x1b[2J\x1b[H\x1b[?1000l\x1b[?1006l");
+    process.stdout.write("\x1b[2J\x1b[H\x1b[?1000l\x1b[?1006l\x1b[?2004h");
   }
+
+  const restoreTerminal = () => {
+    if (process.stdout.isTTY && !process.env.VITEST && !process.env.CI_TEST_MODE) {
+      process.stdout.write("\x1b[?2004l");
+    }
+  };
+
+  process.once("exit", restoreTerminal);
 
   render(
     <App
