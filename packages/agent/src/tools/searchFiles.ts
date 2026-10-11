@@ -241,7 +241,7 @@ export class SearchFilesTool
   }
 
   private async searchDirectory(
-    dirPath: string,
+    startDirPath: string,
     rootDir: string,
     queryLower: string,
     matches: SearchMatch[],
@@ -249,57 +249,73 @@ export class SearchFilesTool
     maxCollect: number,
     gitignoreMatcher?: GitignoreMatcher | null
   ): Promise<void> {
-    if (signal.aborted || matches.length >= maxCollect) return;
+    const queue: Array<{ dirPath: string; depth: number }> = [
+      { dirPath: startDirPath, depth: 0 }
+    ];
+    const visitedCanonicalDirs = new Set<string>();
 
-    let entries: fsSync.Dirent[];
-    try {
-      entries = await fs.readdir(dirPath, { withFileTypes: true });
-    } catch {
-      return;
-    }
-
-    for (const entry of entries) {
+    while (queue.length > 0) {
       if (signal.aborted || matches.length >= maxCollect) return;
 
-      const fullPath = path.join(dirPath, entry.name);
-      const relPath = path.relative(rootDir, fullPath);
+      const current = queue.shift()!;
 
-      if (entry.isDirectory()) {
-        if (
-          isIgnoredDirectory(entry.name) ||
-          gitignoreMatcher?.isIgnored(relPath, true)
-        ) {
-          continue;
-        }
-        await this.searchDirectory(
-          fullPath,
-          rootDir,
-          queryLower,
-          matches,
-          signal,
-          maxCollect,
-          gitignoreMatcher
-        );
-      } else if (entry.isFile()) {
-        if (
-          isIgnoredFile(entry.name) ||
-          gitignoreMatcher?.isIgnored(relPath, false)
-        ) {
-          continue;
-        }
-        const ext = path.extname(entry.name).toLowerCase();
-        if (BINARY_EXTENSIONS.has(ext)) {
-          continue;
-        }
+      let canonicalPath: string;
+      try {
+        canonicalPath = await fs.realpath(current.dirPath);
+      } catch {
+        canonicalPath = current.dirPath;
+      }
 
-        await this.searchFile(
-          fullPath,
-          relPath,
-          queryLower,
-          matches,
-          signal,
-          maxCollect
-        );
+      if (visitedCanonicalDirs.has(canonicalPath)) {
+        continue;
+      }
+      visitedCanonicalDirs.add(canonicalPath);
+
+      let entries: fsSync.Dirent[];
+      try {
+        entries = await fs.readdir(current.dirPath, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+
+      for (const entry of entries) {
+        if (signal.aborted || matches.length >= maxCollect) return;
+
+        const fullPath = path.join(current.dirPath, entry.name);
+        const relPath = path.relative(rootDir, fullPath);
+
+        if (entry.isDirectory()) {
+          if (
+            isIgnoredDirectory(entry.name) ||
+            gitignoreMatcher?.isIgnored(relPath, true)
+          ) {
+            continue;
+          }
+
+          if (current.depth < this.maxDepth) {
+            queue.push({ dirPath: fullPath, depth: current.depth + 1 });
+          }
+        } else if (entry.isFile()) {
+          if (
+            isIgnoredFile(entry.name) ||
+            gitignoreMatcher?.isIgnored(relPath, false)
+          ) {
+            continue;
+          }
+          const ext = path.extname(entry.name).toLowerCase();
+          if (BINARY_EXTENSIONS.has(ext)) {
+            continue;
+          }
+
+          await this.searchFile(
+            fullPath,
+            relPath,
+            queryLower,
+            matches,
+            signal,
+            maxCollect
+          );
+        }
       }
     }
   }

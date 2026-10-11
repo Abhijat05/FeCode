@@ -169,5 +169,47 @@ describe("SearchFilesTool", () => {
     expect((customTool as any).maxDepth).toBe(5);
     expect((customTool as any).maxFileSize).toBe(1024 * 1024);
   });
+
+  it("terminates without infinite loop when encountering cyclic directory symlinks", async () => {
+    const cyclicDir = path.join(tmpDir, "src", "cyclic");
+    await fs.mkdir(cyclicDir, { recursive: true });
+    await fs.writeFile(path.join(cyclicDir, "target.txt"), "found cyclic keyword");
+
+    // Create symlink loop: src/cyclic/loop -> src/cyclic
+    try {
+      await fs.symlink(cyclicDir, path.join(cyclicDir, "loop"), "dir");
+    } catch {
+      // On systems where directory symlinks require elevated permissions, skip
+      return;
+    }
+
+    const result = await tool.execute({ query: "cyclic" }, context);
+    expect(result.success).toBe(true);
+    expect(result.output?.matches.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("respects maxDepth and does not blow call stack on deeply nested directories", async () => {
+    // Create a 25-level deep directory tree
+    let currentPath = path.join(tmpDir, "deep");
+    for (let i = 1; i <= 25; i++) {
+      currentPath = path.join(currentPath, `level${i}`);
+      await fs.mkdir(currentPath, { recursive: true });
+      await fs.writeFile(path.join(currentPath, "file.txt"), `deep keyword at level ${i}`);
+    }
+
+    const shallowTool = new SearchFilesTool({ maxDepth: 5 });
+    const result = await shallowTool.execute({ query: "keyword", path: "deep" }, context);
+
+    expect(result.success).toBe(true);
+    // Files at depth > 5 should not be visited
+    const depths = result.output?.matches.map((m) => {
+      const parts = m.path.split(/[/\\]/);
+      return parts.filter((p) => p.startsWith("level")).length;
+    }) || [];
+
+    expect(depths.length).toBeGreaterThan(0);
+    expect(depths.every((d) => d <= 5)).toBe(true);
+  });
 });
+
 
