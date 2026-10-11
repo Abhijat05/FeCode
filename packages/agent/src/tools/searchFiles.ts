@@ -114,8 +114,8 @@ export class SearchFilesTool
   };
 
   private readonly defaultMaxResults: number;
-  private readonly maxDepth: number;
-  private readonly maxFileSize: number;
+  public readonly maxDepth: number;
+  public readonly maxFileSize: number;
 
   constructor(options: SearchFilesToolOptions = {}) {
     this.defaultMaxResults = options.maxResults ?? 100;

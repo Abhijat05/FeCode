@@ -166,8 +166,8 @@ describe("SearchFilesTool", () => {
       maxDepth: 5,
       maxFileSize: 1024 * 1024
     });
-    expect((customTool as any).maxDepth).toBe(5);
-    expect((customTool as any).maxFileSize).toBe(1024 * 1024);
+    expect(customTool.maxDepth).toBe(5);
+    expect(customTool.maxFileSize).toBe(1024 * 1024);
   });
 
   it("terminates without infinite loop when encountering cyclic directory symlinks", async () => {
