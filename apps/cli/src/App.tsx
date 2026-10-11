@@ -411,34 +411,17 @@ export const App: React.FC<AppProps> = ({
       startIndex = i;
     }
     const sliced = turns.slice(startIndex);
-    if (shouldClampResponses && sliced.length > 0) {
+    if (shouldClampResponses && sliced.length > 0 && isGenerating) {
       const lastIdx = sliced.length - 1;
       const last = sliced[lastIdx];
       const rLines = (last.response || "").split("\n");
       const pLinesCount = (last.prompt || "").split("\n").length;
       const maxRespLines = Math.max(3, availableTurnRows - pLinesCount - 4);
       if (rLines.length > maxRespLines) {
-        if (isGenerating) {
-          sliced[lastIdx] = {
-            ...last,
-            response: "… [earlier output hidden while generating]\n" + rLines.slice(-maxRespLines).join("\n")
-          };
-        } else {
-          const maxOffset = Math.max(0, rLines.length - maxRespLines);
-          const clampedOffset = Math.max(0, Math.min(responseScrollOffset, maxOffset));
-          const visibleSlice = rLines.slice(clampedOffset, clampedOffset + maxRespLines).join("\n");
-          const topIndicator = clampedOffset > 0
-            ? `▲ [${clampedOffset} earlier line(s) hidden; ↑ / PageUp to scroll up]\n`
-            : "";
-          const remaining = rLines.length - (clampedOffset + maxRespLines);
-          const bottomIndicator = remaining > 0
-            ? `\n▼ [${remaining} line(s) omitted; use ↓ / PageDown to scroll]`
-            : "";
-          sliced[lastIdx] = {
-            ...last,
-            response: topIndicator + visibleSlice + bottomIndicator
-          };
-        }
+        sliced[lastIdx] = {
+          ...last,
+          response: "… [earlier output hidden while generating]\n" + rLines.slice(-maxRespLines).join("\n")
+        };
       }
     }
     return {
@@ -3569,25 +3552,7 @@ export const App: React.FC<AppProps> = ({
                     (scrolledTurnId ? turns.find((t) => t.id === scrolledTurnId) : null) ||
                     turns[turns.length - 1 - scrollOffset];
                   if (!targetTurn) return null;
-                  let displayResponse = targetTurn.response;
-                  if (shouldClampResponses && displayResponse) {
-                    const rLines = displayResponse.split("\n");
-                    const pLinesCount = (targetTurn.prompt || "").split("\n").length;
-                    const maxRespLines = Math.max(4, availableTurnRows - pLinesCount - 4);
-                    if (rLines.length > maxRespLines) {
-                      const maxOffset = Math.max(0, rLines.length - maxRespLines);
-                      const clampedOffset = Math.max(0, Math.min(responseScrollOffset, maxOffset));
-                      const visibleSlice = rLines.slice(clampedOffset, clampedOffset + maxRespLines).join("\n");
-                      const topIndicator = clampedOffset > 0
-                        ? `▲ [${clampedOffset} earlier line(s) hidden; ↑ / PageUp to scroll up]\n`
-                        : "";
-                      const remaining = rLines.length - (clampedOffset + maxRespLines);
-                      const bottomIndicator = remaining > 0
-                        ? `\n▼ [${remaining} line(s) omitted; use ↓ / PageDown to scroll]`
-                        : "";
-                      displayResponse = topIndicator + visibleSlice + bottomIndicator;
-                    }
-                  }
+                  const displayResponse = targetTurn.response;
                   return (
                     <TurnView
                       key={targetTurn.id}
