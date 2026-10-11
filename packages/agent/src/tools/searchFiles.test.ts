@@ -159,4 +159,15 @@ describe("SearchFilesTool", () => {
     expect(matches.some((m) => m.path.includes("temporary.log"))).toBe(false);
     expect(matches.some((m) => m.path.includes("Dashboard.tsx"))).toBe(true);
   });
+
+  it("respects custom maxDepth and maxFileSize options", () => {
+    const customTool = new SearchFilesTool({
+      maxResults: 50,
+      maxDepth: 5,
+      maxFileSize: 1024 * 1024
+    });
+    expect((customTool as any).maxDepth).toBe(5);
+    expect((customTool as any).maxFileSize).toBe(1024 * 1024);
+  });
 });
+

@@ -33,6 +33,8 @@ export interface SearchFilesOutput {
 
 export interface SearchFilesToolOptions {
   maxResults?: number;
+  maxDepth?: number;
+  maxFileSize?: number;
 }
 
 const BINARY_EXTENSIONS = new Set([
@@ -112,9 +114,13 @@ export class SearchFilesTool
   };
 
   private readonly defaultMaxResults: number;
+  private readonly maxDepth: number;
+  private readonly maxFileSize: number;
 
   constructor(options: SearchFilesToolOptions = {}) {
     this.defaultMaxResults = options.maxResults ?? 100;
+    this.maxDepth = options.maxDepth ?? 20;
+    this.maxFileSize = options.maxFileSize ?? 2 * 1024 * 1024; // 2 MB default
   }
 
   async execute(
