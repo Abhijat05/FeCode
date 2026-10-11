@@ -34,6 +34,7 @@ import {
 import type { ApprovalRequest, ModelMessage } from "@fecode/models";
 import { InteractiveApprovalResolver } from "./approvalResolver.js";
 import { filterCommands, type CommandDef } from "./commands.js";
+import { processPastedInput, expandPastedTokens } from "./pasteUtils.js";
 import {
   AppShell,
   Header,
@@ -335,6 +336,8 @@ export const App: React.FC<AppProps> = ({
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
   const draftPromptRef = useRef<string>("");
   const prevIsGeneratingRef = useRef(false);
+  const pastedTextsRef = useRef<Map<string, string>>(new Map());
+  const pasteCounterRef = useRef<number>(0);
   const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(
     null
   );
@@ -378,6 +381,17 @@ export const App: React.FC<AppProps> = ({
   const shouldClampResponses = clampResponses ?? !isTestEnv;
   const terminalRows = process.stdout?.rows || 24;
   const availableTurnRows = Math.max(4, terminalRows - 14);
+
+  useEffect(() => {
+    if (process.stdout.isTTY && !isTestEnv) {
+      process.stdout.write("\x1b[?2004h");
+    }
+    return () => {
+      if (process.stdout.isTTY && !isTestEnv) {
+        process.stdout.write("\x1b[?2004l");
+      }
+    };
+  }, [isTestEnv]);
 
   const { visibleTurns, hiddenTurnsCount } = useMemo(() => {
     if (!shouldClampResponses || turns.length === 0) {
@@ -444,25 +458,12 @@ export const App: React.FC<AppProps> = ({
       setScrolledTurnId(null);
       setResponseScrollOffset(0);
     }
-    // Sanitize any raw ANSI, bracketed paste, or mouse escape sequences from leaking into input
-    let val = rawVal;
-    /* eslint-disable no-control-regex */
-    if (
-      val.includes("[200~") ||
-      val.includes("[201~") ||
-      val.includes("[<") ||
-      val.includes("\x1b")
-    ) {
-      val = val
-        .replace(/\x1b?\[200~/g, "")
-        .replace(/\x1b?\[201~/g, "")
-        .replace(/\x1b?\[<\d+;\d+;\d+[Mm]/g, "")
-        .replace(/\x1b/g, "");
-    }
-    /* eslint-enable no-control-regex */
-    if (val.includes("\n") || val.includes("\r")) {
-      val = val.replace(/\r?\n/g, " ");
-    }
+    const val = processPastedInput(
+      rawVal,
+      query,
+      pastedTextsRef.current,
+      pasteCounterRef
+    );
 
     if (!hasModal && !isGenerating && activeView === "main" && query === "" && val === "?") {
       setActiveView("help");
@@ -1029,14 +1030,13 @@ export const App: React.FC<AppProps> = ({
     setScrollOffset(0);
     setScrolledTurnId(null);
     setResponseScrollOffset(0);
-    /* eslint-disable no-control-regex */
-    let trimmed = value
-      .replace(/\x1b?\[200~/g, "")
-      .replace(/\x1b?\[201~/g, "")
-      .replace(/\x1b?\[<\d+;\d+;\d+[Mm]/g, "")
-      .replace(/\x1b/g, "")
-      .trim();
-    /* eslint-enable no-control-regex */
+    const processedValue = processPastedInput(
+      value,
+      query,
+      pastedTextsRef.current,
+      pasteCounterRef
+    );
+    let trimmed = processedValue.trim();
 
     if (
       commandSuggestions.length > 0 &&
@@ -2678,8 +2678,10 @@ export const App: React.FC<AppProps> = ({
         throw new Error(configError || "Agent runtime is not initialized.");
       }
 
+      const expandedMessage = expandPastedTokens(trimmed, pastedTextsRef.current);
+
       const stream = agent.run({
-        message: trimmed,
+        message: expandedMessage,
         cwd,
         sessionId
       });
