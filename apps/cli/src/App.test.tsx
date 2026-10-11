@@ -2918,7 +2918,7 @@ describe("CLI App Component", () => {
       expect(frame).toContain("second command");
     });
 
-    it("sanitizes multi-line paste and bracketed paste without premature line submission", async () => {
+    it("collapses multi-line bracketed paste without premature line submission and preserves newlines on submit", async () => {
       const mockAgent = new MockAgent();
       const submitted: string[] = [];
       mockAgent.runFn = async function* (input: AgentInput) {
@@ -2934,15 +2934,15 @@ describe("CLI App Component", () => {
       stdin.write("\x1B[200~line1\nline2\x1B[201~");
       await delay(50);
 
-      // Verify that query contains the pasted content sanitized without newline split
+      // Verify that query contains the collapsed paste token without premature submission
       const frame = lastFrame() ?? "";
-      expect(frame).toContain("line1 line2");
+      expect(frame).toContain("[Pasted text #1 +1 line]");
 
       // Press Enter to submit the combined paste
       stdin.write("\r");
       await delay(150);
 
-      expect(submitted).toEqual(["line1 line2"]);
+      expect(submitted).toEqual(["line1\nline2"]);
     });
 
     it("dismisses pendingPlanBlocked modal on Ctrl+C without exiting", async () => {
@@ -3792,6 +3792,85 @@ describe("CLI App Component", () => {
 
       const frame = lastFrame() ?? "";
       expect(frame).toContain("Chunk 1 Chunk 2 Chunk 3");
+    });
+
+    it("collapses multi-line bracketed paste in input and expands on submit to agent.run()", async () => {
+      let receivedMessage = "";
+      const mockAgent = new MockAgent();
+      mockAgent.runFn = async function* (input: AgentInput) {
+        receivedMessage = input.message;
+        yield { type: "text", content: "Processed paste." };
+        yield { type: "done" };
+      };
+
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      const pastedSnippet = "line1\nline2\nline3\nline4\nline5";
+      const bracketed = `\x1b[200~${pastedSnippet}\x1b[201~`;
+
+      stdin.write(bracketed);
+      await delay(50);
+
+      const inputFrame = lastFrame() ?? "";
+      expect(inputFrame).toContain("[Pasted text #1 +4 lines]");
+
+      stdin.write("\r");
+      await delay(200);
+
+      const submittedFrame = lastFrame() ?? "";
+      // UI turn prompt retains the collapsed chip
+      expect(submittedFrame).toContain("[Pasted text #1 +4 lines]");
+      // Agent received the 100% full uncollapsed message
+      expect(receivedMessage).toBe(pastedSnippet);
+      expect(submittedFrame).toContain("Processed paste.");
+    });
+
+    it("leaves single-line bracketed paste inline without tokenizing", async () => {
+      let receivedMessage = "";
+      const mockAgent = new MockAgent();
+      mockAgent.runFn = async function* (input: AgentInput) {
+        receivedMessage = input.message;
+        yield { type: "text", content: "Done." };
+        yield { type: "done" };
+      };
+
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      stdin.write("\x1b[200~single line command\x1b[201~");
+      await delay(50);
+
+      expect(lastFrame() ?? "").toContain("single line command");
+      expect(lastFrame() ?? "").not.toContain("[Pasted text #");
+
+      stdin.write("\r");
+      await delay(200);
+
+      expect(receivedMessage).toBe("single line command");
+    });
+
+    it("handles unbracketed multi-line paste safely without truncation", async () => {
+      let receivedMessage = "";
+      const mockAgent = new MockAgent();
+      mockAgent.runFn = async function* (input: AgentInput) {
+        receivedMessage = input.message;
+        yield { type: "text", content: "Done." };
+        yield { type: "done" };
+      };
+
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      stdin.write("first line\nsecond line\nthird line");
+      await delay(50);
+
+      expect(lastFrame() ?? "").toContain("[Pasted text #1 +2 lines]");
+
+      stdin.write("\r");
+      await delay(200);
+
+      expect(receivedMessage).toBe("first line\nsecond line\nthird line");
     });
   });
 });
