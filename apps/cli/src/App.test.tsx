@@ -2834,9 +2834,9 @@ describe("CLI App Component", () => {
       expect(frame).toContain("History turn 2");
     });
 
-    it("supports scrolling through long response lines using Down and Up arrow keys", async () => {
+    it("renders long multi-line responses in full without omitting lines", async () => {
       const mockAgent = new MockAgent();
-      const longResponse = Array.from({ length: 25 }, (_, i) => `Line ${i + 1}: detailed output`).join("\n");
+      const longResponse = Array.from({ length: 40 }, (_, i) => `Line ${i + 1}: detailed output`).join("\n");
       mockAgent.runFn = async function* () {
         yield { type: "text", content: longResponse };
         yield { type: "done" };
@@ -2850,32 +2850,10 @@ describe("CLI App Component", () => {
       await typeAndSubmit(stdin, "Generate long report");
       await delay(200);
 
-      let frame = lastFrame() ?? "";
-      expect(frame).toContain("Line 1:");
-      expect(frame).toContain("line(s) omitted; use ↓ / PageDown to scroll");
-      expect(frame).not.toContain("Line 25:");
-
-      // Press Down Arrow to scroll down
-      stdin.write("\u001B[B");
-      await delay(50);
-
-      frame = lastFrame() ?? "";
-      expect(frame).toContain("earlier line(s) hidden; ↑ / PageUp to scroll up");
-
-      // Press PageDown to jump further down
-      stdin.write("\u001B[6~");
-      await delay(50);
-
-      frame = lastFrame() ?? "";
-      expect(frame).toContain("Line 5:");
-
-      // Press Up Arrow to scroll back up
-      stdin.write("\u001B[A");
-      await delay(50);
-
-      frame = lastFrame() ?? "";
-      expect(frame).toContain("earlier line(s) hidden");
-      expect(frame).toContain("Line 4:");
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("Line 1: detailed output");
+      expect(frame).toContain("Line 40: detailed output");
+      expect(frame).not.toContain("line(s) omitted; use ↓ / PageDown to scroll");
     });
 
     it("navigates previously submitted prompts using Ctrl+P and Ctrl+N", async () => {
