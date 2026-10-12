@@ -6,6 +6,7 @@ import { createUnifiedDiff } from "./diffUtils.js";
 import { writeAtomic } from "../editing/atomicWriter.js";
 import { isSecretFile } from "../editing/validator.js";
 import { createContentHash } from "../editing/hashUtils.js";
+import { isBinaryPath, isBinaryBuffer } from "./binaryUtils.js";
 
 export interface EditFileInput {
   path: string;
@@ -147,6 +148,40 @@ export class EditFileTool
             code: "NOT_A_FILE"
           }
         };
+      }
+
+      if (isBinaryPath(displayPath)) {
+        return {
+          success: false,
+          error: {
+            message: `Cannot edit binary file as source text (${displayPath}).`,
+            code: "BINARY_FILE"
+          }
+        };
+      }
+
+      // Check for binary content by sampling up to 4,096 bytes
+      const sampleSize = Math.min(stats.size, 4096);
+      if (sampleSize > 0) {
+        let handle: fs.FileHandle | null = null;
+        try {
+          handle = await fs.open(targetPath, "r");
+          const sampleBuf = Buffer.alloc(sampleSize);
+          const { bytesRead } = await handle.read(sampleBuf, 0, sampleSize, 0);
+          if (isBinaryBuffer(sampleBuf.subarray(0, bytesRead))) {
+            return {
+              success: false,
+              error: {
+                message: `Cannot edit binary file as source text (${displayPath}).`,
+                code: "BINARY_FILE"
+              }
+            };
+          }
+        } finally {
+          if (handle) {
+            await handle.close();
+          }
+        }
       }
 
       const originalContent = await fs.readFile(targetPath, "utf-8");

@@ -245,5 +245,47 @@ describe("EditFileTool", () => {
     const diskContent = await fs.readFile(path.join(tmpDir, fileRel), "utf-8");
     expect(diskContent).toBe("Header: modified by linter\nHeader: line 2\n\nBody: old content\n\nFooter: line 99\n");
   });
+
+  it("rejects editing binary files by extension without corrupting file", async () => {
+    const binPath = path.join(tmpDir, "database.sqlite");
+    await fs.writeFile(binPath, "not a real sqlite but binary ext");
+
+    const result = await tool.execute(
+      {
+        path: "database.sqlite",
+        oldText: "not",
+        newText: "yes"
+      },
+      context
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe("BINARY_FILE");
+    expect(result.error?.message).toContain("Cannot edit binary file");
+  });
+
+  it("rejects editing extensionless binary files with null bytes or magic bytes", async () => {
+    const binPath = path.join(tmpDir, "custom_app");
+    const binaryData = Buffer.concat([
+      Buffer.from([0x7f, 0x45, 0x4c, 0x46]), // ELF magic
+      Buffer.alloc(100, 0x00)
+    ]);
+    await fs.writeFile(binPath, binaryData);
+
+    const result = await tool.execute(
+      {
+        path: "custom_app",
+        oldText: "ELF",
+        newText: "MOD"
+      },
+      context
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe("BINARY_FILE");
+    // Verify file content remains untouched
+    const fresh = await fs.readFile(binPath);
+    expect(fresh.equals(binaryData)).toBe(true);
+  });
 });
 
