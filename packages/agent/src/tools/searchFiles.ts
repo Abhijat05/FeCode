@@ -10,6 +10,7 @@ import {
   loadGitignore,
   type GitignoreMatcher
 } from "./ignoreUtils.js";
+import { isBinaryPath, isBinaryBuffer } from "./binaryUtils.js";
 
 export interface SearchFilesInput {
   query: string;
@@ -35,56 +36,6 @@ export interface SearchFilesToolOptions {
   maxResults?: number;
   maxDepth?: number;
   maxFileSize?: number;
-}
-
-const BINARY_EXTENSIONS = new Set([
-  ".png",
-  ".jpg",
-  ".jpeg",
-  ".gif",
-  ".webp",
-  ".bmp",
-  ".ico",
-  ".pdf",
-  ".zip",
-  ".tar",
-  ".gz",
-  ".7z",
-  ".rar",
-  ".exe",
-  ".dll",
-  ".so",
-  ".dylib",
-  ".bin",
-  ".dat",
-  ".woff",
-  ".woff2",
-  ".ttf",
-  ".eot",
-  ".otf",
-  ".mp3",
-  ".mp4",
-  ".wav",
-  ".avi",
-  ".mov",
-  ".mkv",
-  ".flac",
-  ".db",
-  ".sqlite",
-  ".sqlite3",
-  ".pyc",
-  ".class",
-  ".o",
-  ".obj"
-]);
-
-function isBinaryBuffer(buffer: Buffer): boolean {
-  for (let i = 0; i < buffer.length; i++) {
-    if (buffer[i] === 0x00) {
-      return true;
-    }
-  }
-  return false;
 }
 
 export class SearchFilesTool
@@ -302,8 +253,7 @@ export class SearchFilesTool
           ) {
             continue;
           }
-          const ext = path.extname(entry.name).toLowerCase();
-          if (BINARY_EXTENSIONS.has(ext)) {
+          if (isBinaryPath(entry.name)) {
             continue;
           }
 
@@ -338,8 +288,8 @@ export class SearchFilesTool
           return;
         }
 
-        const sampleBuf = Buffer.alloc(1024);
-        const { bytesRead } = await handle.read(sampleBuf, 0, 1024, 0);
+        const sampleBuf = Buffer.alloc(4096);
+        const { bytesRead } = await handle.read(sampleBuf, 0, 4096, 0);
         if (bytesRead > 0 && isBinaryBuffer(sampleBuf.subarray(0, bytesRead))) {
           return;
         }

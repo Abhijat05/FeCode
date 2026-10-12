@@ -229,6 +229,18 @@ describe("SearchFilesTool", () => {
     expect(paths.some((p) => p.includes("small.txt"))).toBe(true);
     expect(paths.some((p) => p.includes("large.txt"))).toBe(false);
   });
+
+  it("skips polyglot binary files with >1KB ASCII header followed by binary bytes", async () => {
+    const polyglotPath = path.join(tmpDir, "src", "polyglot.txt");
+    const asciiPreamble = Buffer.from("search_target_token\n" + "A".repeat(1500) + "\n");
+    const binaryData = Buffer.concat([asciiPreamble, Buffer.from([0x00, 0xff, 0xfe])]);
+    await fs.writeFile(polyglotPath, binaryData);
+
+    const result = await tool.execute({ query: "search_target_token" }, context);
+    expect(result.success).toBe(true);
+    const paths = result.output?.matches.map((m) => m.path) || [];
+    expect(paths.some((p) => p.includes("polyglot.txt"))).toBe(false);
+  });
 });
 
 

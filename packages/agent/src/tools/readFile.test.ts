@@ -191,4 +191,15 @@ describe("ReadFileTool", () => {
     expect(result.output?.startLine).toBe(2);
     expect(result.output?.endLine).toBe(4);
   });
+
+  it("rejects polyglot files with >1KB ASCII header followed by binary bytes", async () => {
+    const polyglotPath = path.join(tmpDir, "polyglot.txt");
+    const asciiPreamble = Buffer.alloc(1500, 0x41); // 1.5KB 'A's
+    const binaryData = Buffer.concat([asciiPreamble, Buffer.from([0x00, 0xff, 0xfe])]);
+    await fs.writeFile(polyglotPath, binaryData);
+
+    const result = await tool.execute({ path: "polyglot.txt" }, context);
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe("BINARY_FILE");
+  });
 });

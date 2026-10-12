@@ -1,9 +1,9 @@
 import * as fs from "fs/promises";
 import * as fsSync from "fs";
-import * as path from "path";
 import * as readline from "readline";
 import type { Tool, ToolContext, ToolResult } from "@fecode/models";
 import { resolveSafePath } from "./pathUtils.js";
+import { isBinaryPath, isBinaryBuffer } from "./binaryUtils.js";
 
 export interface ReadFileInput {
   path: string;
@@ -23,56 +23,6 @@ export interface ReadFileToolOptions {
   maxBytes?: number;
   maxDefaultLines?: number;
   statFn?: (path: string) => Promise<fsSync.Stats>;
-}
-
-const BINARY_EXTENSIONS = new Set([
-  ".png",
-  ".jpg",
-  ".jpeg",
-  ".gif",
-  ".webp",
-  ".bmp",
-  ".ico",
-  ".pdf",
-  ".zip",
-  ".tar",
-  ".gz",
-  ".7z",
-  ".rar",
-  ".exe",
-  ".dll",
-  ".so",
-  ".dylib",
-  ".bin",
-  ".dat",
-  ".woff",
-  ".woff2",
-  ".ttf",
-  ".eot",
-  ".otf",
-  ".mp3",
-  ".mp4",
-  ".wav",
-  ".avi",
-  ".mov",
-  ".mkv",
-  ".flac",
-  ".db",
-  ".sqlite",
-  ".sqlite3",
-  ".pyc",
-  ".class",
-  ".o",
-  ".obj"
-]);
-
-function isBinaryBuffer(buffer: Buffer): boolean {
-  for (let i = 0; i < buffer.length; i++) {
-    if (buffer[i] === 0x00) {
-      return true;
-    }
-  }
-  return false;
 }
 
 export class ReadFileTool
@@ -137,8 +87,7 @@ export class ReadFileTool
 
     const { targetPath, displayPath } = pathRes;
 
-    const ext = path.extname(targetPath).toLowerCase();
-    if (BINARY_EXTENSIONS.has(ext)) {
+    if (isBinaryPath(targetPath)) {
       return {
         success: false,
         error: {
@@ -196,11 +145,11 @@ export class ReadFileTool
           };
         }
 
-        const sampleSize = Math.min(fstats.size, 1024);
+        const sampleSize = Math.min(fstats.size, 4096);
         const sampleBuf = Buffer.alloc(sampleSize);
         if (sampleSize > 0) {
-          await handle.read(sampleBuf, 0, sampleSize, 0);
-          if (isBinaryBuffer(sampleBuf)) {
+          const { bytesRead } = await handle.read(sampleBuf, 0, sampleSize, 0);
+          if (isBinaryBuffer(sampleBuf.subarray(0, bytesRead))) {
             return {
               success: false,
               error: {
