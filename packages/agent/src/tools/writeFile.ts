@@ -4,6 +4,7 @@ import type { Tool, ToolContext, ToolResult } from "@fecode/models";
 import { resolveSafePath } from "./pathUtils.js";
 import { writeAtomic } from "../editing/atomicWriter.js";
 import { isSecretFile } from "../editing/validator.js";
+import { isReadOnlyStat, getWritePermissionDiagnostic } from "../editing/permissionDiagnostics.js";
 
 export interface WriteFileInput {
   path: string;
@@ -119,6 +120,18 @@ export class WriteFileTool
             }
           };
         }
+
+        if (isReadOnlyStat(stats)) {
+          const diagnostic = await getWritePermissionDiagnostic(targetPath, displayPath, stats);
+          return {
+            success: false,
+            error: {
+              message: diagnostic,
+              code: "PERMISSION_DENIED"
+            }
+          };
+        }
+
         fileExists = true;
       } catch (err: unknown) {
         const error = err as NodeJS.ErrnoException;
@@ -142,10 +155,11 @@ export class WriteFileTool
       const error = err as NodeJS.ErrnoException;
 
       if (error.code === "EACCES" || error.code === "EPERM") {
+        const diagnostic = await getWritePermissionDiagnostic(targetPath, displayPath);
         return {
           success: false,
           error: {
-            message: `Permission denied writing file: ${input.path}`,
+            message: diagnostic,
             code: "PERMISSION_DENIED"
           }
         };

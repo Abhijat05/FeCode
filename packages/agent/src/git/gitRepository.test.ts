@@ -1,3 +1,6 @@
+import * as fs from "fs/promises";
+import * as path from "path";
+import * as os from "os";
 import { describe, it, expect } from "vitest";
 import { DefaultGitRepository, type GitCommandRunner } from "./gitRepository.js";
 
@@ -100,5 +103,42 @@ describe("DefaultGitRepository — Phase 5F", () => {
     expect(status.isRepository).toBe(true);
     expect(status.branch).toBe("main");
     expect(status.files.length).toBe(1);
+  });
+
+  it("defaultRunner recovers from stale index.lock by clearing lock and retrying", async () => {
+    const tmpGitDir = await fs.mkdtemp(path.join(os.tmpdir(), "fecode-git-recovery-"));
+    const dotGit = path.join(tmpGitDir, ".git");
+    await fs.mkdir(dotGit);
+    const lockFile = path.join(dotGit, "index.lock");
+    await fs.writeFile(lockFile, "abandoned lock");
+    const oldTime = (Date.now() - 10000) / 1000;
+    await fs.utimes(lockFile, oldTime, oldTime);
+
+    const origRun = DefaultGitRepository.runSingleGitProcess;
+    let callCount = 0;
+    try {
+      DefaultGitRepository.runSingleGitProcess = async () => {
+        callCount++;
+        if (callCount === 1) {
+          return {
+            stdout: "",
+            stderr: "fatal: Unable to create '.git/index.lock': File exists.",
+            exitCode: 128
+          };
+        }
+        return { stdout: "success", stderr: "", exitCode: 0 };
+      };
+
+      const res = await DefaultGitRepository.defaultRunner(["status"], tmpGitDir);
+      expect(callCount).toBe(2);
+      expect(res.exitCode).toBe(0);
+      expect(res.stdout).toBe("success");
+
+      const lockStillExists = await fs.stat(lockFile).then(() => true).catch(() => false);
+      expect(lockStillExists).toBe(false);
+    } finally {
+      DefaultGitRepository.runSingleGitProcess = origRun;
+      await fs.rm(tmpGitDir, { recursive: true, force: true });
+    }
   });
 });

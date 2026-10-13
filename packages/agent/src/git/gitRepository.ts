@@ -7,6 +7,7 @@ import type {
 import { parseGitStatusPorcelain } from "./parser.js";
 import { prepareChildEnvironment } from "../commands/nodeExecutor.js";
 import { killProcessTree } from "../commands/processTree.js";
+import { checkGitLockStatus, cleanStaleGitLock } from "./gitLockUtils.js";
 
 export type GitCommandRunner = (
   args: string[],
@@ -21,13 +22,14 @@ export class DefaultGitRepository implements GitRepository {
     this.runner = runner || DefaultGitRepository.defaultRunner;
   }
 
-  public static defaultRunner: GitCommandRunner = async (
+  public static runSingleGitProcess: GitCommandRunner = async (
     args: string[],
     cwd: string,
     signal?: AbortSignal
   ) => {
     return new Promise((resolve) => {
       if (signal?.aborted) {
+        cleanStaleGitLock(cwd, true).catch(() => {});
         return resolve({
           stdout: "",
           stderr: "Aborted",
@@ -65,10 +67,12 @@ export class DefaultGitRepository implements GitRepository {
 
       const timer = setTimeout(() => {
         killProcessTree(child, "SIGTERM");
+        cleanStaleGitLock(cwd, true).catch(() => {});
       }, 10000);
 
       const onAbort = () => {
         killProcessTree(child, "SIGTERM");
+        cleanStaleGitLock(cwd, true).catch(() => {});
       };
       signal?.addEventListener("abort", onAbort, { once: true });
 
@@ -92,6 +96,25 @@ export class DefaultGitRepository implements GitRepository {
         });
       });
     });
+  };
+
+  public static defaultRunner: GitCommandRunner = async (
+    args: string[],
+    cwd: string,
+    signal?: AbortSignal
+  ) => {
+    const res = await DefaultGitRepository.runSingleGitProcess(args, cwd, signal);
+    if (res.exitCode !== 0 && res.stderr.includes("index.lock")) {
+      const lockStatus = await checkGitLockStatus(cwd, 5000);
+      if (lockStatus?.hasLock && lockStatus.isStale) {
+        const cleaned = await cleanStaleGitLock(cwd, false, 5000);
+        if (cleaned.removed) {
+          // Retry the git command once after clearing stale lock
+          return await DefaultGitRepository.runSingleGitProcess(args, cwd, signal);
+        }
+      }
+    }
+    return res;
   };
 
   public async isRepository(cwd: string): Promise<boolean> {

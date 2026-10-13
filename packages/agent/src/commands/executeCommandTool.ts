@@ -2,6 +2,7 @@ import type { Tool, ToolContext, ToolResult } from "@fecode/models";
 import type { CommandExecutor, CommandResult } from "./types.js";
 import { NodeCommandExecutor } from "./nodeExecutor.js";
 import { TaskManager, getGlobalTaskManager } from "../tasks/taskManager.js";
+import { checkGitLockStatus, cleanStaleGitLock } from "../git/gitLockUtils.js";
 
 export interface ExecuteCommandInput {
   command: string;
@@ -113,16 +114,50 @@ export class ExecuteCommandTool
       }
     }
 
-    const result = await this.executor.execute(input.command, {
+    let result = await this.executor.execute(input.command, {
       cwd: context.cwd,
       signal: context.signal
     });
 
     if (result.error || (result.exitCode !== null && result.exitCode !== 0)) {
+      if (
+        result.stderr.includes("index.lock") ||
+        (result.error && result.error.includes("index.lock"))
+      ) {
+        const lockStatus = await checkGitLockStatus(context.cwd, 5000);
+        if (lockStatus?.hasLock && lockStatus.isStale) {
+          const cleaned = await cleanStaleGitLock(context.cwd, false, 5000);
+          if (cleaned.removed) {
+            // Auto-recovery retry!
+            const retryResult = await this.executor.execute(input.command, {
+              cwd: context.cwd,
+              signal: context.signal
+            });
+            if (
+              !retryResult.error &&
+              (retryResult.exitCode === null || retryResult.exitCode === 0)
+            ) {
+              return {
+                success: true,
+                output: {
+                  ...retryResult,
+                  stdout:
+                    retryResult.stdout +
+                    `\n[Auto-recovery: Cleared stale git lock (${cleaned.lockPath}) and retried command successfully.]`
+                }
+              };
+            }
+            result = retryResult;
+          }
+        }
+      }
+
       return {
         success: false,
         error: {
-          message: result.error || `Command exited with non-zero status code: ${result.exitCode}`,
+          message:
+            result.error ||
+            `Command exited with non-zero status code: ${result.exitCode}`,
           code: result.timedOut ? "TIMEOUT" : "EXECUTION_FAILED"
         },
         output: result

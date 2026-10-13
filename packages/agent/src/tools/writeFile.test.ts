@@ -128,5 +128,30 @@ describe("WriteFileTool", () => {
     expect(result.error?.code).toBe("NOT_A_FILE");
     expect(result.error?.message).toMatch(/FIFO pipe/i);
   });
+
+  it("rejects writing to read-only files and provides actionable remediation instructions", async () => {
+    const roPath = path.join(tmpDir, "readonly.txt");
+    await fs.writeFile(roPath, "original content\n");
+    await fs.chmod(roPath, 0o444);
+
+    const result = await tool.execute(
+      { path: "readonly.txt", content: "overwritten" },
+      context
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe("PERMISSION_DENIED");
+    expect(result.error?.message).toContain("file is marked read-only on disk");
+    if (process.platform === "win32") {
+      expect(result.error?.message).toContain("attrib -r");
+    } else {
+      expect(result.error?.message).toContain("chmod +w");
+    }
+
+    const unchanged = await fs.readFile(roPath, "utf-8");
+    expect(unchanged).toBe("original content\n");
+
+    await fs.chmod(roPath, 0o666);
+  });
 });
 

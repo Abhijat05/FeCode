@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "child_process";
 import { killProcessTree } from "./processTree.js";
 import { DefaultCommandPolicy } from "./policy.js";
 import { sanitizeCommandOutput } from "./outputSanitizer.js";
+import { cleanStaleGitLock } from "../git/gitLockUtils.js";
 import type {
   CommandExecutionOptions,
   CommandExecutor,
@@ -90,6 +91,9 @@ export class NodeCommandExecutor implements CommandExecutor {
     const executable = decision.executable!;
     const args = decision.args || [];
     const timeoutMs = options.timeoutMs ?? 30000;
+    const enableHeartbeat = options.enableHeartbeat ?? true;
+    const maxTotalTimeoutMs =
+      options.maxTotalTimeoutMs ?? Math.max(timeoutMs * 10, 300000);
     const maxOutputBytes = options.maxOutputBytes ?? 1024 * 1024;
     const childEnv = prepareChildEnvironment(options.env);
 
@@ -108,6 +112,7 @@ export class NodeCommandExecutor implements CommandExecutor {
     return new Promise<CommandResult>((resolve) => {
       let child: ChildProcess;
       let timedOut = false;
+      let timedOutDueToMaxLimit = false;
       let aborted = false;
       let truncated = false;
 
@@ -159,7 +164,10 @@ export class NodeCommandExecutor implements CommandExecutor {
         processClosed = true;
       });
 
-      const timer = setTimeout(() => {
+      let timer: NodeJS.Timeout | null = null;
+      const startTime = Date.now();
+
+      const triggerTimeout = () => {
         timedOut = true;
         killProcessTree(child, "SIGTERM");
         setTimeout(() => {
@@ -167,7 +175,30 @@ export class NodeCommandExecutor implements CommandExecutor {
             killProcessTree(child, "SIGKILL");
           }
         }, 1000);
-      }, timeoutMs);
+      };
+
+      const scheduleTimer = () => {
+        if (timer) clearTimeout(timer);
+        if (timedOut || aborted || processClosed) return;
+
+        const elapsed = Date.now() - startTime;
+        const remainingTotal = maxTotalTimeoutMs - elapsed;
+        if (remainingTotal <= 0) {
+          timedOutDueToMaxLimit = true;
+          triggerTimeout();
+          return;
+        }
+
+        const currentTimeout = Math.min(timeoutMs, remainingTotal);
+        timer = setTimeout(() => {
+          if (Date.now() - startTime >= maxTotalTimeoutMs) {
+            timedOutDueToMaxLimit = true;
+          }
+          triggerTimeout();
+        }, currentTimeout);
+      };
+
+      scheduleTimer();
 
       const onAbort = () => {
         aborted = true;
@@ -180,6 +211,9 @@ export class NodeCommandExecutor implements CommandExecutor {
 
       if (child.stdout) {
         child.stdout.on("data", (chunk: Buffer) => {
+          if (enableHeartbeat) {
+            scheduleTimer();
+          }
           if (stdoutBytes < maxOutputBytes) {
             stdoutChunks.push(chunk);
             stdoutBytes += chunk.length;
@@ -191,6 +225,9 @@ export class NodeCommandExecutor implements CommandExecutor {
 
       if (child.stderr) {
         child.stderr.on("data", (chunk: Buffer) => {
+          if (enableHeartbeat) {
+            scheduleTimer();
+          }
           if (stderrBytes < maxOutputBytes) {
             stderrChunks.push(chunk);
             stderrBytes += chunk.length;
@@ -201,7 +238,7 @@ export class NodeCommandExecutor implements CommandExecutor {
       }
 
       child.on("error", (err: Error) => {
-        clearTimeout(timer);
+        if (timer) clearTimeout(timer);
         if (options.signal) {
           options.signal.removeEventListener("abort", onAbort);
         }
@@ -216,10 +253,20 @@ export class NodeCommandExecutor implements CommandExecutor {
         });
       });
 
-      child.on("close", (code: number | null) => {
-        clearTimeout(timer);
+      child.on("close", async (code: number | null) => {
+        if (timer) clearTimeout(timer);
         if (options.signal) {
           options.signal.removeEventListener("abort", onAbort);
+        }
+
+        const isGit =
+          executable.toLowerCase() === "git" || command.trim().startsWith("git ");
+        if (isGit && (timedOut || aborted)) {
+          try {
+            await cleanStaleGitLock(options.cwd, true);
+          } catch {
+            // Ignore cleanup failure
+          }
         }
 
         const rawStdout = Buffer.concat(stdoutChunks).toString("utf-8");
@@ -241,7 +288,9 @@ export class NodeCommandExecutor implements CommandExecutor {
         if (aborted) {
           errorMessage = "Command execution aborted.";
         } else if (timedOut) {
-          errorMessage = `Command execution timed out after ${timeoutMs}ms.`;
+          errorMessage = timedOutDueToMaxLimit
+            ? `Command execution timed out after reaching maximum limit of ${maxTotalTimeoutMs}ms.`
+            : `Command execution timed out after ${timeoutMs}ms of inactivity.`;
         }
 
         resolve({

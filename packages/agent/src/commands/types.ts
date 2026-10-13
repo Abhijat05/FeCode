@@ -4,6 +4,8 @@ export interface CommandExecutionOptions {
   maxOutputBytes?: number;
   env?: Record<string, string>;
   signal?: AbortSignal;
+  enableHeartbeat?: boolean;
+  maxTotalTimeoutMs?: number;
 }
 
 export interface CommandResult {

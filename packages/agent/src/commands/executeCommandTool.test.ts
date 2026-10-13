@@ -1,3 +1,6 @@
+import * as fs from "fs/promises";
+import * as path from "path";
+import * as os from "os";
 import { describe, it, expect, beforeEach } from "vitest";
 import { ExecuteCommandTool } from "./executeCommandTool.js";
 import { MockCommandExecutor } from "./mockExecutor.js";
@@ -80,5 +83,57 @@ describe("ExecuteCommandTool", () => {
     if (res.output?.taskId) {
       await getGlobalTaskManager().kill(res.output.taskId);
     }
+  });
+
+  it("automatically recovers from stale git index.lock by removing lock and retrying", async () => {
+    const tmpGitDir = await fs.mkdtemp(path.join(os.tmpdir(), "fecode-locktool-test-"));
+    const dotGit = path.join(tmpGitDir, ".git");
+    await fs.mkdir(dotGit);
+    const lockFile = path.join(dotGit, "index.lock");
+    await fs.writeFile(lockFile, "old lock");
+
+    // Make lock older than 5000ms
+    const oldTime = (Date.now() - 10000) / 1000;
+    await fs.utimes(lockFile, oldTime, oldTime);
+
+    // Set mock executor: first call fails with lock error, second call succeeds
+    let callCount = 0;
+    mockExecutor.execute = async (cmd, _opts) => {
+      callCount++;
+      if (callCount === 1) {
+        return {
+          command: cmd,
+          exitCode: 128,
+          stdout: "",
+          stderr: "fatal: Unable to create '.git/index.lock': File exists.",
+          timedOut: false,
+          truncated: false
+        };
+      }
+      return {
+        command: cmd,
+        exitCode: 0,
+        stdout: "Commit successful.\n",
+        stderr: "",
+        timedOut: false,
+        truncated: false
+      };
+    };
+
+    const res = await tool.execute(
+      { command: "git commit -m 'test'" },
+      { cwd: tmpGitDir, signal: controller.signal }
+    );
+
+    expect(callCount).toBe(2);
+    expect(res.success).toBe(true);
+    expect(res.output?.stdout).toContain("Auto-recovery: Cleared stale git lock");
+    expect(res.output?.stdout).toContain("Commit successful.");
+
+    // Lock file should be removed
+    const exists = await fs.stat(lockFile).then(() => true).catch(() => false);
+    expect(exists).toBe(false);
+
+    await fs.rm(tmpGitDir, { recursive: true, force: true });
   });
 });

@@ -226,4 +226,54 @@ describe("NodeCommandExecutor", () => {
     // Ensure serialization in JSON doesn't throw or contain broken surrogates
     expect(() => JSON.stringify(res)).not.toThrow();
   });
+
+  it("extends execution time via activity heartbeats while stdout is streaming", async () => {
+    // 4 ticks * 80ms = 320ms, exceeds timeoutMs (200ms) but each tick arrives in 80ms (< 200ms)
+    const script = `let count = 0; const iv = setInterval(() => { console.log('tick'); count++; if (count >= 4) { clearInterval(iv); process.exit(0); } }, 80);`;
+    const res = await executor.execute(`node -e "${script}"`, {
+      cwd: tmpDir,
+      timeoutMs: 200,
+      enableHeartbeat: true,
+      maxTotalTimeoutMs: 1500
+    });
+
+    expect(res.timedOut).toBe(false);
+    expect(res.exitCode).toBe(0);
+    expect(res.stdout).toContain("tick");
+  });
+
+  it("enforces maxTotalTimeoutMs even if activity heartbeats keep streaming", async () => {
+    const script = `setInterval(() => console.log('infinite tick'), 40);`;
+    const res = await executor.execute(`node -e "${script}"`, {
+      cwd: tmpDir,
+      timeoutMs: 150,
+      enableHeartbeat: true,
+      maxTotalTimeoutMs: 300
+    });
+
+    expect(res.timedOut).toBe(true);
+    expect(res.exitCode).toBeNull();
+    expect(res.error).toContain("maximum limit of 300ms");
+  });
+
+  it("cleans up abandoned .git/index.lock when git command is aborted", async () => {
+    const dotGit = path.join(tmpDir, ".git");
+    await fs.mkdir(dotGit);
+    const lockFile = path.join(dotGit, "index.lock");
+    await fs.writeFile(lockFile, "lock contents", "utf-8");
+
+    const controller = new AbortController();
+    const promise = executor.execute("git status", {
+      cwd: tmpDir,
+      signal: controller.signal
+    });
+
+    controller.abort();
+    const res = await promise;
+    expect(res.error).toContain("Command execution aborted");
+
+    // Lock file should be cleaned up
+    const lockExists = await fs.stat(lockFile).then(() => true).catch(() => false);
+    expect(lockExists).toBe(false);
+  });
 });

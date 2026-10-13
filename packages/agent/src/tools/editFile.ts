@@ -7,6 +7,7 @@ import { writeAtomic } from "../editing/atomicWriter.js";
 import { isSecretFile } from "../editing/validator.js";
 import { createContentHash } from "../editing/hashUtils.js";
 import { isBinaryPath, isBinaryBuffer } from "./binaryUtils.js";
+import { isReadOnlyStat, getWritePermissionDiagnostic } from "../editing/permissionDiagnostics.js";
 
 export interface EditFileInput {
   path: string;
@@ -146,6 +147,17 @@ export class EditFileTool
           error: {
             message: `Cannot edit path because it is a ${typeStr}, not a regular file: ${input.path}`,
             code: "NOT_A_FILE"
+          }
+        };
+      }
+
+      if (isReadOnlyStat(stats)) {
+        const diagnostic = await getWritePermissionDiagnostic(targetPath, displayPath, stats);
+        return {
+          success: false,
+          error: {
+            message: diagnostic,
+            code: "PERMISSION_DENIED"
           }
         };
       }
@@ -310,10 +322,11 @@ export class EditFileTool
       }
 
       if (error.code === "EACCES" || error.code === "EPERM") {
+        const diagnostic = await getWritePermissionDiagnostic(targetPath, displayPath);
         return {
           success: false,
           error: {
-            message: `Permission denied editing file: ${input.path}`,
+            message: diagnostic,
             code: "PERMISSION_DENIED"
           }
         };

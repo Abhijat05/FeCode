@@ -287,5 +287,36 @@ describe("EditFileTool", () => {
     const fresh = await fs.readFile(binPath);
     expect(fresh.equals(binaryData)).toBe(true);
   });
+
+  it("rejects editing read-only files and provides actionable remediation instructions", async () => {
+    const roPath = path.join(tmpDir, "readonly.txt");
+    await fs.writeFile(roPath, "original content\n");
+    await fs.chmod(roPath, 0o444);
+
+    const result = await tool.execute(
+      {
+        path: "readonly.txt",
+        oldText: "original",
+        newText: "modified"
+      },
+      context
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe("PERMISSION_DENIED");
+    expect(result.error?.message).toContain("file is marked read-only on disk");
+    if (process.platform === "win32") {
+      expect(result.error?.message).toContain("attrib -r");
+    } else {
+      expect(result.error?.message).toContain("chmod +w");
+    }
+
+    // Ensure content unchanged
+    const unchanged = await fs.readFile(roPath, "utf-8");
+    expect(unchanged).toBe("original content\n");
+
+    // Clean up permission so afterEach can delete tmpDir
+    await fs.chmod(roPath, 0o666);
+  });
 });
 
