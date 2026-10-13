@@ -1,4 +1,5 @@
 import type { ToolResult } from "@fecode/models";
+import { safeJsonStringify, safeJsonClone } from "@fecode/shared";
 
 export interface SanitizeToolResultOptions {
   maxChars?: number;
@@ -89,9 +90,8 @@ export function sanitizeToolResultForContext(
       : body;
   }
 
-  // Clone object to process fields and bound them
-  const initialJson = JSON.stringify(result);
-  const cloned = JSON.parse(initialJson) as Record<string, unknown>;
+  // Clone object to process fields and bound them using safe JSON cloner
+  const cloned = safeJsonClone<Record<string, unknown>>(result);
 
   // Check if it's a standard ToolResult with an output object
   if (cloned && typeof cloned === "object") {
@@ -172,7 +172,7 @@ export function sanitizeToolResultForContext(
         : str;
     }
 
-    const prunedJson = JSON.stringify(cloned);
+    const prunedJson = safeJsonStringify(cloned);
     if (prunedJson.length <= maxChars) {
       return prunedJson;
     }
@@ -193,7 +193,7 @@ export function sanitizeToolResultForContext(
   const rawString =
     typeof toolResult?.output === "string"
       ? toolResult.output
-      : JSON.stringify(toolResult?.output ?? result);
+      : safeJsonStringify(toolResult?.output ?? result);
 
   const previewBudget = Math.max(300, maxChars - 300);
   const head = rawString.slice(0, Math.floor(previewBudget * 0.65));
@@ -204,7 +204,7 @@ export function sanitizeToolResultForContext(
     ? fenceUntrustedContent(previewBody, { source: metaSource, path: metaPath, command: metaCommand })
     : previewBody;
 
-  return JSON.stringify({
+  return safeJsonStringify({
     success: isSuccess,
     error: toolError,
     truncated: true,

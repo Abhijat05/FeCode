@@ -102,4 +102,75 @@ describe("DefaultToolExecutor", () => {
     expect(result.error?.message).toContain("Tool arguments failed JSON parsing");
     expect(result.error?.message).toContain("Please reissue the tool call with valid JSON.");
   });
+
+  it("handles malformed non-object return values from tools with MALFORMED_TOOL_RESULT", async () => {
+    class BrokenTool implements Tool<Record<string, unknown>, unknown> {
+      public name = "broken";
+      public description = "Returns non-object";
+      public inputSchema = { type: "object" };
+      async execute(): Promise<ToolResult<unknown>> {
+        return "not a valid tool result object" as unknown as ToolResult<unknown>;
+      }
+    }
+
+    const registry = new DefaultToolRegistry();
+    registry.register(new BrokenTool());
+
+    const executor = new DefaultToolExecutor(registry);
+    const result = await executor.execute(
+      { id: "call-broken", name: "broken", arguments: {} },
+      { cwd: "/test", signal: new AbortController().signal }
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe("MALFORMED_TOOL_RESULT");
+    expect(result.error?.message).toContain("expected { success: boolean, ... }");
+  });
+
+  it("handles tool results missing boolean success property with MALFORMED_TOOL_RESULT", async () => {
+    class IncompleteTool implements Tool<Record<string, unknown>, unknown> {
+      public name = "incomplete";
+      public description = "Returns object without success property";
+      public inputSchema = { type: "object" };
+      async execute(): Promise<ToolResult<unknown>> {
+        return { data: 123 } as unknown as ToolResult<unknown>;
+      }
+    }
+
+    const registry = new DefaultToolRegistry();
+    registry.register(new IncompleteTool());
+
+    const executor = new DefaultToolExecutor(registry);
+    const result = await executor.execute(
+      { id: "call-incomplete", name: "incomplete", arguments: {} },
+      { cwd: "/test", signal: new AbortController().signal }
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe("MALFORMED_TOOL_RESULT");
+  });
+
+  it("handles non-Error thrown exceptions safely", async () => {
+    class ThrowStringTool implements Tool<Record<string, unknown>, unknown> {
+      public name = "throw_string";
+      public description = "Throws a raw string";
+      public inputSchema = { type: "object" };
+      async execute(): Promise<ToolResult<unknown>> {
+        throw "raw failure string";
+      }
+    }
+
+    const registry = new DefaultToolRegistry();
+    registry.register(new ThrowStringTool());
+
+    const executor = new DefaultToolExecutor(registry);
+    const result = await executor.execute(
+      { id: "call-throw", name: "throw_string", arguments: {} },
+      { cwd: "/test", signal: new AbortController().signal }
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe("EXECUTION_FAILED");
+    expect(result.error?.message).toContain("raw failure string");
+  });
 });

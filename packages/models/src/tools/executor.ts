@@ -45,7 +45,22 @@ export class DefaultToolExecutor implements ToolExecutor {
         }
       }
 
-      return await tool.execute(parsedArgs, context);
+      const result = await tool.execute(parsedArgs, context);
+      if (
+        !result ||
+        typeof result !== "object" ||
+        typeof (result as ToolResult).success !== "boolean"
+      ) {
+        return {
+          success: false,
+          error: {
+            message: `Tool returned an invalid result format: expected { success: boolean, ... }, got ${typeof result}`,
+            code: "MALFORMED_TOOL_RESULT"
+          }
+        };
+      }
+
+      return result;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return {

@@ -94,6 +94,37 @@ describe("sanitizeToolResultForContext", () => {
     expect(sanitized.length).toBeLessThanOrEqual(1000);
   });
 
+  it("handles BigInt values in tool outputs without throwing TypeError", () => {
+    const result = {
+      success: true,
+      output: {
+        fileSize: 1234567890123456789n,
+        inode: 9876543210987654321n
+      }
+    };
+
+    const sanitized = sanitizeToolResultForContext(result, { maxChars: 1000 });
+    expect(() => JSON.parse(sanitized)).not.toThrow();
+    const parsed = JSON.parse(sanitized);
+    expect(parsed.output.fileSize).toBe("1234567890123456789");
+    expect(parsed.output.inode).toBe("9876543210987654321");
+  });
+
+  it("handles circular references in tool outputs without throwing TypeError", () => {
+    const circularObj: Record<string, unknown> = { status: "ok" };
+    circularObj.self = circularObj;
+    const result = {
+      success: true,
+      output: circularObj
+    };
+
+    const sanitized = sanitizeToolResultForContext(result, { maxChars: 1000 });
+    expect(() => JSON.parse(sanitized)).not.toThrow();
+    const parsed = JSON.parse(sanitized);
+    expect(parsed.output.status).toBe("ok");
+    expect(parsed.output.self).toBe("[Circular]");
+  });
+
   it("handles strings with quotes, newlines, and unicode without JSON parse corruption", () => {
     const specialChars = '"Hello" \n \r \t \\ \u2764 '.repeat(1000);
     const result: ToolResult<{ content: string }> = {
