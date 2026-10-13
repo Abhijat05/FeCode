@@ -11,25 +11,85 @@ import type {
 } from "./types.js";
 import { createTaskPlan } from "./taskPlan.js";
 
+const MUTATION_KEYWORDS = [
+  "create",
+  "write",
+  "modify",
+  "edit",
+  "update",
+  "delete",
+  "remove",
+  "refactor",
+  "fix",
+  "implement",
+  "build",
+  "install",
+  "run",
+  "execute",
+  "add",
+  "change",
+  "replace",
+  "rename",
+  "move",
+  "insert",
+  "convert",
+  "migrate",
+  "upgrade",
+  "downgrade",
+  "optimize",
+  "improve",
+  "format",
+  "rewrite",
+  "configure",
+  "generate",
+  "scaffold",
+  "patch",
+  "bump",
+  "adjust",
+  "enable",
+  "disable",
+  "integrate",
+  "apply"
+];
+
+const READ_ONLY_SIGNALS = [
+  "what",
+  "why",
+  "how",
+  "explain",
+  "show",
+  "list",
+  "find",
+  "search",
+  "summarize",
+  "describe",
+  "review",
+  "check",
+  "analyze",
+  "understand",
+  "tell me",
+  "look at",
+  "inspect",
+  "read",
+  "where"
+];
+
+function containsWord(text: string, word: string): boolean {
+  const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${escaped}\\b`, "i").test(text);
+}
+
 function isReadOnlyIntent(userMessage: string): boolean {
-  const lower = userMessage.toLowerCase();
-  const writeKeywords = [
-    "create",
-    "write",
-    "modify",
-    "edit",
-    "update",
-    "delete",
-    "remove",
-    "refactor",
-    "fix",
-    "implement",
-    "build",
-    "install",
-    "run",
-    "execute"
-  ];
-  return !writeKeywords.some((w) => lower.includes(w));
+  // Word-boundary matched (not a raw substring check) so "suffix"/"prefix"/
+  // "building" don't falsely trigger on "fix"/"build".
+  if (MUTATION_KEYWORDS.some((w) => containsWord(userMessage, w))) {
+    return false;
+  }
+  // Ambiguous requests with no clear signal either way default to NOT
+  // read-only: a plan that can only inspect/analyze silently fails to make a
+  // requested change, whereas a plan that includes an unnecessary modify step
+  // for a genuinely read-only question is still gated behind normal approval.
+  return READ_ONLY_SIGNALS.some((w) => containsWord(userMessage, w));
 }
 
 export class DefaultTaskPlanner implements TaskPlanner {

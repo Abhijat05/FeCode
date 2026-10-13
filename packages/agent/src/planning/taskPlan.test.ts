@@ -6,6 +6,7 @@ import {
   startPlanStep,
   completePlanStep,
   failPlanStep,
+  skipPlanStep,
   invalidatePlan,
   summarizePlan
 } from "./taskPlan.js";
@@ -225,6 +226,54 @@ describe("Task Plan Contracts & Lifecycle — Phase 5P", () => {
       const check3 = canExecuteStep(plan, "step-3");
       expect(check3.canExecute).toBe(false);
       expect(check3.reason).toContain("step-3 is skipped");
+    });
+  });
+
+  describe("Dependency-Unmet Skipping (skipPlanStep) — distinct from execution failure (failPlanStep)", () => {
+    it("marks a step and its downstream dependents skipped without failing the whole plan", () => {
+      // Before the fix, executor.ts used failPlanStep for this case, which
+      // set plan.status to "failed" (terminal) even though the step merely
+      // had an unmet prerequisite rather than having actually executed and
+      // failed. skipPlanStep must leave plan.status untouched.
+      let plan = createTaskPlan({
+        runId: "run-101",
+        userRequestSummary: "Task",
+        objective: "Task",
+        steps: createSampleSteps(),
+        status: "executing"
+      });
+
+      plan = skipPlanStep(plan, "step-2", "Required dependency step-1 has not completed");
+
+      expect(plan.status).toBe("executing");
+      expect(plan.steps[1].status).toBe("skipped");
+      expect(plan.steps[1].error).toBe("Required dependency step-1 has not completed");
+
+      // step-3 depends on step-2, so it is transitively skipped too.
+      expect(plan.steps[2].status).toBe("skipped");
+      expect(plan.steps[2].error).toContain("Skipped because dependency step-2 was skipped");
+
+      // step-1 does not depend on step-2, so it is untouched.
+      expect(plan.steps[0].status).toBe("pending");
+    });
+
+    it("does not overwrite an already-completed step's status when a later step is skipped", () => {
+      let plan = createTaskPlan({
+        runId: "run-101",
+        userRequestSummary: "Task",
+        objective: "Task",
+        steps: createSampleSteps(),
+        status: "executing"
+      });
+
+      plan = startPlanStep(plan, "step-1");
+      plan = completePlanStep(plan, "step-1");
+
+      plan = skipPlanStep(plan, "step-2", "Blocked");
+
+      expect(plan.steps[0].status).toBe("completed");
+      expect(plan.steps[1].status).toBe("skipped");
+      expect(plan.status).toBe("executing");
     });
   });
 

@@ -96,6 +96,13 @@ export class FallbackModelProvider implements ModelProvider {
       return;
     }
 
+    // Each new request starts back at the primary provider. Without this, a
+    // fallback triggered by a transient condition on an earlier request (e.g. a
+    // rate limit that has since cleared) would permanently demote every
+    // subsequent request for the lifetime of this instance, since
+    // activeCandidateIndex is otherwise never reset once advanced.
+    this.resetActiveProvider();
+
     let totalSwitches = 0;
 
     while (this.activeCandidateIndex < this.candidates.length) {

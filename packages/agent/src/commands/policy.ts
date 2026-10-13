@@ -6,7 +6,27 @@ export interface CommandPolicyOptions {
 
 const DEFAULT_ALLOWED = ["npm", "npx", "pnpm", "yarn", "bun", "node", "git"];
 
-export function hasUnquotedForbiddenChars(commandStr: string): boolean {
+export interface ForbiddenCharScanOptions {
+  /**
+   * Whether a single-quoted region is treated as safely shielding its
+   * contents from the forbidden-character scan. Defaults to true, which is
+   * correct when the command will be executed with shell:false (the
+   * executable receives argv tokens directly, with no shell re-parsing the
+   * string). It must be set to false when the command will instead be
+   * handed to a real shell that does not honor single quotes as a quoting
+   * mechanism (notably cmd.exe on Windows) — otherwise content "quoted"
+   * with `'` is not actually shielded from shell metacharacter
+   * interpretation there, and chaining like `'x & del ...'` would slip
+   * through undetected.
+   */
+  honorSingleQuotes?: boolean;
+}
+
+export function hasUnquotedForbiddenChars(
+  commandStr: string,
+  options: ForbiddenCharScanOptions = {}
+): boolean {
+  const honorSingleQuotes = options.honorSingleQuotes ?? true;
   let inQuotes = false;
   let quoteChar = "";
   let isEscaped = false;
@@ -38,7 +58,7 @@ export function hasUnquotedForbiddenChars(commandStr: string): boolean {
         }
       }
     } else {
-      if (char === '"' || char === "'") {
+      if (char === '"' || (char === "'" && honorSingleQuotes)) {
         inQuotes = true;
         quoteChar = char;
       } else if (/[;&|><$`]/.test(char)) {

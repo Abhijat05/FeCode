@@ -59,6 +59,49 @@ describe("DefaultTaskPlanner — Phase 5P", () => {
     expect(plan.risks.some((r) => r.level === "critical")).toBe(true);
   });
 
+  it("classifies common edit requests with no legacy keyword match as mutating, not read-only", () => {
+    // Before the fix, isReadOnlyIntent only matched 14 hardcoded substrings;
+    // a request like this matched none of them and was silently planned as
+    // read-only-only, so the agent never produced the requested change.
+    const plan = planner.createPlan({
+      runId: "run-mutation-keyword-1",
+      userMessage: "Add input validation to the login handler",
+      cwd: "/test",
+      authoritativeRisk: "normal"
+    });
+
+    expect(plan.steps.length).toBe(3);
+    expect(plan.steps[1].type).toBe("modify");
+  });
+
+  it("does not false-positive on 'fix'/'build' as substrings of unrelated words", () => {
+    // "suffix" and "building" contain "fix"/"build" as substrings; the old
+    // .includes() check would have wrongly classified this as a mutating
+    // request. Word-boundary matching must not trigger on them.
+    const plan = planner.createPlan({
+      runId: "run-substring-1",
+      userMessage: "Explain how the filename suffix is computed while building the index",
+      cwd: "/test",
+      authoritativeRisk: "low"
+    });
+
+    expect(plan.steps.length).toBe(2);
+    expect(plan.steps[0].type).toBe("inspect");
+    expect(plan.steps[1].type).toBe("analyze");
+  });
+
+  it("defaults ambiguous requests with no mutation or read-only signal to the mutating plan shape", () => {
+    const plan = planner.createPlan({
+      runId: "run-ambiguous-1",
+      userMessage: "Make the submit button blue",
+      cwd: "/test",
+      authoritativeRisk: "normal"
+    });
+
+    expect(plan.steps.length).toBe(3);
+    expect(plan.steps[1].type).toBe("modify");
+  });
+
   it("creates a fresh plan on replan with incremented replanCount and invalidationReason", () => {
     const oldPlan = planner.createPlan({
       runId: "run-replan-orig",

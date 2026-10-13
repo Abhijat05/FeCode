@@ -295,6 +295,62 @@ export function failPlanStep(
   };
 }
 
+/**
+ * Marks a step (and its downstream dependents) "skipped" without touching
+ * plan.status. Distinct from failPlanStep: this is for steps that never ran
+ * because a prerequisite wasn't satisfied (e.g. an already-skipped
+ * dependency), not for a step that actually executed and failed — the plan
+ * as a whole has not failed just because one step didn't execute.
+ */
+export function skipPlanStep(
+  plan: TaskPlan,
+  stepId: string,
+  reason?: string
+): TaskPlan {
+  const stepIndex = plan.steps.findIndex((s) => s.stepId === stepId);
+  if (stepIndex === -1) {
+    throw new Error(`Step not found: ${stepId}`);
+  }
+
+  const skippedStepIds = new Set<string>([stepId]);
+  let addedMore = true;
+  while (addedMore) {
+    addedMore = false;
+    for (const s of plan.steps) {
+      if (
+        !skippedStepIds.has(s.stepId) &&
+        s.dependencies.some((d) => skippedStepIds.has(d))
+      ) {
+        skippedStepIds.add(s.stepId);
+        addedMore = true;
+      }
+    }
+  }
+
+  const updatedSteps = plan.steps.map((step) => {
+    if (step.stepId === stepId) {
+      return {
+        ...step,
+        status: "skipped" as PlanStepStatus,
+        error: reason || "Step skipped: prerequisite not satisfied"
+      };
+    }
+    if (skippedStepIds.has(step.stepId) && step.status === "pending") {
+      return {
+        ...step,
+        status: "skipped" as PlanStepStatus,
+        error: `Skipped because dependency ${stepId} was skipped`
+      };
+    }
+    return step;
+  });
+
+  return {
+    ...plan,
+    steps: updatedSteps
+  };
+}
+
 export function invalidatePlan(plan: TaskPlan, reason: string): TaskPlan {
   return transitionPlanStatus(plan, "superseded", reason);
 }
