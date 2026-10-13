@@ -313,5 +313,49 @@ describe("FallbackModelProvider", () => {
     expect(history[1].providerId).toBe("openai");
     expect(history[1].state).toBe("completed");
   });
+
+  it("resets to the primary provider on each new generate() call instead of staying stuck on a prior fallback", async () => {
+    // Before the fix, activeCandidateIndex was never reset between separate
+    // generate() calls, so a quota error on one request would permanently
+    // demote every later request (a new conversation turn) to the fallback
+    // provider for the lifetime of this instance.
+    const quotaErr = Object.assign(new Error("Gemini quota exceeded (429)"), { status: 429 });
+    let geminiCalls = 0;
+    const providerA = new MockProvider("gemini", () => {
+      geminiCalls++;
+      // Only the first request's attempt fails; a later request should
+      // succeed if (and only if) it actually retries the primary provider.
+      if (geminiCalls === 1) {
+        return makeErrorStream(quotaErr);
+      }
+      return makeSuccessStream("Hello again from Gemini");
+    });
+    const providerB = new MockProvider("openai", () => makeSuccessStream("Hello from OpenAI"));
+
+    const fallbackProvider = new FallbackModelProvider({
+      candidates: [{ provider: providerA }, { provider: providerB }]
+    });
+
+    // First request: primary fails, falls back to OpenAI.
+    const firstEvents: ModelEvent[] = [];
+    for await (const ev of fallbackProvider.generate({ messages: [] })) {
+      firstEvents.push(ev);
+    }
+    expect(fallbackProvider.getActiveProviderId()).toBe("openai");
+    expect(firstEvents.some((e) => e.type === "text_delta" && e.content === "Hello from OpenAI")).toBe(true);
+
+    // Second request (a new turn): must start back at the primary, not stay
+    // stuck on the fallback from the previous request.
+    const secondEvents: ModelEvent[] = [];
+    for await (const ev of fallbackProvider.generate({ messages: [] })) {
+      secondEvents.push(ev);
+    }
+    expect(fallbackProvider.getActiveProviderId()).toBe("gemini");
+    expect(
+      secondEvents.some((e) => e.type === "text_delta" && e.content === "Hello again from Gemini")
+    ).toBe(true);
+    expect(providerA.attempts).toBe(2);
+    expect(providerB.attempts).toBe(1);
+  });
 });
 

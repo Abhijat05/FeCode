@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { DefaultCommandPolicy } from "./policy.js";
+import { DefaultCommandPolicy, hasUnquotedForbiddenChars } from "./policy.js";
 
 describe("DefaultCommandPolicy", () => {
   const policy = new DefaultCommandPolicy();
@@ -99,5 +99,44 @@ describe("DefaultCommandPolicy", () => {
     const resCr = policy.validate("npm test\rcalc.exe");
     expect(resCr.type).toBe("denied");
     expect(resCr.code).toBe("UNSUPPORTED_SHELL_SYNTAX");
+  });
+});
+
+describe("hasUnquotedForbiddenChars — honorSingleQuotes option (Windows shell-injection fix)", () => {
+  // cmd.exe (used via shell:true for Windows batch executables like npm/npx)
+  // assigns no special meaning to single quotes, unlike the shell:false argv
+  // path. A string such as `npm install 'x & del /s /q C:\Users'` must still
+  // be flagged when it is about to be handed to that real shell, even though
+  // it looks "safely quoted" to the default (shell:false-oriented) scan.
+
+  it("treats single-quoted regions as safe by default, matching the shell:false argv path", () => {
+    expect(hasUnquotedForbiddenChars("install 'x & del /s /q C:\\Users'")).toBe(false);
+  });
+
+  it("flags metacharacters inside single quotes when honorSingleQuotes is false", () => {
+    expect(
+      hasUnquotedForbiddenChars("install 'x & del /s /q C:\\Users'", {
+        honorSingleQuotes: false
+      })
+    ).toBe(true);
+  });
+
+  it("still honors double quotes as a safe region even when honorSingleQuotes is false", () => {
+    expect(
+      hasUnquotedForbiddenChars('install "package-name"', { honorSingleQuotes: false })
+    ).toBe(false);
+  });
+
+  it("still flags $() subshells inside double quotes regardless of the option", () => {
+    expect(
+      hasUnquotedForbiddenChars('install "$(whoami)"', { honorSingleQuotes: false })
+    ).toBe(true);
+  });
+
+  it("flags bare, unquoted forbidden characters regardless of the option", () => {
+    expect(hasUnquotedForbiddenChars("install pkg & calc.exe")).toBe(true);
+    expect(
+      hasUnquotedForbiddenChars("install pkg & calc.exe", { honorSingleQuotes: false })
+    ).toBe(true);
   });
 });
