@@ -6,13 +6,26 @@ describe("DEFAULT_SYSTEM_PROMPT", () => {
     expect(DEFAULT_SYSTEM_PROMPT).toContain("FeCode");
   });
 
-  it("lists all 6 workspace tools", () => {
+  it("lists all 7 workspace tools", () => {
     expect(DEFAULT_SYSTEM_PROMPT).toContain("list_directory");
     expect(DEFAULT_SYSTEM_PROMPT).toContain("read_file");
     expect(DEFAULT_SYSTEM_PROMPT).toContain("search_files");
     expect(DEFAULT_SYSTEM_PROMPT).toContain("write_file");
     expect(DEFAULT_SYSTEM_PROMPT).toContain("edit_file");
     expect(DEFAULT_SYSTEM_PROMPT).toContain("execute_command");
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("manage_task");
+  });
+
+  it("documents the isDaemon flag and manage_task background tool", () => {
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("isDaemon");
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("manage_task");
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("send_input");
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("kill");
+    expect(DEFAULT_SYSTEM_PROMPT).toMatch(/task ID/);
+  });
+
+  it("requires cleanup of background tasks", () => {
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("CLEAN UP BACKGROUND TASKS");
   });
 
   it("explicitly forbids shell file commands", () => {
