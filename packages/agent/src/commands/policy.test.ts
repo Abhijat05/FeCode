@@ -139,4 +139,22 @@ describe("hasUnquotedForbiddenChars — honorSingleQuotes option (Windows shell-
       hasUnquotedForbiddenChars("install pkg & calc.exe", { honorSingleQuotes: false })
     ).toBe(true);
   });
+
+  it("DefaultCommandPolicy denies single-quoted metacharacters for Windows batch commands", () => {
+    const winPolicy = new DefaultCommandPolicy({ platform: "win32" });
+    const linuxPolicy = new DefaultCommandPolicy({ platform: "linux" });
+
+    // On Windows, npm is a batch command executed in cmd.exe which ignores single quotes
+    const winRes = winPolicy.validate("npm test 'x & echo bad'");
+    expect(winRes.type).toBe("denied");
+    expect(winRes.code).toBe("UNSUPPORTED_SHELL_SYNTAX");
+
+    // On Linux, single quotes are honored
+    const linuxRes = linuxPolicy.validate("npm test 'x & echo bad'");
+    expect(linuxRes.type).toBe("allowed");
+
+    // On Windows, node does not invoke cmd.exe (shell: false), so single quotes are honored
+    const nodeWinRes = winPolicy.validate("node -e 'console.log(\"hello & world\")'");
+    expect(nodeWinRes.type).toBe("allowed");
+  });
 });

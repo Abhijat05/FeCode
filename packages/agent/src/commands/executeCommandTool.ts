@@ -3,10 +3,12 @@ import type { CommandExecutor, CommandResult } from "./types.js";
 import { NodeCommandExecutor } from "./nodeExecutor.js";
 import { TaskManager, getGlobalTaskManager } from "../tasks/taskManager.js";
 import { checkGitLockStatus, cleanStaleGitLock } from "../git/gitLockUtils.js";
+import { detectMaskedCommandFailure } from "./failureDetector.js";
 
 export interface ExecuteCommandInput {
   command: string;
   isDaemon?: boolean;
+  ignoreMaskedFailures?: boolean;
 }
 
 export class ExecuteCommandTool
@@ -27,6 +29,11 @@ export class ExecuteCommandTool
         type: "boolean",
         description:
           "Set to true for long-running support processes that are meant to keep running in the background indefinitely and are not expected to finish on their own (e.g., dev servers, file watchers). Defaults to false."
+      },
+      ignoreMaskedFailures: {
+        type: "boolean",
+        description:
+          "Set to true to ignore failure signatures in output when the command exits with code 0. Defaults to false."
       }
     },
     required: ["command"]
@@ -137,15 +144,25 @@ export class ExecuteCommandTool
               !retryResult.error &&
               (retryResult.exitCode === null || retryResult.exitCode === 0)
             ) {
-              return {
-                success: true,
-                output: {
-                  ...retryResult,
-                  stdout:
-                    retryResult.stdout +
-                    `\n[Auto-recovery: Cleared stale git lock (${cleaned.lockPath}) and retried command successfully.]`
-                }
-              };
+              const retryMasked = !input.ignoreMaskedFailures
+                ? detectMaskedCommandFailure(
+                    input.command,
+                    retryResult.stdout,
+                    retryResult.stderr
+                  )
+                : { hasMaskedFailure: false };
+
+              if (!retryMasked.hasMaskedFailure) {
+                return {
+                  success: true,
+                  output: {
+                    ...retryResult,
+                    stdout:
+                      retryResult.stdout +
+                      `\n[Auto-recovery: Cleared stale git lock (${cleaned.lockPath}) and retried command successfully.]`
+                  }
+                };
+              }
             }
             result = retryResult;
           }
@@ -162,6 +179,30 @@ export class ExecuteCommandTool
         },
         output: result
       };
+    }
+
+    // Check for masked command failures when process exited with code 0
+    if (!input.ignoreMaskedFailures) {
+      const masked = detectMaskedCommandFailure(
+        input.command,
+        result.stdout,
+        result.stderr
+      );
+      if (masked.hasMaskedFailure) {
+        const errorMsg = `Command completed with exit code 0, but failure output was detected: ${masked.reason}`;
+        return {
+          success: false,
+          error: {
+            message: errorMsg,
+            code: "MASKED_COMMAND_FAILURE"
+          },
+          output: {
+            ...result,
+            maskedFailure: true,
+            error: errorMsg
+          }
+        };
+      }
     }
 
     return {

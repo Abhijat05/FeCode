@@ -624,6 +624,7 @@ export * from "./commands/mockExecutor.js";
 export * from "./commands/executeCommandTool.js";
 export * from "./commands/processTree.js";
 export * from "./commands/outputSanitizer.js";
+export * from "./commands/failureDetector.js";
 export * from "./project/index.js";
 export * from "./skills/types.js";
 export * from "./skills/registry.js";

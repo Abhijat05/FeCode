@@ -20,6 +20,7 @@ export interface CommandResult {
   isDaemon?: boolean;
   pid?: number | null;
   logFile?: string;
+  maskedFailure?: boolean;
 }
 
 export interface CommandExecutor {

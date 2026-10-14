@@ -136,4 +136,56 @@ describe("ExecuteCommandTool", () => {
 
     await fs.rm(tmpGitDir, { recursive: true, force: true });
   });
+
+  it("detects masked command failure and returns success=false even if exitCode is 0", async () => {
+    mockExecutor.defaultResult = {
+      exitCode: 0,
+      stdout: "FAIL packages/agent/src/index.test.ts\nTests: 2 failed, 10 passed",
+      stderr: "",
+      timedOut: false,
+      truncated: false
+    };
+
+    const res = await tool.execute({ command: "npm test" }, context);
+    expect(res.success).toBe(false);
+    expect(res.error?.code).toBe("MASKED_COMMAND_FAILURE");
+    expect(res.error?.message).toContain("Command completed with exit code 0, but failure output was detected");
+    expect(res.output?.maskedFailure).toBe(true);
+  });
+
+  it("permits masked failure when ignoreMaskedFailures is set to true", async () => {
+    mockExecutor.defaultResult = {
+      exitCode: 0,
+      stdout: "FAIL packages/agent/src/index.test.ts\nTests: 2 failed, 10 passed",
+      stderr: "",
+      timedOut: false,
+      truncated: false
+    };
+
+    const res = await tool.execute(
+      { command: "npm test", ignoreMaskedFailures: true },
+      context
+    );
+    expect(res.success).toBe(true);
+    expect(res.output?.maskedFailure).toBeUndefined();
+  });
+
+  it("detects Windows shell error masked by compound command", async () => {
+    mockExecutor.defaultResult = {
+      exitCode: 0,
+      stdout: "The system cannot find the file specified.\ndone\n",
+      stderr: "",
+      timedOut: false,
+      truncated: false
+    };
+
+    const res = await tool.execute(
+      { command: "dir nonexistent & echo done" },
+      context
+    );
+    expect(res.success).toBe(false);
+    expect(res.error?.code).toBe("MASKED_COMMAND_FAILURE");
+    expect(res.error?.message).toContain("Windows system cannot find file specified");
+    expect(res.output?.maskedFailure).toBe(true);
+  });
 });

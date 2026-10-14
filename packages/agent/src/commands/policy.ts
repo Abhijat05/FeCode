@@ -2,6 +2,7 @@ import type { CommandDecision, CommandPolicy } from "./types.js";
 
 export interface CommandPolicyOptions {
   allowedExecutables?: string[];
+  platform?: string;
 }
 
 const DEFAULT_ALLOWED = ["npm", "npx", "pnpm", "yarn", "bun", "node", "git"];
@@ -122,11 +123,13 @@ export function tokenizeCommand(commandStr: string): string[] {
 
 export class DefaultCommandPolicy implements CommandPolicy {
   private readonly allowedExecutables: Set<string>;
+  private readonly platform: string;
 
   constructor(options: CommandPolicyOptions = {}) {
     this.allowedExecutables = new Set(
       options.allowedExecutables || DEFAULT_ALLOWED
     );
+    this.platform = options.platform || process.platform;
   }
 
   validate(command: string): CommandDecision {
@@ -136,14 +139,6 @@ export class DefaultCommandPolicy implements CommandPolicy {
         type: "denied",
         reason: "Command string is empty.",
         code: "INVALID_COMMAND"
-      };
-    }
-
-    if (hasUnquotedForbiddenChars(trimmed)) {
-      return {
-        type: "denied",
-        reason: "Command contains unsupported shell metacharacters or chaining syntax.",
-        code: "UNSUPPORTED_SHELL_SYNTAX"
       };
     }
 
@@ -157,6 +152,21 @@ export class DefaultCommandPolicy implements CommandPolicy {
     }
 
     const executable = tokens[0];
+    const isWindowsBatch =
+      this.platform === "win32" &&
+      ["npm", "npx", "pnpm", "yarn", "bun"].includes(executable.toLowerCase());
+
+    if (
+      hasUnquotedForbiddenChars(trimmed, {
+        honorSingleQuotes: !isWindowsBatch
+      })
+    ) {
+      return {
+        type: "denied",
+        reason: "Command contains unsupported shell metacharacters or chaining syntax.",
+        code: "UNSUPPORTED_SHELL_SYNTAX"
+      };
+    }
     if (!this.allowedExecutables.has(executable)) {
       let hint = "";
       const lowerExec = executable.toLowerCase();
