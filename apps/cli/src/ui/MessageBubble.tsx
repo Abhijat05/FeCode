@@ -240,6 +240,18 @@ export function renderMarkdownLine(line: string, index: number): React.ReactNode
     );
   }
 
+  // Neutralized process output (prevent spoofing)
+  if (trimmed.startsWith("[process-output]")) {
+    const rawContent = trimmed.replace(/^\[process-output\]\s*/, "");
+    return (
+      <Box key={`l-${index}`} marginY={0}>
+        <Text color="cyan" dimColor>│ </Text>
+        <Text color="yellow" bold>[process-output] </Text>
+        <Text color="gray" italic wrap="wrap">{renderInlineMarkdown(rawContent)}</Text>
+      </Box>
+    );
+  }
+
   // Standard line
   return (
     <Box key={`l-${index}`}>

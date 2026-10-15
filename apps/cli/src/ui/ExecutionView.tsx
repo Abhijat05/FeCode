@@ -162,15 +162,18 @@ export const ExecutionView: React.FC<ExecutionViewProps> = ({
         </Box>
       )}
 
-      {/* Live Streamed Output */}
+      {/* Live Streamed Command / Process Output */}
       {streamedOutput && (
         <Box
-          borderStyle="single"
+          borderStyle="round"
           borderColor="gray"
           paddingX={1}
           marginY={1}
           flexDirection="column"
         >
+          <Box marginBottom={0}>
+            <Text bold color="gray">[Command Output — Isolated]</Text>
+          </Box>
           <Text color="white">{streamedOutput}</Text>
         </Box>
       )}

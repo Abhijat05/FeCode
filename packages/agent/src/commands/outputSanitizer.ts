@@ -87,6 +87,40 @@ export function sliceUnicodeSafe(
   return { text: str.slice(0, cutIndex), truncated: true };
 }
 
+// Matches lines attempting to mimic terminal approval prompts, system alerts, or interactive confirmation dialogs
+export const DECEPTIVE_PROMPT_REGEX =
+  /^(?:\[(?:Approval Required|Security Alert|FeCode|Permission Required|System Alert)\]|\?\s*(?:Confirm|Approve|Delete|Proceed|Deploy|Continue|Execute)|\s*FeCode needs your permission|(?:Confirm|Approve|Proceed)\b.*(?:\([yY]\/[nN]\)|\[[yY]\/[nN]\]):?\s*$)/i;
+
+/**
+ * Disarms deceptive terminal prompts and UI spoofing by prefixing lines
+ * that mimic FeCode confirmation requests, approval banners, or system alerts with '[process-output]'.
+ */
+export function disarmDeceptivePrompts(text: string): string {
+  if (!text) return "";
+  return text
+    .split("\n")
+    .map((line) => {
+      const plain = line.replace(/\x1b\[[0-9;]*m/g, "").trim();
+      if (DECEPTIVE_PROMPT_REGEX.test(plain)) {
+        return `[process-output] ${line}`;
+      }
+      return line;
+    })
+    .join("\n");
+}
+
+/**
+ * Encloses raw command output in a dedicated, visually boxed container
+ * with clear demarcations so child processes cannot spoof terminal UI.
+ */
+export function formatIsolatedOutputBox(
+  text: string,
+  title = "Process Output"
+): string {
+  const border = "─".repeat(50);
+  return `┌─ [${title}] ${border.slice(title.length + 6)}\n${text}\n└${border}`;
+}
+
 export interface SanitizeCommandOutputOptions {
   maxOutputBytes?: number;
 }
@@ -101,7 +135,8 @@ export interface SanitizeCommandOutputResult {
  * 1. Normalizes carriage returns to prevent line-overwriting deception.
  * 2. Strips hostile ANSI/OSC escapes (preserving safe SGR colors).
  * 3. Strips null bytes and hostile control characters.
- * 4. Safely clamps to byte budget along Unicode code point boundaries.
+ * 4. Disarms deceptive interactive prompts and simulated UI headers.
+ * 5. Safely clamps to byte budget along Unicode code point boundaries.
  */
 export function sanitizeCommandOutput(
   raw: string,
@@ -112,6 +147,7 @@ export function sanitizeCommandOutput(
   let cleaned = normalizeCarriageReturns(raw);
   cleaned = stripHostileAnsi(cleaned);
   cleaned = sanitizeBinaryAndControlChars(cleaned);
+  cleaned = disarmDeceptivePrompts(cleaned);
 
   if (typeof options?.maxOutputBytes === "number" && options.maxOutputBytes > 0) {
     const sliced = sliceUnicodeSafe(cleaned, options.maxOutputBytes);
