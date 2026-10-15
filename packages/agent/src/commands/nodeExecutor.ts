@@ -97,8 +97,17 @@ export class NodeCommandExecutor implements CommandExecutor {
       options.maxTotalTimeoutMs ?? Math.max(timeoutMs * 10, 300000);
     const maxOutputBytes = options.maxOutputBytes ?? 1024 * 1024;
     const childEnv = prepareChildEnvironment(options.env);
+    const isGit =
+      executable.toLowerCase() === "git" || command.trim().startsWith("git ");
 
     if (options.signal?.aborted) {
+      if (isGit) {
+        try {
+          await cleanStaleGitLock(options.cwd, true);
+        } catch {
+          // Ignore cleanup failure
+        }
+      }
       return {
         command,
         exitCode: null,
@@ -110,8 +119,27 @@ export class NodeCommandExecutor implements CommandExecutor {
       };
     }
 
-    const runProcess = () =>
-      new Promise<CommandResult>((resolve) => {
+    const runProcess = async (): Promise<CommandResult> => {
+      if (options.signal?.aborted) {
+        if (isGit) {
+          try {
+            await cleanStaleGitLock(options.cwd, true);
+          } catch {
+            // Ignore cleanup failure
+          }
+        }
+        return {
+          command,
+          exitCode: null,
+          stdout: "",
+          stderr: "",
+          timedOut: false,
+          truncated: false,
+          error: "Command execution aborted."
+        };
+      }
+
+      return new Promise<CommandResult>((resolve) => {
         let child: ChildProcess;
       let timedOut = false;
       let timedOutDueToMaxLimit = false;
@@ -226,7 +254,11 @@ export class NodeCommandExecutor implements CommandExecutor {
       };
 
       if (options.signal) {
-        options.signal.addEventListener("abort", onAbort, { once: true });
+        if (options.signal.aborted) {
+          onAbort();
+        } else {
+          options.signal.addEventListener("abort", onAbort, { once: true });
+        }
       }
 
       if (child.stdout) {
@@ -324,11 +356,9 @@ export class NodeCommandExecutor implements CommandExecutor {
         });
       });
     });
+  };
 
-    const isGit =
-      executable.toLowerCase() === "git" || command.trim().startsWith("git ");
-
-    if (isGit) {
+  if (isGit) {
       return GitExecutionQueue.getInstance().enqueue(options.cwd, runProcess);
     }
 
