@@ -3,6 +3,7 @@ import { killProcessTree } from "./processTree.js";
 import { DefaultCommandPolicy, hasUnquotedForbiddenChars } from "./policy.js";
 import { sanitizeCommandOutput } from "./outputSanitizer.js";
 import { cleanStaleGitLock } from "../git/gitLockUtils.js";
+import { GitExecutionQueue } from "../git/gitQueue.js";
 import type {
   CommandExecutionOptions,
   CommandExecutor,
@@ -109,8 +110,9 @@ export class NodeCommandExecutor implements CommandExecutor {
       };
     }
 
-    return new Promise<CommandResult>((resolve) => {
-      let child: ChildProcess;
+    const runProcess = () =>
+      new Promise<CommandResult>((resolve) => {
+        let child: ChildProcess;
       let timedOut = false;
       let timedOutDueToMaxLimit = false;
       let aborted = false;
@@ -322,5 +324,14 @@ export class NodeCommandExecutor implements CommandExecutor {
         });
       });
     });
+
+    const isGit =
+      executable.toLowerCase() === "git" || command.trim().startsWith("git ");
+
+    if (isGit) {
+      return GitExecutionQueue.getInstance().enqueue(options.cwd, runProcess);
+    }
+
+    return runProcess();
   }
 }

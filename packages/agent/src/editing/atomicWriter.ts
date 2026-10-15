@@ -1,6 +1,7 @@
 import * as fs from "fs/promises";
 import * as path from "path";
 import * as crypto from "crypto";
+import { FileLockManager } from "./fileLock.js";
 
 export interface WriteAtomicOptions {
   signal?: AbortSignal;
@@ -15,18 +16,19 @@ export async function writeAtomic(
   content: string,
   signalOrOptions?: AbortSignal | WriteAtomicOptions
 ): Promise<void> {
-  const options: WriteAtomicOptions =
-    signalOrOptions instanceof AbortSignal
-      ? { signal: signalOrOptions }
-      : (signalOrOptions ?? {});
+  return FileLockManager.getInstance().acquire(targetPath, async () => {
+    const options: WriteAtomicOptions =
+      signalOrOptions instanceof AbortSignal
+        ? { signal: signalOrOptions }
+        : (signalOrOptions ?? {});
 
-  const signal = options.signal;
-  const renameFn = options.renameFn ?? fs.rename;
-  const copyFn = options.copyFn ?? fs.copyFile;
+    const signal = options.signal;
+    const renameFn = options.renameFn ?? fs.rename;
+    const copyFn = options.copyFn ?? fs.copyFile;
 
-  if (signal?.aborted) {
-    throw new Error("CANCELLED");
-  }
+    if (signal?.aborted) {
+      throw new Error("CANCELLED");
+    }
 
   const dir = path.dirname(targetPath);
   await fs.mkdir(dir, { recursive: true });
@@ -120,4 +122,5 @@ export async function writeAtomic(
       }
     }
   }
+  });
 }

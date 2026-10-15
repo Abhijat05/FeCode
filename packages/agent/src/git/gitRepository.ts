@@ -8,6 +8,7 @@ import { parseGitStatusPorcelain } from "./parser.js";
 import { prepareChildEnvironment } from "../commands/nodeExecutor.js";
 import { killProcessTree } from "../commands/processTree.js";
 import { checkGitLockStatus, cleanStaleGitLock } from "./gitLockUtils.js";
+import { GitExecutionQueue } from "./gitQueue.js";
 
 export type GitCommandRunner = (
   args: string[],
@@ -103,18 +104,20 @@ export class DefaultGitRepository implements GitRepository {
     cwd: string,
     signal?: AbortSignal
   ) => {
-    const res = await DefaultGitRepository.runSingleGitProcess(args, cwd, signal);
-    if (res.exitCode !== 0 && res.stderr.includes("index.lock")) {
-      const lockStatus = await checkGitLockStatus(cwd, 5000);
-      if (lockStatus?.hasLock && lockStatus.isStale) {
-        const cleaned = await cleanStaleGitLock(cwd, false, 5000);
-        if (cleaned.removed) {
-          // Retry the git command once after clearing stale lock
-          return await DefaultGitRepository.runSingleGitProcess(args, cwd, signal);
+    return GitExecutionQueue.getInstance().enqueue(cwd, async () => {
+      let res = await DefaultGitRepository.runSingleGitProcess(args, cwd, signal);
+      if (res.exitCode !== 0 && res.stderr.includes("index.lock")) {
+        const lockStatus = await checkGitLockStatus(cwd, 5000);
+        if (lockStatus?.hasLock && lockStatus.isStale) {
+          const cleaned = await cleanStaleGitLock(cwd, false, 5000);
+          if (cleaned.removed) {
+            // Retry the git command once after clearing stale lock
+            res = await DefaultGitRepository.runSingleGitProcess(args, cwd, signal);
+          }
         }
       }
-    }
-    return res;
+      return res;
+    });
   };
 
   public async isRepository(cwd: string): Promise<boolean> {
