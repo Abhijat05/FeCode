@@ -3193,6 +3193,18 @@ export const App: React.FC<AppProps> = ({
                 : t
             )
           );
+        } else if (event.type === "partial_mutation_cancelled") {
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    status: "cancelled",
+                    response: t.response + `\n⊘ ${event.message}\n`
+                  }
+                : t
+            )
+          );
           setLastTaskStatus("cancelled");
         } else if (event.type === "task_summary") {
           let summaryHeader = "";
@@ -3202,6 +3214,13 @@ export const App: React.FC<AppProps> = ({
             summaryHeader = "⚠ Task blocked\n\n";
           } else if (event.summary.status === "cancelled") {
             summaryHeader = "⊘ Task cancelled\n\n";
+            if (
+              event.summary.checkpointId &&
+              event.summary.completedFiles &&
+              event.summary.completedFiles.length > 0
+            ) {
+              summaryHeader += `Pre-task checkpoint: ${event.summary.checkpointId} (Run /restore ${event.summary.checkpointId} to revert partial mutations)\n\n`;
+            }
           }
 
           let summaryFormatted = SessionHistoryFormatter.formatTaskDetail(

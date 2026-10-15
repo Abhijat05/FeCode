@@ -1504,6 +1504,21 @@ export class AgentRuntime implements Agent {
           if (isCancelled) {
             this.completionTracker.recordCancelled();
             yield* this.transitionRunState("cancelled", "Run cancelled");
+            const rollbackInfo = await this.handleCancellationRollback(input, runId);
+            if (rollbackInfo) {
+              if (rollbackInfo.reverted) {
+                yield { type: "recovery_started", runId, checkpointId: rollbackInfo.checkpointId };
+                yield { type: "recovery_completed", runId, checkpointId: rollbackInfo.checkpointId, success: true };
+              }
+              yield {
+                type: "partial_mutation_cancelled",
+                runId,
+                checkpointId: rollbackInfo.checkpointId,
+                modifiedFiles: rollbackInfo.modifiedFiles,
+                reverted: rollbackInfo.reverted,
+                message: rollbackInfo.message
+              };
+            }
           } else {
             this.completionTracker.recordBlocked(turnError.message);
             yield* this.transitionRunState("failed", turnError.message);
@@ -1641,6 +1656,21 @@ export class AgentRuntime implements Agent {
       if (isCancelled) {
         this.completionTracker.recordCancelled();
         yield* this.transitionRunState("cancelled", "Run cancelled");
+        const rollbackInfo = await this.handleCancellationRollback(input, runId);
+        if (rollbackInfo) {
+          if (rollbackInfo.reverted) {
+            yield { type: "recovery_started", runId, checkpointId: rollbackInfo.checkpointId };
+            yield { type: "recovery_completed", runId, checkpointId: rollbackInfo.checkpointId, success: true };
+          }
+          yield {
+            type: "partial_mutation_cancelled",
+            runId,
+            checkpointId: rollbackInfo.checkpointId,
+            modifiedFiles: rollbackInfo.modifiedFiles,
+            reverted: rollbackInfo.reverted,
+            message: rollbackInfo.message
+          };
+        }
       } else {
         this.completionTracker.recordBlocked(error.message);
         yield* this.transitionRunState("failed", error.message);
@@ -2292,8 +2322,70 @@ export class AgentRuntime implements Agent {
     }
   }
 
-  async cancel(): Promise<void> {
+  private async handleCancellationRollback(
+    input: AgentInput,
+    _runId: string
+  ): Promise<{
+    checkpointId: string;
+    modifiedFiles: string[];
+    reverted: boolean;
+    message: string;
+  } | null> {
+    const summary = this.completionTracker.getSummary();
+    const checkpointId = summary.checkpointId;
+    const modifiedFiles = summary.completedFiles || [];
+
+    if (checkpointId && modifiedFiles.length > 0 && this.checkpointManager) {
+      if (input.autoRollbackOnCancel) {
+        try {
+          const res = await this.checkpointManager.restore(checkpointId, {
+            cwd: input.cwd,
+            approved: true
+          });
+          return {
+            checkpointId,
+            modifiedFiles,
+            reverted: res.success,
+            message: res.success
+              ? `Task cancelled. Reverted ${modifiedFiles.length} modified file(s) to pre-task snapshot.`
+              : `Task cancelled. Automatic rollback failed: ${res.error || "Unknown error"}.`
+          };
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return {
+            checkpointId,
+            modifiedFiles,
+            reverted: false,
+            message: `Task cancelled. Automatic rollback error: ${msg}.`
+          };
+        }
+      } else {
+        return {
+          checkpointId,
+          modifiedFiles,
+          reverted: false,
+          message: `Task cancelled with partial modifications to: ${modifiedFiles.join(", ")}. Pre-task checkpoint (${checkpointId}) is available. Use /restore ${checkpointId} to revert.`
+        };
+      }
+    }
+    return null;
+  }
+
+  async cancel(options?: { rollback?: boolean }): Promise<void> {
     this.completionTracker.recordCancelled();
+    if (options?.rollback) {
+      const summary = this.completionTracker.getSummary();
+      if (summary.checkpointId && this.checkpointManager) {
+        try {
+          await this.checkpointManager.restore(summary.checkpointId, {
+            cwd: this.projectContext?.projectRoot || process.cwd(),
+            approved: true
+          });
+        } catch {
+          // ignore rollback errors on cancel
+        }
+      }
+    }
     if (this.state.activePlan && this.state.activePlan.status === "in_progress") {
       const currentIdx = this.state.activePlan.currentStep ?? 0;
       this.state.activePlan = failTaskStep(
@@ -2349,5 +2441,18 @@ export class AgentRuntime implements Agent {
       this.state.status = "cancelled";
       this.activeController.abort();
     }
+  }
+
+  async rollbackLastMutation(
+    cwd?: string
+  ): Promise<import("./recovery/types.js").RecoveryResult | null> {
+    const summary = this.completionTracker.getSummary();
+    if (summary.checkpointId && this.checkpointManager) {
+      return this.checkpointManager.restore(summary.checkpointId, {
+        cwd: cwd || this.projectContext?.projectRoot || process.cwd(),
+        approved: true
+      });
+    }
+    return null;
   }
 }

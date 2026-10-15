@@ -12,10 +12,11 @@ import type { PersistedSessionData } from "./session/types.js";
 
 export interface Agent {
   run(input: AgentInput): AsyncIterable<AgentEvent>;
-  cancel(): Promise<void>;
+  cancel(options?: { rollback?: boolean }): Promise<void>;
   clear?(): void;
   getCompletionSummary?(): TaskCompletionSummary;
   restoreSession?(data: PersistedSessionData): void;
+  rollbackLastMutation?(cwd?: string): Promise<import("./recovery/types.js").RecoveryResult | null>;
 }
 
 export interface AgentInput {
@@ -26,6 +27,7 @@ export interface AgentInput {
   id?: ID;
   parentRunId?: string;
   resumeDepth?: number;
+  autoRollbackOnCancel?: boolean;
 }
 
 export type AgentEvent =
@@ -460,6 +462,14 @@ export type AgentEvent =
   | { type: "verification_completed"; runId?: string; command: string; success: boolean; attempt: number }
   | { type: "recovery_started"; runId?: string; checkpointId: string }
   | { type: "recovery_completed"; runId?: string; checkpointId: string; success: boolean }
+  | {
+      type: "partial_mutation_cancelled";
+      runId: string;
+      checkpointId: string;
+      modifiedFiles: string[];
+      reverted: boolean;
+      message: string;
+    }
   | { type: "run_completed"; runId: string }
   | { type: "run_failed"; runId: string; code?: string; error?: string }
   | { type: "run_cancelled"; runId: string }
