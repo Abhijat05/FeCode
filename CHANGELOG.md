@@ -4,6 +4,55 @@ All notable changes to FeCode are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] - 2026-10-16
+
+### Security & Process Safety
+- **Windows Shell-Injection Fix (`policy.ts`, `nodeExecutor.ts`, `taskManager.ts`)**:
+  - Enforced `{ honorSingleQuotes: false }` for Windows `cmd.exe` batch execution (`shell: true`), preventing shell metacharacters inside single quotes from bypassing policy validation.
+- **Prompt-Injection Fence Bypass Fix (`toolResultSanitizer.ts`)**:
+  - Removed naive boundary check that skipped neutralization if content started and ended with boundary tags, ensuring all content is unconditionally neutralized and safely wrapped.
+- **Terminal UI Deceptive Prompt Protection & Process Isolation**:
+  - Sanitized deceptive terminal escape sequences and isolated child process stdout/stderr from hijacking interactive prompts.
+- **Command Injection & Metacharacter Hardening**:
+  - Resolved partial command failures, exit code masking, and Windows batch metacharacter injection in `nodeExecutor`.
+
+### File Operations, Concurrency & Binary Safety
+- **Multi-Layer Binary File Protection (`binaryUtils.ts`)**:
+  - Added binary file detection (checking for null bytes and high non-ASCII density in the first 4KB).
+  - Guarded `editFile`, `readFile`, and `searchFiles` against reading, corrupting, or modifying binary files.
+- **Concurrent Git Operations & Mutex Locks**:
+  - Serialized concurrent git operations and enforced file-write mutex locks to prevent race conditions during parallel tool executions.
+  - Added recovery from stale git lock files (`index.lock`) after timeouts.
+- **Partial Mutation Rollback on Cancellation**:
+  - Implemented rollback of partial file mutations and emitted recovery notifications when a user cancels an in-progress turn.
+- **SearchFilesTool Hardening**:
+  - Converted directory exploration to iterative BFS traversal with a symlink cycle guard.
+  - Added configurable `maxDepth` and `maxFileSize` limits with stream error handlers to prevent runaway traversals in large repositories.
+- **Tool Serialization Resilience**:
+  - Handled circular references, BigInt values, and malformed tool outputs without JSON serialization crashes.
+
+### Agent Planning & Provider Fallback
+- **Planning Intent & Keyword Accuracy (`planner.ts`)**:
+  - Replaced substring matching with regex word boundaries (`\b`), preventing false positives on words like "suffix" or "building".
+  - Expanded `MUTATION_KEYWORDS` with verbs like "add", "change", "replace", "rename", "patch", and added `READ_ONLY_SIGNALS`. Ambiguous requests now default to non-read-only plans.
+- **Plan Step Lifecycle Consistency (`taskPlan.ts`, `executor.ts`)**:
+  - Added `skipPlanStep()` to cleanly transition unsatisfied steps and their dependents to `"skipped"` without prematurely failing the entire plan.
+  - Updated plan completion checks to succeed when all steps reach terminal status (`completed` or `skipped`).
+- **Provider Fallback per-Request Reset (`fallbackProvider.ts`)**:
+  - Added primary candidate reset at the start of each `generate()` call, allowing recovery to the primary provider once transient rate limits clear.
+
+### CLI & TUI UX Enhancements
+- **Bracketed Paste Mode & Multi-Line Paste Support**:
+  - Enabled bracketed paste mode on terminal startup and restored on exit.
+  - Implemented automatic multi-line paste collapse in the input bar with transparent expansion when submitted to `agent.run()`.
+- **Full Response Display & Markdown Formatting**:
+  - Rendered complete assistant responses without line clamping or omitted lines.
+  - Added markdown formatting and smooth arrow-key scrolling for multi-turn sessions and long responses.
+- **System Prompt Documentation**:
+  - Documented background daemon management (`manage_task` and `isDaemon` flag) directly in the default agent system prompt.
+
+---
+
 ## [1.1.1] - 2026-10-10
 
 ### Fixed & Security Hardening
