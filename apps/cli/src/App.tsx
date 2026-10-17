@@ -704,7 +704,7 @@ export const App: React.FC<AppProps> = ({
       const isUpScroll =
         (key.pageUp ||
           (key.shift && key.upArrow) ||
-          (key.ctrl && input === "u") ||
+          (key.ctrl && input === "u" && (!query || isGenerating || hasModal)) ||
           input === "\u001B[5~" ||
           isMouseWheelUp ||
           canUpArrow) &&
@@ -3423,7 +3423,7 @@ export const App: React.FC<AppProps> = ({
                 originalRequest={
                   pendingResume.prep.originalRun.userRequestSummary
                 }
-                riskLevel={pendingResume.prep.reassessedRisk.level}
+                riskLevel={pendingResume.prep.reassessedRisk?.level || "normal"}
                 value={resumeInput}
                 onChange={setResumeInput}
                 onSubmit={handleSubmit}

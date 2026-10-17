@@ -13,9 +13,10 @@ import { InteractiveApprovalResolver } from "./approvalResolver.js";
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function typeAndSubmit(stdin: { write: (data: string) => void }, text: string) {
+  await delay(20);
   for (const char of text) {
     stdin.write(char);
-    await delay(10);
+    await delay(15);
   }
   stdin.write("\r");
 }

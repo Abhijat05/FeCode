@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import TextInput from "ink-text-input";
+import { EnhancedTextInput } from "./EnhancedTextInput.js";
 
 export interface ResumeViewProps {
   runId: string;
@@ -126,7 +126,7 @@ export const ResumeView: React.FC<ResumeViewProps> = ({
         <Text color="yellow" bold>
           Choice [N]:{" "}
         </Text>
-        <TextInput
+        <EnhancedTextInput
           value={value}
           onChange={onChange}
           onSubmit={onSubmit}

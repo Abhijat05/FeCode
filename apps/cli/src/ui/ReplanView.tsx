@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import TextInput from "ink-text-input";
+import { EnhancedTextInput } from "./EnhancedTextInput.js";
 
 export interface ReplanViewProps {
   originalPlanId?: string;
@@ -135,7 +135,7 @@ export const ReplanView: React.FC<ReplanViewProps> = ({
         <Text color="yellow" bold>
           Choice [N]:{" "}
         </Text>
-        <TextInput
+        <EnhancedTextInput
           value={value}
           onChange={onChange}
           onSubmit={onSubmit}

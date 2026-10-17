@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import TextInput from "ink-text-input";
+import { EnhancedTextInput } from "./EnhancedTextInput.js";
 
 export interface BlockedViewProps {
   planId?: string;
@@ -108,7 +108,7 @@ export const BlockedView: React.FC<BlockedViewProps> = ({
         <Text color="yellow" bold>
           Choice [x]:{" "}
         </Text>
-        <TextInput
+        <EnhancedTextInput
           value={value}
           onChange={onChange}
           onSubmit={onSubmit}

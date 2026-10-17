@@ -23,3 +23,5 @@ export * from "./MessageBubble.js";
 export * from "./TurnView.js";
 export * from "./CommandPalette.js";
 export * from "./ThinkingBlock.js";
+export * from "./EnhancedTextInput.js";
+export * from "./textEditingUtils.js";

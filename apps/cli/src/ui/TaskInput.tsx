@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import TextInput from "ink-text-input";
+import { EnhancedTextInput } from "./EnhancedTextInput.js";
 import { CommandPalette } from "./CommandPalette.js";
 import type { CommandDef } from "../commands.js";
 
@@ -61,7 +61,7 @@ export const TaskInput: React.FC<TaskInputProps> = ({
             {pendingQuery ? `[queued] ${pendingQuery}` : (value || placeholder)}
           </Text>
         ) : (
-          <TextInput
+          <EnhancedTextInput
             value={value}
             onChange={onChange}
             onSubmit={handleInputSubmit}
