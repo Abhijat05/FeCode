@@ -243,17 +243,17 @@ describe("NodeCommandExecutor", () => {
   });
 
   it("enforces maxTotalTimeoutMs even if activity heartbeats keep streaming", async () => {
-    const script = `setInterval(() => console.log('infinite tick'), 40);`;
+    const script = `setInterval(() => console.log('infinite tick'), 30);`;
     const res = await executor.execute(`node -e "${script}"`, {
       cwd: tmpDir,
-      timeoutMs: 150,
+      timeoutMs: 300,
       enableHeartbeat: true,
-      maxTotalTimeoutMs: 300
+      maxTotalTimeoutMs: 500
     });
 
     expect(res.timedOut).toBe(true);
     expect(res.exitCode).toBeNull();
-    expect(res.error).toContain("maximum limit of 300ms");
+    expect(res.error).toContain("maximum limit of 500ms");
   });
 
   it("cleans up abandoned .git/index.lock when git command is aborted", async () => {
