@@ -428,4 +428,70 @@ describe("EnhancedTextInput component", () => {
     expect(submittedVal).toBe("my-task");
     unmount();
   });
+
+  it("renders long wrapped text without crashing or truncating", () => {
+    const longText = "word ".repeat(50);
+    const { lastFrame, unmount } = render(
+      <EnhancedTextInput
+        value={longText}
+        onChange={() => {}}
+      />
+    );
+    expect(lastFrame() ?? "").toContain("word");
+    unmount();
+  });
+
+  it("handles multi-line text with safe newline cursor rendering", () => {
+    const multiLine = "line1\nline2\nline3";
+    const { lastFrame, unmount } = render(
+      <EnhancedTextInput
+        value={multiLine}
+        onChange={() => {}}
+      />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("line1");
+    expect(frame).toContain("line2");
+    expect(frame).toContain("line3");
+    unmount();
+  });
+
+  it("buffers multi-chunk bracketed paste and emits single complete paste", async () => {
+    let currentVal = "";
+    const Wrapper = () => {
+      const [val, setVal] = useState("");
+      return (
+        <EnhancedTextInput
+          value={val}
+          onChange={(v) => {
+            setVal(v);
+            currentVal = v;
+          }}
+        />
+      );
+    };
+
+    const { stdin, unmount } = render(<Wrapper />);
+    await delay(20);
+
+    // Write chunk 1 with [200~ but no [201~
+    stdin.write("\x1b[200~part 1\n");
+    await delay(30);
+    // Intermediate state should be buffered, onChange not called yet
+    expect(currentVal).toBe("");
+
+    // Write chunk 2
+    stdin.write("part 2\n");
+    await delay(30);
+    expect(currentVal).toBe("");
+
+    // Write chunk 3 with closing [201~
+    stdin.write("part 3\x1b[201~");
+    await delay(50);
+
+    expect(currentVal).toContain("part 1");
+    expect(currentVal).toContain("part 2");
+    expect(currentVal).toContain("part 3");
+    unmount();
+  });
 });

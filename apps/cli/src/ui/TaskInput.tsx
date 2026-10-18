@@ -54,20 +54,24 @@ export const TaskInput: React.FC<TaskInputProps> = ({
         </Box>
       )}
 
-      <Box>
-        <Text color="cyan" bold>› </Text>
-        {isDisabled ? (
-          <Text color="gray">
-            {pendingQuery ? `[queued] ${pendingQuery}` : (value || placeholder)}
-          </Text>
-        ) : (
-          <EnhancedTextInput
-            value={value}
-            onChange={onChange}
-            onSubmit={handleInputSubmit}
-            placeholder={placeholder}
-          />
-        )}
+      <Box flexDirection="row">
+        <Box flexShrink={0}>
+          <Text color="cyan" bold>› </Text>
+        </Box>
+        <Box flexGrow={1} flexShrink={1}>
+          {isDisabled ? (
+            <Text color="gray" wrap="wrap">
+              {pendingQuery ? `[queued] ${pendingQuery}` : (value || placeholder)}
+            </Text>
+          ) : (
+            <EnhancedTextInput
+              value={value}
+              onChange={onChange}
+              onSubmit={handleInputSubmit}
+              placeholder={placeholder}
+            />
+          )}
+        </Box>
       </Box>
 
       {/* Command Palette — shown below input when typing a slash command */}

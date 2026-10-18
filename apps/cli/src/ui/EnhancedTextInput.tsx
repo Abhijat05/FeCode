@@ -41,6 +41,24 @@ export const EnhancedTextInput: React.FC<EnhancedTextInputProps> = ({
   const { internal_eventEmitter } = useStdin();
   const lastRawInputRef = useRef<string>("");
 
+  const originalValueRef = useRef(originalValue);
+  originalValueRef.current = originalValue;
+  const cursorOffsetRef = useRef(cursorOffset);
+  cursorOffsetRef.current = cursorOffset;
+  const isAllSelectedRef = useRef(isAllSelected);
+  isAllSelectedRef.current = isAllSelected;
+
+  const pasteBufferRef = useRef<string | null>(null);
+  const pasteTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (pasteTimerRef.current) {
+        clearTimeout(pasteTimerRef.current);
+      }
+    };
+  }, []);
+
   useEffect(() => {
     if (!focus) return;
     const handleRaw = (data: string) => {
@@ -81,10 +99,13 @@ export const EnhancedTextInput: React.FC<EnhancedTextInputProps> = ({
       renderedValue = displayValue.length > 0 ? "" : chalk.inverse(" ");
       let i = 0;
       for (const char of displayValue) {
-        renderedValue +=
-          i >= cursorOffset - cursorActualWidth && i <= cursorOffset
-            ? chalk.inverse(char)
-            : char;
+        const isCursor =
+          i >= cursorOffset - cursorActualWidth && i <= cursorOffset;
+        if (char === "\n") {
+          renderedValue += isCursor ? chalk.inverse(" ") + "\n" : "\n";
+        } else {
+          renderedValue += isCursor ? chalk.inverse(char) : char;
+        }
         i++;
       }
       if (displayValue.length > 0 && cursorOffset === displayValue.length) {
@@ -97,6 +118,70 @@ export const EnhancedTextInput: React.FC<EnhancedTextInputProps> = ({
     (input, key) => {
       const effectiveInput = input || lastRawInputRef.current;
       lastRawInputRef.current = "";
+
+      // Handle chunked bracketed paste sequences across multiple stdin events
+      if (pasteBufferRef.current !== null) {
+        if (pasteTimerRef.current) {
+          clearTimeout(pasteTimerRef.current);
+          pasteTimerRef.current = null;
+        }
+        pasteBufferRef.current += effectiveInput;
+        if (pasteBufferRef.current.includes("[201~")) {
+          const completePaste = pasteBufferRef.current;
+          pasteBufferRef.current = null;
+          if (isAllSelectedRef.current) {
+            setIsAllSelected(false);
+            setCursorOffset(completePaste.length);
+            setCursorWidth(completePaste.length > 1 ? completePaste.length : 0);
+            onChange(completePaste);
+          } else {
+            const res = insertText(
+              originalValueRef.current,
+              cursorOffsetRef.current,
+              completePaste
+            );
+            setCursorOffset(res.offset);
+            setCursorWidth(completePaste.length > 1 ? completePaste.length : 0);
+            onChange(res.text);
+          }
+        } else {
+          pasteTimerRef.current = setTimeout(() => {
+            if (pasteBufferRef.current !== null) {
+              const flushed = pasteBufferRef.current;
+              pasteBufferRef.current = null;
+              const res = insertText(
+                originalValueRef.current,
+                cursorOffsetRef.current,
+                flushed
+              );
+              setCursorOffset(res.offset);
+              setCursorWidth(flushed.length > 1 ? flushed.length : 0);
+              onChange(res.text);
+            }
+          }, 300);
+        }
+        return;
+      }
+
+      if (effectiveInput.includes("[200~") && !effectiveInput.includes("[201~")) {
+        pasteBufferRef.current = effectiveInput;
+        pasteTimerRef.current = setTimeout(() => {
+          if (pasteBufferRef.current !== null) {
+            const flushed = pasteBufferRef.current;
+            pasteBufferRef.current = null;
+            const res = insertText(
+              originalValueRef.current,
+              cursorOffsetRef.current,
+              flushed
+            );
+            setCursorOffset(res.offset);
+            setCursorWidth(flushed.length > 1 ? flushed.length : 0);
+            onChange(res.text);
+          }
+        }, 300);
+        return;
+      }
+
       const action = resolveKeyAction(effectiveInput, key);
 
       switch (action.type) {
@@ -286,7 +371,7 @@ export const EnhancedTextInput: React.FC<EnhancedTextInputProps> = ({
   );
 
   return (
-    <Text>
+    <Text wrap="wrap">
       {placeholder
         ? displayValue.length > 0
           ? renderedValue

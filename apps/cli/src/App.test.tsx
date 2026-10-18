@@ -3850,6 +3850,43 @@ describe("CLI App Component", () => {
 
       expect(receivedMessage).toBe("first line\nsecond line\nthird line");
     });
+
+    it("handles multi-chunk bracketed paste across stdin chunks without fracturing into multiple tokens", async () => {
+      let receivedMessage = "";
+      const mockAgent = new MockAgent();
+      mockAgent.runFn = async function* (input: AgentInput) {
+        receivedMessage = input.message;
+        yield { type: "text", content: "Done." };
+        yield { type: "done" };
+      };
+
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      // Chunk 1: [200~ + lines without [201~
+      stdin.write("\x1b[200~chunk 1 line 1\nchunk 1 line 2\n");
+      await delay(30);
+
+      // Chunk 2: middle text without markers
+      stdin.write("chunk 2 line 3\nchunk 2 line 4\n");
+      await delay(30);
+
+      // Chunk 3: end text with [201~
+      stdin.write("chunk 3 line 5\x1b[201~");
+      await delay(50);
+
+      const inputFrame = lastFrame() ?? "";
+      // Must collapse into a SINGLE token with 4 extra lines, NOT multiple tokens
+      expect(inputFrame).toContain("[Pasted text #1 +4 lines]");
+      expect(inputFrame).not.toContain("[Pasted text #2");
+
+      stdin.write("\r");
+      await delay(200);
+
+      expect(receivedMessage).toBe(
+        "chunk 1 line 1\nchunk 1 line 2\nchunk 2 line 3\nchunk 2 line 4\nchunk 3 line 5"
+      );
+    });
   });
 });
 

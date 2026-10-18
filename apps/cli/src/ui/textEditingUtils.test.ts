@@ -272,9 +272,14 @@ describe("textEditingUtils", () => {
       expect(resolveKeyAction("", { downArrow: true }).type).toBe("ignore");
     });
 
+    it("preserves bracketed paste escape sequences for pasteUtils to process", () => {
+      expect(resolveKeyAction("\x1b[200~hello\nworld\x1b[201~", {}).type).toBe("insert");
+      expect(resolveKeyAction("\x1b[200~", {}).type).toBe("insert");
+    });
+
     it("safely ignores unknown ANSI escape sequences to prevent garbage text insertion", () => {
-      expect(resolveKeyAction("\x1b[200~", {}).type).toBe("ignore");
       expect(resolveKeyAction("\x1b[1;2A", {}).type).toBe("ignore");
+      expect(resolveKeyAction("\x1b[999~", {}).type).toBe("ignore");
     });
 
     it("resolves printable text and pasted strings to insert", () => {

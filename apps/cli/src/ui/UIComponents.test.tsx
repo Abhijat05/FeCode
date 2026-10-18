@@ -588,6 +588,21 @@ describe("Phase 5AD: Modular UI Components", () => {
     unmount();
   });
 
+  it("renders TaskInput with wrapped long text without overflowing prefix", () => {
+    const longPrompt = "a".repeat(150);
+    const { lastFrame, unmount } = render(
+      <TaskInput
+        value={longPrompt}
+        onChange={() => {}}
+        onSubmit={() => {}}
+      />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("› ");
+    expect(frame).toContain("aaaaa");
+    unmount();
+  });
+
   it("renders PlanStep with accessible symbols, dependencies, and risk badges", () => {
     const { lastFrame: completedFrame } = render(
       <PlanStep

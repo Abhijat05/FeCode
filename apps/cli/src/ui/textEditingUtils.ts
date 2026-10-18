@@ -382,6 +382,11 @@ export function resolveKeyAction(
     return { type: "escape" };
   }
 
+  // Preserve bracketed paste sequences so processPastedInput can collapse multi-line text
+  if (input.includes("[200~") || input.includes("[201~")) {
+    return { type: "insert", text: input };
+  }
+
   // Stray or unhandled escape sequences (drop safely so raw terminal codes don't pollute input)
   if (input.startsWith("\x1b") || input.startsWith("\u001b")) {
     return { type: "ignore" };
