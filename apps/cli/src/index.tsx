@@ -69,7 +69,7 @@ Interactive Commands (inside TUI):
   }
 
   const sessionStore = new DefaultSessionStore();
-  let cwd = process.cwd();
+  let cwd = process.env.INIT_CWD || process.cwd();
 
   // Parse --resume / -r argument
   let resumeId: string | undefined;
