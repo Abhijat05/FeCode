@@ -41,6 +41,90 @@ describe("EnhancedTextInput component", () => {
     unmount();
   });
 
+  it("handles regular Backspace (\\x7f) to delete character backward", async () => {
+    let currentVal = "hello";
+    const Wrapper = () => {
+      const [val, setVal] = useState("hello");
+      return (
+        <EnhancedTextInput
+          value={val}
+          onChange={(v) => {
+            setVal(v);
+            currentVal = v;
+          }}
+        />
+      );
+    };
+
+    const { stdin, unmount } = render(<Wrapper />);
+    await delay(20);
+    // Terminal Backspace sends 0x7f
+    stdin.write("\x7f");
+    await delay(30);
+
+    expect(currentVal).toBe("hell");
+
+    stdin.write("\x7f");
+    await delay(30);
+    expect(currentVal).toBe("hel");
+    unmount();
+  });
+
+  it("handles legacy Backspace (\\x08) to delete character backward", async () => {
+    let currentVal = "hello";
+    const Wrapper = () => {
+      const [val, setVal] = useState("hello");
+      return (
+        <EnhancedTextInput
+          value={val}
+          onChange={(v) => {
+            setVal(v);
+            currentVal = v;
+          }}
+        />
+      );
+    };
+
+    const { stdin, unmount } = render(<Wrapper />);
+    await delay(20);
+    // Legacy cmd.exe Backspace sends \x08
+    stdin.write("\x08");
+    await delay(30);
+
+    expect(currentVal).toBe("hell");
+    unmount();
+  });
+
+  it("handles Backspace in the middle of a string after moving cursor", async () => {
+    let currentVal = "hello";
+    const Wrapper = () => {
+      const [val, setVal] = useState("hello");
+      return (
+        <EnhancedTextInput
+          value={val}
+          onChange={(v) => {
+            setVal(v);
+            currentVal = v;
+          }}
+        />
+      );
+    };
+
+    const { stdin, unmount } = render(<Wrapper />);
+    await delay(20);
+    // Move left twice: cursor is after 'hel'
+    stdin.write("\x1b[D");
+    await delay(20);
+    stdin.write("\x1b[D");
+    await delay(20);
+    // Press backspace to delete 'l'
+    stdin.write("\x7f");
+    await delay(30);
+
+    expect(currentVal).toBe("helo");
+    unmount();
+  });
+
   it("handles Ctrl+Backspace to delete word backward", async () => {
     let currentVal = "git commit -m";
     const Wrapper = () => {

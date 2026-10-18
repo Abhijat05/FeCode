@@ -207,6 +207,7 @@ export interface KeyDescriptor {
   end?: boolean;
   pageUp?: boolean;
   pageDown?: boolean;
+  code?: string;
 }
 
 /**
@@ -266,25 +267,40 @@ export function resolveKeyAction(
     (key.ctrl &&
       (input === "\x08" ||
         input === "\x7f" ||
+        input === "\b" ||
         input === "w" ||
         input === "W" ||
         input === "h" ||
         input === "H")) ||
     input === "\x17" ||
-    (key.meta && (key.backspace || input === "\x7f" || input === "\x08")) ||
+    (key.meta &&
+      (key.backspace ||
+        input === "\x7f" ||
+        input === "\x08" ||
+        input === "\b" ||
+        (key.delete &&
+          input !== "\x1b[3;3~" &&
+          input !== "\x1b[3~" &&
+          key.code !== "[3~"))) ||
     input === "\x1b\x7f" ||
-    input === "\x1b\x08"
+    input === "\x1b\x08" ||
+    input === "\x1b\b"
   ) {
     return { type: "delete_word_left" };
   }
 
-  // Ctrl+Delete, Alt+D: Delete word forward
+  // Ctrl+Delete, Alt+D, Alt+Delete: Delete word forward
   // Terminals send: \x1b[3;5~ (xterm Ctrl+Delete), \x1b[3;3~ (Alt+Delete), \x1bd, \x1bD
   if (
-    (key.ctrl && key.delete) ||
     input === "\x1b[3;5~" ||
     input === "\x1b[3;3~" ||
-    (key.meta && (key.delete || input === "d" || input === "D")) ||
+    (key.ctrl &&
+      (key.delete || input === "\x1b[3~" || key.code === "[3~")) ||
+    (key.meta &&
+      (input === "d" ||
+        input === "D" ||
+        input === "\x1b[3~" ||
+        key.code === "[3~")) ||
     input === "\x1bd" ||
     input === "\x1bD"
   ) {
@@ -331,13 +347,23 @@ export function resolveKeyAction(
     return { type: "kill_line_right" };
   }
 
-  // Forward Delete (Delete key / \x1b[3~)
-  if (key.delete || input === "\x1b[3~") {
+  // Forward Delete (Physical Delete key emits \x1b[3~, rxvt \x1b[3$, or code '[3~')
+  if (
+    input === "\x1b[3~" ||
+    input === "\x1b[3$" ||
+    key.code === "[3~"
+  ) {
     return { type: "delete_forward" };
   }
 
-  // Backward Delete (Backspace key / \x08 / \x7f)
-  if (key.backspace || input === "\x08" || input === "\x7f") {
+  // Backward Delete (Backspace key: key.backspace, key.delete from Ink's \x7f mapping, \x08, \x7f, \b)
+  if (
+    key.backspace ||
+    key.delete ||
+    input === "\x08" ||
+    input === "\x7f" ||
+    input === "\b"
+  ) {
     return { type: "delete_backward" };
   }
 

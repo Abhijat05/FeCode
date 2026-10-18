@@ -247,10 +247,15 @@ describe("textEditingUtils", () => {
     });
 
     it("resolves basic Delete and Backspace", () => {
-      expect(resolveKeyAction("", { delete: true }).type).toBe("delete_forward");
+      // Ink emits key.delete for \x7f (Backspace on modern terminals) without escape sequences
+      expect(resolveKeyAction("", { delete: true }).type).toBe("delete_backward");
       expect(resolveKeyAction("\x1b[3~", {}).type).toBe("delete_forward");
+      expect(resolveKeyAction("\x1b[3~", { delete: true }).type).toBe("delete_forward");
+      expect(resolveKeyAction("", { delete: true, code: "[3~" }).type).toBe("delete_forward");
       expect(resolveKeyAction("", { backspace: true }).type).toBe("delete_backward");
       expect(resolveKeyAction("\x7f", {}).type).toBe("delete_backward");
+      expect(resolveKeyAction("\x08", {}).type).toBe("delete_backward");
+      expect(resolveKeyAction("\b", {}).type).toBe("delete_backward");
     });
 
     it("resolves plain Left and Right arrows", () => {
