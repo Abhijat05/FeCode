@@ -1,9 +1,12 @@
 import * as fs from "fs/promises";
+import * as path from "path";
 import type { Tool, ToolContext, ToolResult } from "@fecode/models";
 import { resolveSafePath } from "./pathUtils.js";
+import { isIgnoredDirectory } from "./ignoreUtils.js";
 
 export interface ListDirectoryInput {
   path?: string;
+  depth?: number;
 }
 
 export interface DirectoryEntry {
@@ -27,7 +30,7 @@ export class ListDirectoryTool
   public readonly name = "list_directory";
   public readonly permissionCategory = "read";
   public readonly description =
-    "List files and directories within the project workspace.";
+    "List files and directories within the project workspace. Supports optional depth (1-5) to inspect nested subdirectories.";
   public readonly inputSchema = {
     type: "object",
     properties: {
@@ -35,6 +38,11 @@ export class ListDirectoryTool
         type: "string",
         description:
           "Relative or absolute path to list within the project root. Defaults to project root if omitted."
+      },
+      depth: {
+        type: "number",
+        description:
+          "Optional directory traversal depth (1-5). Defaults to 1 (shallow listing). Use 2 or 3 to inspect nested subdirectories and files in a tree structure."
       }
     }
   };
@@ -71,14 +79,63 @@ export class ListDirectoryTool
         };
       }
 
-      const dirents = await fs.readdir(targetPath, { withFileTypes: true });
+      const requestedDepth =
+        typeof input.depth === "number" && !isNaN(input.depth)
+          ? Math.max(1, Math.min(Math.floor(input.depth), 5))
+          : 1;
 
-      const allEntries: DirectoryEntry[] = dirents
-        .map((d) => ({
-          name: d.name,
-          type: (d.isDirectory() ? "directory" : "file") as "file" | "directory"
-        }))
-        .sort((a, b) => a.name.localeCompare(b.name));
+      const allEntries: DirectoryEntry[] = [];
+      const visitedCanonical = new Set<string>();
+
+      const collect = async (
+        dirPath: string,
+        prefix: string,
+        currentDepth: number
+      ): Promise<void> => {
+        if (context.signal?.aborted) return;
+
+        let canonical: string;
+        try {
+          canonical = await fs.realpath(dirPath);
+        } catch {
+          canonical = dirPath;
+        }
+
+        if (visitedCanonical.has(canonical)) return;
+        visitedCanonical.add(canonical);
+
+        let dirents;
+        try {
+          dirents = await fs.readdir(dirPath, { withFileTypes: true });
+        } catch {
+          return;
+        }
+
+        dirents.sort((a, b) => a.name.localeCompare(b.name));
+
+        for (const d of dirents) {
+          if (context.signal?.aborted) return;
+          const entryName = prefix ? `${prefix}/${d.name}` : d.name;
+          const isDir = d.isDirectory();
+
+          allEntries.push({
+            name: entryName,
+            type: isDir ? "directory" : "file"
+          });
+
+          // Recurse into subdirectories if depth allows
+          if (isDir && currentDepth < requestedDepth) {
+            if (!isIgnoredDirectory(d.name)) {
+              await collect(path.join(dirPath, d.name), entryName, currentDepth + 1);
+            }
+          }
+        }
+      };
+
+      await collect(targetPath, "", 1);
+
+      // Sort all collected entries deterministically by name
+      allEntries.sort((a, b) => a.name.localeCompare(b.name));
 
       const truncated = allEntries.length > this.maxEntries;
       const entries = truncated

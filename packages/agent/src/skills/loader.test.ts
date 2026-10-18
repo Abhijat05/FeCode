@@ -174,10 +174,10 @@ version: 1.0.0
     expect(frontendDesignSkill.instructions.length).toBeGreaterThan(2);
 
     // Inspect module source to ensure no fs, path, __dirname, process.cwd, or possiblePaths exist in frontendDesign.ts
-    const frontendDesignSource = fsSync.readFileSync(
-      path.resolve(process.cwd(), "packages/agent/src/skills/builtins/frontendDesign.ts"),
-      "utf-8"
-    );
+    const filePath = fsSync.existsSync(path.resolve(process.cwd(), "packages/agent/src/skills/builtins/frontendDesign.ts"))
+      ? path.resolve(process.cwd(), "packages/agent/src/skills/builtins/frontendDesign.ts")
+      : path.resolve(process.cwd(), "src/skills/builtins/frontendDesign.ts");
+    const frontendDesignSource = fsSync.readFileSync(filePath, "utf-8");
 
     expect(frontendDesignSource).not.toContain("possiblePaths");
     expect(frontendDesignSource).not.toContain("process.cwd()");

@@ -19,7 +19,7 @@ Always use the RIGHT tool for the job:
 ## Tool Usage Rules
 
 ### For reading and exploring code:
-- Use \`list_directory\` to explore project structure. Do NOT use \`ls\`, \`dir\`, or \`find\` commands.
+- Use \`list_directory\` to explore project structure. Specify \`depth: 2\` or \`depth: 3\` to inspect nested subdirectories and tree structures. Do NOT use \`ls\`, \`dir\`, or \`find\` commands.
 - Use \`read_file\` to read file contents. Do NOT use \`cat\`, \`type\`, \`head\`, \`tail\`, \`more\`, or \`less\` commands.
 - Use \`search_files\` to find text in code. Do NOT use \`grep\`, \`rg\`, \`findstr\`, or \`ack\` commands.
 
@@ -40,7 +40,7 @@ Always use the RIGHT tool for the job:
 
 ## Critical Rules
 
-1. **ALWAYS explore before acting.** Use \`list_directory\`, \`search_files\`, and \`read_file\` to understand the codebase before making changes or assertions. Never guess at file contents or structure.
+1. **ALWAYS explore before acting.** Use \`list_directory\`, \`search_files\`, and \`read_file\` to understand the codebase before making changes or assertions. Never guess at file contents or structure. When exploring for a topic or file, if a directory or subfolder matches the topic (e.g. \`audit/\`, \`docs/\`, \`components/\`), inspect it or use \`depth: 2\`. Never assume a file does not exist after only checking the top-level directory.
 2. **NEVER use execute_command for file operations.** This is the most important rule. \`cat\`, \`grep\`, \`find\`, \`ls\` — these are all forbidden. Use the dedicated tools listed above.
 3. **READ before EDIT.** Always call \`read_file\` to see current file contents before calling \`edit_file\`. The \`oldText\` parameter must exactly match existing text.
 4. **Stay in workspace.** All file paths must be within the project workspace. Do not access files outside it.

@@ -105,4 +105,45 @@ describe("ListDirectoryTool", () => {
     expect(result.output?.truncated).toBe(true);
     expect(result.output?.totalCount).toBe(6);
   });
+
+  it("lists nested files recursively when depth is greater than 1", async () => {
+    // Default (depth: 1) does not include nested files
+    const shallowResult = await tool.execute({ depth: 1 }, context);
+    const shallowNames = shallowResult.output?.entries.map((e) => e.name);
+    expect(shallowNames).toContain("src");
+    expect(shallowNames).not.toContain("src/index.ts");
+
+    // depth: 2 includes files inside subdirectories
+    const deepResult = await tool.execute({ depth: 2 }, context);
+    expect(deepResult.success).toBe(true);
+    const deepNames = deepResult.output?.entries.map((e) => e.name);
+    expect(deepNames).toContain("src");
+    expect(deepNames).toContain("src/index.ts");
+
+    const nestedFile = deepResult.output?.entries.find((e) => e.name === "src/index.ts");
+    expect(nestedFile?.type).toBe("file");
+  });
+
+  it("skips recursing into ignored directories like .git or node_modules", async () => {
+    await fs.mkdir(path.join(tmpDir, ".git", "objects"));
+    await fs.writeFile(path.join(tmpDir, ".git", "objects", "commit.hash"), "data");
+
+    const result = await tool.execute({ depth: 3 }, context);
+    expect(result.success).toBe(true);
+    const names = result.output?.entries.map((e) => e.name) || [];
+    expect(names).toContain(".git");
+    expect(names).not.toContain(".git/objects");
+    expect(names).not.toContain(".git/objects/commit.hash");
+  });
+
+  it("supports deeply nested directories up to clamped depth", async () => {
+    await fs.mkdir(path.join(tmpDir, "docs", "audit"), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, "docs", "audit", "AUDIT_REPORT.md"), "audit report");
+
+    const result = await tool.execute({ path: "docs", depth: 2 }, context);
+    expect(result.success).toBe(true);
+    const names = result.output?.entries.map((e) => e.name);
+    expect(names).toContain("audit");
+    expect(names).toContain("audit/AUDIT_REPORT.md");
+  });
 });
