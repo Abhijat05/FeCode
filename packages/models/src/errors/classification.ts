@@ -39,8 +39,11 @@ export function classifyProviderError(err: unknown): ProviderErrorClassification
   const errorObj = err as Record<string, unknown>;
   const name = typeof errorObj.name === "string" ? errorObj.name : "";
   const rawMessage = typeof errorObj.message === "string" ? errorObj.message : String(err);
-  const sanitizedMessage = sanitizeReason(rawMessage);
-  const lowerMessage = rawMessage.toLowerCase();
+  const causeObj = errorObj.cause as Record<string, unknown> | undefined;
+  const causeMessage = typeof causeObj?.message === "string" ? causeObj.message : "";
+  const combinedMessage = causeMessage ? `${rawMessage} (${causeMessage})` : rawMessage;
+  const sanitizedMessage = sanitizeReason(combinedMessage);
+  const lowerMessage = (rawMessage + " " + causeMessage).toLowerCase();
 
   // Extract HTTP status code if present
   let statusCode: number | undefined;
@@ -48,8 +51,12 @@ export function classifyProviderError(err: unknown): ProviderErrorClassification
     statusCode = errorObj.status;
   } else if (typeof errorObj.statusCode === "number") {
     statusCode = errorObj.statusCode;
+  } else if (causeObj && typeof causeObj.status === "number") {
+    statusCode = causeObj.status;
+  } else if (causeObj && typeof causeObj.statusCode === "number") {
+    statusCode = causeObj.statusCode;
   } else {
-    const statusMatch = rawMessage.match(/\b(400|401|403|404|408|429|500|502|503|504)\b/);
+    const statusMatch = combinedMessage.match(/\b(400|401|403|404|408|429|500|502|503|504)\b/);
     if (statusMatch) {
       statusCode = parseInt(statusMatch[1], 10);
     }
@@ -59,6 +66,8 @@ export function classifyProviderError(err: unknown): ProviderErrorClassification
   let code: string | undefined;
   if (typeof errorObj.code === "string") {
     code = errorObj.code;
+  } else if (causeObj && typeof causeObj.code === "string") {
+    code = causeObj.code;
   } else if (errorObj.error && typeof (errorObj.error as Record<string, unknown>).code === "string") {
     code = (errorObj.error as Record<string, unknown>).code as string;
   }
@@ -203,17 +212,27 @@ export function classifyProviderError(err: unknown): ProviderErrorClassification
     statusCode === 502 ||
     statusCode === 503 ||
     statusCode === 504 ||
+    name === "APIConnectionError" ||
+    name === "APIConnectionTimeoutError" ||
     code === "ECONNRESET" ||
     code === "ETIMEDOUT" ||
     code === "ECONNREFUSED" ||
     code === "ENOTFOUND" ||
+    code === "UND_ERR_SOCKET" ||
     lowerMessage.includes("econnreset") ||
     lowerMessage.includes("etimedout") ||
+    lowerMessage.includes("econnrefused") ||
+    lowerMessage.includes("connection reset") ||
+    lowerMessage.includes("connection error") ||
+    lowerMessage.includes("socket hang up") ||
     lowerMessage.includes("bad gateway") ||
     lowerMessage.includes("service unavailable") ||
     lowerMessage.includes("gateway timeout") ||
     lowerMessage.includes("network error") ||
-    lowerMessage.includes("fetch failed")
+    lowerMessage.includes("fetch failed") ||
+    lowerMessage.includes("premature close") ||
+    lowerMessage.includes("other side closed") ||
+    lowerMessage.includes("client network socket disconnected")
   ) {
     return {
       category: "transient_network",

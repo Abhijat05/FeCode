@@ -7,16 +7,19 @@ import type {
   TokenUsage
 } from "../../types.js";
 import type { ToolCall } from "../../tools/types.js";
-import { sanitizeReason } from "../../errors/classification.js";
+import { sanitizeReason, classifyProviderError } from "../../errors/classification.js";
 
 export interface OpenAIProviderOptions {
   apiKey?: string;
   model?: string;
   client?: OpenAI;
+  clientFactory?: () => OpenAI;
   extraBody?: Record<string, unknown>;
   baseURL?: string;
   timeoutMs?: number;
   streamIdleTimeoutMs?: number;
+  maxRetries?: number;
+  retryDelayMs?: number;
 }
 
 interface AccumulatedToolCall {
@@ -30,8 +33,13 @@ export class OpenAIModelProvider implements ModelProvider {
   public readonly model: string;
   public readonly timeoutMs: number;
   public readonly streamIdleTimeoutMs: number;
+  public readonly maxRetries: number;
+  public readonly retryDelayMs: number;
   private readonly apiKey: string;
-  private readonly client: OpenAI;
+  private readonly baseURL?: string;
+  private client: OpenAI;
+  private readonly customClient?: OpenAI;
+  private readonly clientFactory?: () => OpenAI;
   private readonly extraBody?: Record<string, unknown>;
 
   public readonly capabilities: ModelCapabilities = {
@@ -76,306 +84,468 @@ export class OpenAIModelProvider implements ModelProvider {
         ? options.streamIdleTimeoutMs
         : (parsedEnvIdleTimeout ?? 45000);
 
+    const envMaxRetries = process.env.FE_NETWORK_MAX_RETRIES;
+    let parsedMaxRetries: number | undefined;
+    if (envMaxRetries) {
+      const parsed = parseInt(envMaxRetries, 10);
+      if (Number.isFinite(parsed) && parsed >= 0) {
+        parsedMaxRetries = parsed;
+      }
+    }
+    this.maxRetries =
+      typeof options.maxRetries === "number" && options.maxRetries >= 0
+        ? options.maxRetries
+        : (parsedMaxRetries ?? 3);
+
+    const envRetryDelay = process.env.FE_NETWORK_RETRY_DELAY_MS;
+    let parsedRetryDelay: number | undefined;
+    if (envRetryDelay) {
+      const parsed = parseInt(envRetryDelay, 10);
+      if (Number.isFinite(parsed) && parsed >= 0) {
+        parsedRetryDelay = parsed;
+      }
+    }
+    this.retryDelayMs =
+      typeof options.retryDelayMs === "number" && options.retryDelayMs >= 0
+        ? options.retryDelayMs
+        : (parsedRetryDelay ?? 500);
+
+    this.baseURL = options.baseURL || process.env.OPENAI_BASE_URL;
+    this.customClient = options.client;
+    this.clientFactory = options.clientFactory;
     this.client =
-      options.client ||
-      new OpenAI({
-        apiKey: this.apiKey,
-        baseURL: options.baseURL || process.env.OPENAI_BASE_URL,
-        timeout: this.timeoutMs > 0 ? this.timeoutMs : undefined
-      });
+      this.customClient ||
+      (this.clientFactory ? this.clientFactory() : this.createClientInstance());
+  }
+
+  private createClientInstance(): OpenAI {
+    return new OpenAI({
+      apiKey: this.apiKey,
+      baseURL: this.baseURL,
+      timeout: this.timeoutMs > 0 ? this.timeoutMs : undefined,
+      maxRetries: this.maxRetries
+    });
+  }
+
+  private refreshClient(): void {
+    if (this.clientFactory) {
+      this.client = this.clientFactory();
+    } else if (!this.customClient) {
+      this.client = this.createClientInstance();
+    }
+  }
+
+  private isTransientConnectionError(err: unknown): boolean {
+    if (!err) return false;
+    const classification = classifyProviderError(err);
+    if (classification.category === "transient_network" || classification.isRetryable) {
+      return true;
+    }
+    const errorObj = err as Record<string, unknown>;
+    const name = typeof errorObj.name === "string" ? errorObj.name : "";
+    const msg = typeof errorObj.message === "string" ? errorObj.message.toLowerCase() : "";
+    const causeObj = errorObj.cause as Record<string, unknown> | undefined;
+    const causeMsg = typeof causeObj?.message === "string" ? causeObj.message.toLowerCase() : "";
+    const causeCode = typeof causeObj?.code === "string" ? causeObj.code : "";
+    const code = typeof errorObj.code === "string" ? errorObj.code : causeCode;
+
+    return (
+      name === "APIConnectionError" ||
+      name === "APIConnectionTimeoutError" ||
+      code === "ECONNRESET" ||
+      code === "ETIMEDOUT" ||
+      code === "ECONNREFUSED" ||
+      code === "UND_ERR_SOCKET" ||
+      msg.includes("econnreset") ||
+      msg.includes("connection reset") ||
+      msg.includes("socket hang up") ||
+      msg.includes("connection error") ||
+      msg.includes("fetch failed") ||
+      msg.includes("network error") ||
+      causeMsg.includes("econnreset") ||
+      causeMsg.includes("connection reset") ||
+      causeMsg.includes("socket hang up")
+    );
+  }
+
+  private calculateBackoffDelay(attempt: number): number {
+    const base = this.retryDelayMs * Math.pow(2, attempt - 1);
+    const jitter = Math.floor(Math.random() * Math.min(200, base * 0.25));
+    return Math.min(10000, base + jitter);
+  }
+
+  private async sleepWithAbort(ms: number, signal?: AbortSignal): Promise<void> {
+    if (ms <= 0 || signal?.aborted) return;
+    return new Promise((resolve) => {
+      let timer: NodeJS.Timeout | null = null;
+      const onAbort = () => {
+        if (timer) clearTimeout(timer);
+        resolve();
+      };
+      if (signal) {
+        signal.addEventListener("abort", onAbort, { once: true });
+      }
+      timer = setTimeout(() => {
+        if (signal) {
+          signal.removeEventListener("abort", onAbort);
+        }
+        resolve();
+      }, ms);
+    });
   }
 
   async *generate(
     request: ModelRequest,
     signal?: AbortSignal
   ): AsyncIterable<ModelEvent> {
-    const timeoutController = new AbortController();
-    let timeoutError: Error | null = null;
-    let requestTimer: NodeJS.Timeout | null = null;
-    let streamIdleTimer: NodeJS.Timeout | null = null;
+    if (signal?.aborted) {
+      yield { type: "error", error: new Error("Request aborted") };
+      return;
+    }
 
-    const onCallerAbort = () => {
-      timeoutController.abort(signal?.reason || new Error("Request aborted"));
-    };
+    const openAiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
 
-    if (signal) {
-      if (signal.aborted) {
+    if (request.system) {
+      openAiMessages.push({
+        role: "system",
+        content: request.system
+      });
+    }
+
+    for (const msg of request.messages) {
+      if (msg.role === "system") {
+        openAiMessages.push({
+          role: "system",
+          content: msg.content || ""
+        });
+      } else if (msg.role === "user") {
+        openAiMessages.push({
+          role: "user",
+          content: msg.content || ""
+        });
+      } else if (msg.role === "assistant") {
+        if (msg.toolCalls && msg.toolCalls.length > 0) {
+          openAiMessages.push({
+            role: "assistant",
+            content: msg.content || null,
+            tool_calls: msg.toolCalls.map((tc) => ({
+              id: tc.id,
+              type: "function" as const,
+              function: {
+                name: tc.name,
+                arguments:
+                  typeof tc.arguments === "string"
+                    ? tc.arguments
+                    : JSON.stringify(tc.arguments || {})
+              }
+            }))
+          });
+        } else {
+          openAiMessages.push({
+            role: "assistant",
+            content: msg.content || ""
+          });
+        }
+      } else if (msg.role === "tool") {
+        openAiMessages.push({
+          role: "tool",
+          tool_call_id: msg.toolCallId || "",
+          content: msg.content || ""
+        });
+      }
+    }
+
+    const openAiTools = request.tools?.length
+      ? request.tools.map((t) => ({
+          type: "function" as const,
+          function: {
+            name: t.name,
+            description: t.description,
+            parameters: (t.inputSchema as Record<string, unknown>) || {
+              type: "object",
+              properties: {}
+            }
+          }
+        }))
+      : undefined;
+
+    let attempt = 0;
+    while (attempt <= this.maxRetries) {
+      if (signal?.aborted) {
         yield { type: "error", error: new Error("Request aborted") };
         return;
       }
-      signal.addEventListener("abort", onCallerAbort, { once: true });
-    }
 
-    try {
-      const openAiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
+      attempt++;
+      const timeoutController = new AbortController();
+      let timeoutError: Error | null = null;
+      let requestTimer: NodeJS.Timeout | null = null;
+      let streamIdleTimer: NodeJS.Timeout | null = null;
 
-      if (request.system) {
-        openAiMessages.push({
-          role: "system",
-          content: request.system
-        });
-      }
-
-      for (const msg of request.messages) {
-        if (msg.role === "system") {
-          openAiMessages.push({
-            role: "system",
-            content: msg.content || ""
-          });
-        } else if (msg.role === "user") {
-          openAiMessages.push({
-            role: "user",
-            content: msg.content || ""
-          });
-        } else if (msg.role === "assistant") {
-          if (msg.toolCalls && msg.toolCalls.length > 0) {
-            openAiMessages.push({
-              role: "assistant",
-              content: msg.content || null,
-              tool_calls: msg.toolCalls.map((tc) => ({
-                id: tc.id,
-                type: "function" as const,
-                function: {
-                  name: tc.name,
-                  arguments:
-                    typeof tc.arguments === "string"
-                      ? tc.arguments
-                      : JSON.stringify(tc.arguments || {})
-                }
-              }))
-            });
-          } else {
-            openAiMessages.push({
-              role: "assistant",
-              content: msg.content || ""
-            });
-          }
-        } else if (msg.role === "tool") {
-          openAiMessages.push({
-            role: "tool",
-            tool_call_id: msg.toolCallId || "",
-            content: msg.content || ""
-          });
-        }
-      }
-
-      const openAiTools = request.tools?.length
-        ? request.tools.map((t) => ({
-            type: "function" as const,
-            function: {
-              name: t.name,
-              description: t.description,
-              parameters: (t.inputSchema as Record<string, unknown>) || {
-                type: "object",
-                properties: {}
-              }
-            }
-          }))
-        : undefined;
-
-      if (this.timeoutMs > 0) {
-        requestTimer = setTimeout(() => {
-          timeoutError = new Error(
-            `OpenAI request timed out after ${this.timeoutMs}ms (model: "${this.model}").`
-          );
-          timeoutController.abort(timeoutError);
-        }, this.timeoutMs);
-      }
-
-      let stream: AsyncIterable<OpenAI.Chat.ChatCompletionChunk>;
-      try {
-        stream = (await this.client.chat.completions.create(
-          {
-            model: this.model,
-            messages: openAiMessages,
-            tools: openAiTools,
-            stream: true,
-            stream_options: {
-              include_usage: true
-            },
-            ...(this.extraBody || {})
-          } as unknown as OpenAI.Chat.ChatCompletionCreateParamsStreaming,
-          {
-            signal: timeoutController.signal,
-            timeout: this.timeoutMs > 0 ? this.timeoutMs : undefined
-          }
-        )) as unknown as AsyncIterable<OpenAI.Chat.ChatCompletionChunk>;
-      } catch (err: unknown) {
-        if (timeoutError) {
-          throw timeoutError;
-        }
-        throw err;
-      } finally {
-        if (requestTimer) {
-          clearTimeout(requestTimer);
-          requestTimer = null;
-        }
-      }
-
-      let usage: TokenUsage | undefined;
-      let isThinking = false;
-      const accumulatedToolCalls = new Map<number, AccumulatedToolCall>();
-
-      const resetStreamIdleTimer = () => {
-        if (streamIdleTimer) {
-          clearTimeout(streamIdleTimer);
-          streamIdleTimer = null;
-        }
-        if (this.streamIdleTimeoutMs > 0) {
-          streamIdleTimer = setTimeout(() => {
-            timeoutError = new Error(
-              `OpenAI stream stalled: no data received for ${this.streamIdleTimeoutMs}ms (model: "${this.model}").`
-            );
-            timeoutController.abort(timeoutError);
-          }, this.streamIdleTimeoutMs);
-        }
+      const onCallerAbort = () => {
+        timeoutController.abort(signal?.reason || new Error("Request aborted"));
       };
 
-      resetStreamIdleTimer();
+      if (signal) {
+        signal.addEventListener("abort", onCallerAbort, { once: true });
+      }
 
       try {
-        for await (const chunk of stream) {
-          resetStreamIdleTimer();
+        if (this.timeoutMs > 0) {
+          requestTimer = setTimeout(() => {
+            timeoutError = new Error(
+              `OpenAI request timed out after ${this.timeoutMs}ms (model: "${this.model}").`
+            );
+            timeoutController.abort(timeoutError);
+          }, this.timeoutMs);
+        }
 
+        let stream: AsyncIterable<OpenAI.Chat.ChatCompletionChunk>;
+        try {
+          stream = (await this.client.chat.completions.create(
+            {
+              model: this.model,
+              messages: openAiMessages,
+              tools: openAiTools,
+              stream: true,
+              stream_options: {
+                include_usage: true
+              },
+              ...(this.extraBody || {})
+            } as unknown as OpenAI.Chat.ChatCompletionCreateParamsStreaming,
+            {
+              signal: timeoutController.signal,
+              timeout: this.timeoutMs > 0 ? this.timeoutMs : undefined
+            }
+          )) as unknown as AsyncIterable<OpenAI.Chat.ChatCompletionChunk>;
+        } catch (err: unknown) {
+          if (timeoutError) {
+            throw timeoutError;
+          }
           if (signal?.aborted) {
             throw new Error("Request aborted");
           }
 
-          const delta = chunk.choices[0]?.delta;
-          const deltaAny = delta as
-            | (typeof delta & {
-                reasoning?: string;
-                reasoning_content?: string;
-              })
-            | undefined;
-          const reasoningChunk =
-            deltaAny?.reasoning || deltaAny?.reasoning_content;
-
-          if (reasoningChunk) {
-            if (!isThinking) {
-              isThinking = true;
-              yield { type: "text_delta", content: "<think>" };
-            }
-            yield { type: "text_delta", content: reasoningChunk };
+          if (this.isTransientConnectionError(err) && attempt <= this.maxRetries) {
+            this.refreshClient();
+            const delay = this.calculateBackoffDelay(attempt);
+            await this.sleepWithAbort(delay, signal);
+            continue;
           }
-
-          if (delta?.content) {
-            if (isThinking) {
-              isThinking = false;
-              yield { type: "text_delta", content: "</think>" };
-            }
-            yield { type: "text_delta", content: delta.content };
-          }
-
-          if (delta?.tool_calls) {
-            if (isThinking) {
-              isThinking = false;
-              yield { type: "text_delta", content: "</think>" };
-            }
-            for (const tcDelta of delta.tool_calls) {
-              const index = typeof tcDelta.index === "number" ? tcDelta.index : 0;
-              const existing = accumulatedToolCalls.get(index) || {
-                id: "",
-                name: "",
-                arguments: ""
-              };
-
-              if (tcDelta.id) existing.id += tcDelta.id;
-              if (tcDelta.function?.name) existing.name += tcDelta.function.name;
-              if (tcDelta.function?.arguments) {
-                existing.arguments += tcDelta.function.arguments;
-              }
-
-              accumulatedToolCalls.set(index, existing);
-            }
-          }
-
-          if (chunk.usage) {
-            usage = {
-              inputTokens: chunk.usage.prompt_tokens,
-              outputTokens: chunk.usage.completion_tokens,
-              totalTokens: chunk.usage.total_tokens
-            };
-          }
-        }
-      } catch (err: unknown) {
-        if (timeoutError) {
-          throw timeoutError;
-        }
-        throw err;
-      } finally {
-        if (streamIdleTimer) {
-          clearTimeout(streamIdleTimer);
-          streamIdleTimer = null;
-        }
-      }
-
-      if (isThinking) {
-        isThinking = false;
-        yield { type: "text_delta", content: "</think>" };
-      }
-
-      for (const [, callData] of accumulatedToolCalls) {
-        let parsedArgs: unknown = {};
-        if (callData.arguments && callData.arguments.trim()) {
-          try {
-            parsedArgs = JSON.parse(callData.arguments);
-          } catch {
-            parsedArgs = callData.arguments;
+          throw err;
+        } finally {
+          if (requestTimer) {
+            clearTimeout(requestTimer);
+            requestTimer = null;
           }
         }
 
-        const call: ToolCall = {
-          id:
-            callData.id ||
-            `call_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
-          name: callData.name,
-          arguments: parsedArgs
+        let usage: TokenUsage | undefined;
+        let isThinking = false;
+        const accumulatedToolCalls = new Map<number, AccumulatedToolCall>();
+
+        const resetStreamIdleTimer = () => {
+          if (streamIdleTimer) {
+            clearTimeout(streamIdleTimer);
+            streamIdleTimer = null;
+          }
+          if (this.streamIdleTimeoutMs > 0) {
+            streamIdleTimer = setTimeout(() => {
+              timeoutError = new Error(
+                `OpenAI stream stalled: no data received for ${this.streamIdleTimeoutMs}ms (model: "${this.model}").`
+              );
+              timeoutController.abort(timeoutError);
+            }, this.streamIdleTimeoutMs);
+          }
         };
 
-        yield { type: "tool_call", call };
-      }
+        resetStreamIdleTimer();
 
-      yield { type: "completed", usage };
-    } catch (err: unknown) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      let sanitized = sanitizeReason(error.message);
-      if (this.apiKey) {
-        sanitized = sanitized.split(this.apiKey).join("[REDACTED_API_KEY]");
-      }
-      let message = sanitized;
+        let chunksReceivedCount = 0;
+        try {
+          for await (const chunk of stream) {
+            chunksReceivedCount++;
+            resetStreamIdleTimer();
 
-      if (timeoutError) {
-        message = (timeoutError as Error).message;
-      } else if (
-        sanitized.toLowerCase().includes("timed out") ||
-        sanitized.toLowerCase().includes("timeout") ||
-        sanitized.toLowerCase().includes("stream stalled") ||
-        error.name === "TimeoutError" ||
-        error.name === "APIConnectionTimeoutError"
-      ) {
-        message = sanitized;
-      } else if (
-        sanitized.includes("401 Unauthorized") ||
-        sanitized.toLowerCase().includes("incorrect api key")
-      ) {
-        message = `OpenAI API key is invalid or unauthorized. Please check your OPENAI_API_KEY environment variable. Original error: ${sanitized}`;
-      } else if (
-        sanitized.includes("429 Too Many Requests") ||
-        sanitized.toLowerCase().includes("rate limit reached (429")
-      ) {
-        message = `OpenAI quota exceeded or rate limit reached (429 RateLimit). Please wait a moment before retrying.`;
-      }
-      yield { type: "error", error: new Error(message) };
-    } finally {
-      if (requestTimer) {
-        clearTimeout(requestTimer);
-      }
-      if (streamIdleTimer) {
-        clearTimeout(streamIdleTimer);
-      }
-      if (signal) {
-        signal.removeEventListener("abort", onCallerAbort);
+            if (signal?.aborted) {
+              throw new Error("Request aborted");
+            }
+
+            const delta = chunk.choices[0]?.delta;
+            const deltaAny = delta as
+              | (typeof delta & {
+                  reasoning?: string;
+                  reasoning_content?: string;
+                })
+              | undefined;
+            const reasoningChunk =
+              deltaAny?.reasoning || deltaAny?.reasoning_content;
+
+            if (reasoningChunk) {
+              if (!isThinking) {
+                isThinking = true;
+                yield { type: "text_delta", content: "<think>" };
+              }
+              yield { type: "text_delta", content: reasoningChunk };
+            }
+
+            if (delta?.content) {
+              if (isThinking) {
+                isThinking = false;
+                yield { type: "text_delta", content: "</think>" };
+              }
+              yield { type: "text_delta", content: delta.content };
+            }
+
+            if (delta?.tool_calls) {
+              if (isThinking) {
+                isThinking = false;
+                yield { type: "text_delta", content: "</think>" };
+              }
+              for (const tcDelta of delta.tool_calls) {
+                const index = typeof tcDelta.index === "number" ? tcDelta.index : 0;
+                const existing = accumulatedToolCalls.get(index) || {
+                  id: "",
+                  name: "",
+                  arguments: ""
+                };
+
+                if (tcDelta.id) existing.id += tcDelta.id;
+                if (tcDelta.function?.name) existing.name += tcDelta.function.name;
+                if (tcDelta.function?.arguments) {
+                  existing.arguments += tcDelta.function.arguments;
+                }
+
+                accumulatedToolCalls.set(index, existing);
+              }
+            }
+
+            if (chunk.usage) {
+              usage = {
+                inputTokens: chunk.usage.prompt_tokens,
+                outputTokens: chunk.usage.completion_tokens,
+                totalTokens: chunk.usage.total_tokens
+              };
+            }
+          }
+        } catch (streamErr: unknown) {
+          if (timeoutError) {
+            throw timeoutError;
+          }
+          if (signal?.aborted) {
+            throw new Error("Request aborted");
+          }
+
+          if (chunksReceivedCount === 0 && this.isTransientConnectionError(streamErr) && attempt <= this.maxRetries) {
+            this.refreshClient();
+            const delay = this.calculateBackoffDelay(attempt);
+            await this.sleepWithAbort(delay, signal);
+            continue;
+          }
+          throw streamErr;
+        } finally {
+          if (streamIdleTimer) {
+            clearTimeout(streamIdleTimer);
+            streamIdleTimer = null;
+          }
+        }
+
+        if (isThinking) {
+          isThinking = false;
+          yield { type: "text_delta", content: "</think>" };
+        }
+
+        for (const [, callData] of accumulatedToolCalls) {
+          let parsedArgs: unknown = {};
+          if (callData.arguments && callData.arguments.trim()) {
+            try {
+              parsedArgs = JSON.parse(callData.arguments);
+            } catch {
+              parsedArgs = callData.arguments;
+            }
+          }
+
+          const call: ToolCall = {
+            id:
+              callData.id ||
+              `call_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+            name: callData.name,
+            arguments: parsedArgs
+          };
+
+          yield { type: "tool_call", call };
+        }
+
+        yield { type: "completed", usage };
+        return;
+      } catch (err: unknown) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        const errorObj = error as unknown as Record<string, unknown>;
+        const cause = errorObj.cause as Record<string, unknown> | undefined;
+        const causeMsg = typeof cause?.message === "string" ? cause.message : "";
+        const causeCode = typeof cause?.code === "string" ? cause.code : undefined;
+        const errCode = typeof errorObj.code === "string"
+          ? (errorObj.code as string)
+          : causeCode;
+
+        let sanitized = sanitizeReason(error.message);
+        if (causeMsg) {
+          sanitized = `${sanitized} (${sanitizeReason(causeMsg)})`;
+        }
+        if (this.apiKey) {
+          sanitized = sanitized.split(this.apiKey).join("[REDACTED_API_KEY]");
+        }
+        let message = sanitized;
+
+        if (timeoutError) {
+          message = (timeoutError as Error).message;
+        } else if (
+          errCode === "ECONNRESET" ||
+          sanitized.toLowerCase().includes("econnreset") ||
+          sanitized.toLowerCase().includes("connection reset") ||
+          sanitized.toLowerCase().includes("socket hang up")
+        ) {
+          message = `OpenAI connection reset by peer (ECONNRESET) after ${attempt} attempt(s). Original error: ${sanitized}`;
+        } else if (
+          sanitized.toLowerCase().includes("timed out") ||
+          sanitized.toLowerCase().includes("timeout") ||
+          sanitized.toLowerCase().includes("stream stalled") ||
+          error.name === "TimeoutError" ||
+          error.name === "APIConnectionTimeoutError"
+        ) {
+          message = sanitized;
+        } else if (
+          sanitized.includes("401 Unauthorized") ||
+          sanitized.toLowerCase().includes("incorrect api key")
+        ) {
+          message = `OpenAI API key is invalid or unauthorized. Please check your OPENAI_API_KEY environment variable. Original error: ${sanitized}`;
+        } else if (
+          sanitized.includes("429 Too Many Requests") ||
+          sanitized.toLowerCase().includes("rate limit reached (429")
+        ) {
+          message = `OpenAI quota exceeded or rate limit reached (429 RateLimit). Please wait a moment before retrying.`;
+        }
+
+        const outError = new Error(message);
+        if (errCode) {
+          Object.assign(outError, { code: errCode });
+        }
+        if (error.cause) {
+          Object.assign(outError, { cause: error.cause });
+        }
+
+        yield { type: "error", error: outError };
+        return;
+      } finally {
+        if (requestTimer) {
+          clearTimeout(requestTimer);
+        }
+        if (streamIdleTimer) {
+          clearTimeout(streamIdleTimer);
+        }
+        if (signal) {
+          signal.removeEventListener("abort", onCallerAbort);
+        }
       }
     }
   }

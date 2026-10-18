@@ -359,4 +359,280 @@ describe("NVIDIA OpenAI-Compatible DeepSeek Integration", () => {
     expect(lastEvent.type).toBe("error");
     expect((lastEvent as { error: Error }).error.message).toMatch(/aborted/i);
   });
+
+  describe("NVIDIA ECONNRESET Resilience & Recovery", () => {
+    it("regenerates ECONNRESET on initial connection and recovers via automatic retry with backoff", async () => {
+      let callCount = 0;
+      const econnResetErr = Object.assign(new Error("read ECONNRESET"), {
+        code: "ECONNRESET"
+      });
+
+      async function* mockSuccessStream() {
+        yield { choices: [{ delta: { content: "NVIDIA recovered response" } }] };
+        yield { choices: [{ delta: {} }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } };
+      }
+
+      const mockClient = {
+        chat: {
+          completions: {
+            create: vi.fn().mockImplementation(async () => {
+              callCount++;
+              if (callCount === 1) {
+                // Simulate NVIDIA TCP socket reset on first call
+                throw econnResetErr;
+              }
+              return mockSuccessStream();
+            })
+          }
+        }
+      } as unknown as OpenAI;
+
+      const provider = new OpenAICompatibleModelProvider({
+        baseUrl: NVIDIA_BASE_URL,
+        apiKey: MOCK_NVIDIA_KEY,
+        model: DEEPSEEK_MODEL,
+        client: mockClient,
+        maxRetries: 2,
+        retryDelayMs: 1
+      });
+
+      const events = [];
+      for await (const event of provider.generate({ messages: [{ role: "user", content: "Hi" }] })) {
+        events.push(event);
+      }
+
+      // Assert that create was retried and succeeded on attempt 2
+      expect(callCount).toBe(2);
+      expect(events.some((e) => e.type === "text_delta" && e.content === "NVIDIA recovered response")).toBe(true);
+      expect(events.some((e) => e.type === "completed")).toBe(true);
+      expect(events.some((e) => e.type === "error")).toBe(false);
+    });
+
+    it("recovers from APIConnectionError wrapping an ECONNRESET cause", async () => {
+      let callCount = 0;
+      const apiConnErr = new Error("Connection error.");
+      apiConnErr.name = "APIConnectionError";
+      (apiConnErr as unknown as Record<string, unknown>).cause = Object.assign(new Error("read ECONNRESET"), {
+        code: "ECONNRESET"
+      });
+
+      async function* mockSuccessStream() {
+        yield { choices: [{ delta: { content: "DeepSeek output after connection recovery" } }] };
+      }
+
+      const mockClient = {
+        chat: {
+          completions: {
+            create: vi.fn().mockImplementation(async () => {
+              callCount++;
+              if (callCount === 1) {
+                throw apiConnErr;
+              }
+              return mockSuccessStream();
+            })
+          }
+        }
+      } as unknown as OpenAI;
+
+      const provider = new OpenAICompatibleModelProvider({
+        baseUrl: NVIDIA_BASE_URL,
+        apiKey: MOCK_NVIDIA_KEY,
+        model: DEEPSEEK_MODEL,
+        client: mockClient,
+        maxRetries: 2,
+        retryDelayMs: 1
+      });
+
+      const events = [];
+      for await (const event of provider.generate({ messages: [{ role: "user", content: "Hi" }] })) {
+        events.push(event);
+      }
+
+      expect(callCount).toBe(2);
+      expect(events.some((e) => e.type === "text_delta" && e.content === "DeepSeek output after connection recovery")).toBe(true);
+    });
+
+    it("recovers from pre-token mid-stream ECONNRESET (cold start / TTFT proxy drop)", async () => {
+      let callCount = 0;
+
+      async function* mockFailingStream() {
+        // Stream throws before emitting any chunks
+        throw Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" });
+        yield { choices: [{ delta: { content: "never reached" } }] };
+      }
+
+      async function* mockSuccessStream() {
+        yield { choices: [{ delta: { reasoning_content: "Thought process..." } }] };
+        yield { choices: [{ delta: { content: "Final answer" } }] };
+      }
+
+      const mockClient = {
+        chat: {
+          completions: {
+            create: vi.fn().mockImplementation(async () => {
+              callCount++;
+              if (callCount === 1) {
+                return mockFailingStream();
+              }
+              return mockSuccessStream();
+            })
+          }
+        }
+      } as unknown as OpenAI;
+
+      const provider = new OpenAICompatibleModelProvider({
+        baseUrl: NVIDIA_BASE_URL,
+        apiKey: MOCK_NVIDIA_KEY,
+        model: DEEPSEEK_MODEL,
+        client: mockClient,
+        maxRetries: 2,
+        retryDelayMs: 1
+      });
+
+      const events = [];
+      for await (const event of provider.generate({ messages: [{ role: "user", content: "Hi" }] })) {
+        events.push(event);
+      }
+
+      expect(callCount).toBe(2);
+      expect(events).toEqual([
+        { type: "text_delta", content: "<think>" },
+        { type: "text_delta", content: "Thought process..." },
+        { type: "text_delta", content: "</think>" },
+        { type: "text_delta", content: "Final answer" },
+        { type: "completed", usage: undefined }
+      ]);
+    });
+
+    it("refreshes client via clientFactory upon encountering ECONNRESET to discard stale socket pool", async () => {
+      let factoryCalls = 0;
+      let firstClientCalls = 0;
+      let secondClientCalls = 0;
+
+      async function* mockStream() {
+        yield { choices: [{ delta: { content: "Clean socket response" } }] };
+      }
+
+      const client1 = {
+        chat: {
+          completions: {
+            create: vi.fn().mockImplementation(async () => {
+              firstClientCalls++;
+              throw Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" });
+            })
+          }
+        }
+      } as unknown as OpenAI;
+
+      const client2 = {
+        chat: {
+          completions: {
+            create: vi.fn().mockImplementation(async () => {
+              secondClientCalls++;
+              return mockStream();
+            })
+          }
+        }
+      } as unknown as OpenAI;
+
+      const provider = new OpenAICompatibleModelProvider({
+        baseUrl: NVIDIA_BASE_URL,
+        apiKey: MOCK_NVIDIA_KEY,
+        model: DEEPSEEK_MODEL,
+        clientFactory: () => {
+          factoryCalls++;
+          return factoryCalls === 1 ? client1 : client2;
+        },
+        maxRetries: 2,
+        retryDelayMs: 1
+      });
+
+      const events = [];
+      for await (const event of provider.generate({ messages: [{ role: "user", content: "Hi" }] })) {
+        events.push(event);
+      }
+
+      expect(factoryCalls).toBe(2);
+      expect(firstClientCalls).toBe(1);
+      expect(secondClientCalls).toBe(1);
+      expect(events.some((e) => e.type === "text_delta" && e.content === "Clean socket response")).toBe(true);
+    });
+
+    it("exhausts retries and yields clear diagnostic error when NVIDIA endpoint persistently resets", async () => {
+      let callCount = 0;
+      const mockClient = {
+        chat: {
+          completions: {
+            create: vi.fn().mockImplementation(async () => {
+              callCount++;
+              throw Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" });
+            })
+          }
+        }
+      } as unknown as OpenAI;
+
+      const provider = new OpenAICompatibleModelProvider({
+        baseUrl: NVIDIA_BASE_URL,
+        apiKey: MOCK_NVIDIA_KEY,
+        model: DEEPSEEK_MODEL,
+        client: mockClient,
+        maxRetries: 2,
+        retryDelayMs: 1
+      });
+
+      const events = [];
+      for await (const event of provider.generate({ messages: [{ role: "user", content: "Hi" }] })) {
+        events.push(event);
+      }
+
+      // 1 initial attempt + 2 retries = 3 attempts total
+      expect(callCount).toBe(3);
+      expect(events).toHaveLength(1);
+      expect(events[0].type).toBe("error");
+      const err = (events[0] as { error: Error }).error;
+      expect(err.message).toContain("ECONNRESET");
+      expect(err.message).toContain("3 attempt(s)");
+      expect(err.message).toContain(NVIDIA_BASE_URL);
+    });
+
+    it("aborts immediately during backoff if AbortSignal is cancelled", async () => {
+      const controller = new AbortController();
+      let callCount = 0;
+
+      const mockClient = {
+        chat: {
+          completions: {
+            create: vi.fn().mockImplementation(async () => {
+              callCount++;
+              controller.abort();
+              throw Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" });
+            })
+          }
+        }
+      } as unknown as OpenAI;
+
+      const provider = new OpenAICompatibleModelProvider({
+        baseUrl: NVIDIA_BASE_URL,
+        apiKey: MOCK_NVIDIA_KEY,
+        model: DEEPSEEK_MODEL,
+        client: mockClient,
+        maxRetries: 3,
+        retryDelayMs: 100
+      });
+
+      const events = [];
+      for await (const event of provider.generate(
+        { messages: [{ role: "user", content: "Hi" }] },
+        controller.signal
+      )) {
+        events.push(event);
+      }
+
+      // Must have stopped on attempt 1 without continuing to retry
+      expect(callCount).toBe(1);
+      expect(events).toHaveLength(1);
+      expect(events[0].type).toBe("error");
+      expect((events[0] as { error: Error }).error.message).toMatch(/aborted/i);
+    });
+  });
 });

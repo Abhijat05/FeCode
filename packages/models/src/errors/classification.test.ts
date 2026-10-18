@@ -77,6 +77,31 @@ describe("Provider Error Classification", () => {
       expect(res2.isFallbackEligible).toBe(false);
       expect(res2.isRetryable).toBe(true);
       expect(res2.category).toBe("transient_network");
+
+      // OpenAI APIConnectionError wrapping ECONNRESET in cause
+      const apiConnErr = new Error("Connection error.");
+      apiConnErr.name = "APIConnectionError";
+      (apiConnErr as unknown as Record<string, unknown>).cause = Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" });
+      const resApiConn = classifyProviderError(apiConnErr);
+      expect(resApiConn.isFallbackEligible).toBe(false);
+      expect(resApiConn.isRetryable).toBe(true);
+      expect(resApiConn.category).toBe("transient_network");
+      expect(resApiConn.code).toBe("ECONNRESET");
+      expect(resApiConn.reason).toContain("read ECONNRESET");
+
+      // Socket hang up
+      const hangUpErr = new Error("socket hang up");
+      const resHangUp = classifyProviderError(hangUpErr);
+      expect(resHangUp.isFallbackEligible).toBe(false);
+      expect(resHangUp.isRetryable).toBe(true);
+      expect(resHangUp.category).toBe("transient_network");
+
+      // Connection reset by peer
+      const rstPeerErr = new Error("connection reset by peer");
+      const resRstPeer = classifyProviderError(rstPeerErr);
+      expect(resRstPeer.isFallbackEligible).toBe(false);
+      expect(resRstPeer.isRetryable).toBe(true);
+      expect(resRstPeer.category).toBe("transient_network");
     });
 
     it("classifies request timeouts and stream stalls as transient network errors", () => {
