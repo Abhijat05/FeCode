@@ -301,7 +301,7 @@ describe("CLI App Component", () => {
 
     const promptFrame = lastFrame() ?? "";
     expect(promptFrame).toContain("Allow? [y/N]:");
-    expect(promptFrame).toContain("▶ ● No (Deny)");
+    expect(promptFrame).toContain("● No (Deny)");
 
     // Press Enter directly to confirm default denial
     stdin.write("\r");
