@@ -290,7 +290,7 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
     <Box flexDirection="column" marginY={0}>
       {/* Role label row */}
       <Box>
-        <Text color="cyan" dimColor>  fecode</Text>
+        <Text color="cyan" bold>  ◆ fecode</Text>
       </Box>
 
       {/* Body with left gutter │ */}

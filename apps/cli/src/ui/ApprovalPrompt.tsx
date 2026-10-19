@@ -304,14 +304,14 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
               color={selectedIndex === 0 ? "green" : "gray"}
               bold={selectedIndex === 0}
             >
-              {selectedIndex === 0 ? "▶ ● Yes (Approve)" : "  ○ Yes (Approve)"}
+              {selectedIndex === 0 ? "● Yes (Approve)" : "○ Yes (Approve)"}
             </Text>
             <Text>   </Text>
             <Text
               color={selectedIndex === 1 ? "red" : "gray"}
               bold={selectedIndex === 1}
             >
-              {selectedIndex === 1 ? "▶ ● No (Deny)" : "  ○ No (Deny)"}
+              {selectedIndex === 1 ? "● No (Deny)" : "○ No (Deny)"}
             </Text>
           </Box>
         </Box>

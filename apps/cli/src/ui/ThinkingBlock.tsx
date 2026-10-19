@@ -37,7 +37,7 @@ const ThinkingBlockComponent: React.FC<ThinkingBlockProps> = ({
   return (
     <Box flexDirection="column" marginLeft={2} marginBottom={0}>
       <Box>
-        <Text color="gray" dimColor>▸ </Text>
+        <Text color="cyan" dimColor>⟳ </Text>
         <Text color="gray" dimColor italic>{header}</Text>
       </Box>
       {cleanSummary && (

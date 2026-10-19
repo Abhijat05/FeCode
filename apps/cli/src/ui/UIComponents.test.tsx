@@ -38,6 +38,7 @@ describe("ThinkingBlock", () => {
       <ThinkingBlock durationMs={3200} tokenCount={291} summary="Analyzing the Failure" />
     );
     const frame = lastFrame() ?? "";
+    expect(frame).toContain("⟳");
     expect(frame).toContain("Thought for");
     expect(frame).toContain("3.2s");
     expect(frame).toContain("291 tokens");
@@ -104,7 +105,7 @@ describe("CommandPalette", () => {
       <CommandPalette suggestions={suggestions} selectedIndex={1} />
     );
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("›");
+    expect(frame).toContain("●");
     expect(frame).toContain("/history");
   });
 
@@ -254,7 +255,7 @@ describe("MessageBubble", () => {
       <MessageBubble role="agent" content="I will start by..." />
     );
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("fecode");
+    expect(frame).toContain("◆ fecode");
     expect(frame).toContain("│");
     expect(frame).toContain("I will start by...");
   });
@@ -794,14 +795,14 @@ describe("Phase 5AD: Modular UI Components", () => {
     let frame = lastFrame() ?? "";
     expect(frame).toContain("Allow? [y/N]:");
     expect(frame).toContain("○ Yes (Approve)");
-    expect(frame).toContain("▶ ● No (Deny)");
+    expect(frame).toContain("● No (Deny)");
 
     // Press left arrow to switch to Yes
     stdin.write("\u001B[D");
     await new Promise((r) => setTimeout(r, 50));
 
     frame = lastFrame() ?? "";
-    expect(frame).toContain("▶ ● Yes (Approve)");
+    expect(frame).toContain("● Yes (Approve)");
     expect(frame).toContain("○ No (Deny)");
 
     // Press Enter to submit Yes

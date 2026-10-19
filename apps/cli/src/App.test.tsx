@@ -241,14 +241,14 @@ describe("CLI App Component", () => {
 
     let promptFrame = lastFrame() ?? "";
     expect(promptFrame).toContain("Allow? [y/N]:");
-    expect(promptFrame).toContain("▶ ● No (Deny)");
+    expect(promptFrame).toContain("● No (Deny)");
 
     // Navigate left to Yes
     stdin.write("\u001B[D");
     await delay(50);
 
     promptFrame = lastFrame() ?? "";
-    expect(promptFrame).toContain("▶ ● Yes (Approve)");
+    expect(promptFrame).toContain("● Yes (Approve)");
 
     // Press Enter to confirm Yes selection
     stdin.write("\r");

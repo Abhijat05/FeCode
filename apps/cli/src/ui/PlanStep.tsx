@@ -49,12 +49,12 @@ export const PlanStep: React.FC<PlanStepProps> = ({
       case "executing":
         return <Text color="yellow">●</Text>;
       case "verifying":
-        return <Text color="cyan">◌</Text>;
+        return <Text color="cyan">●</Text>;
       case "waiting":
       case "waiting_approval":
         return <Text color="yellow">⚠</Text>;
       case "ready":
-        return <Text color="blue">◌</Text>;
+        return <Text color="gray">○</Text>;
       case "skipped":
         return <Text color="gray">⊘</Text>;
       case "blocked":

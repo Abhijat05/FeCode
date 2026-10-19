@@ -55,7 +55,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         const isSelected = startIndex + idx === clampedIndex;
         return (
           <Box key={cmd.command}>
-            <Text color="cyan" bold>{isSelected ? "› " : "  "}</Text>
+            <Text color="cyan" bold>{isSelected ? "● " : "  "}</Text>
             <Box width={16}>
               <Text color={isSelected ? "whiteBright" : "white"} bold={isSelected}>
                 {cmd.command}
