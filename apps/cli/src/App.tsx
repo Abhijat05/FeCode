@@ -52,7 +52,8 @@ import {
   ResumeView,
   DiagnosticsView,
   RunHistoryView,
-  HelpView
+  HelpView,
+  WelcomeView
 } from "./ui/index.js";
 
 export interface Turn {
@@ -3600,6 +3601,15 @@ export const App: React.FC<AppProps> = ({
                       ▲ {hiddenTurnsCount} earlier turn(s) [↑ / PageUp to scroll]
                     </Text>
                   </Box>
+                )}
+                {turns.length === 0 && !isGenerating && (
+                  <WelcomeView
+                    cwd={cwd}
+                    projectName={uiState?.workspace?.gitBranch ? undefined : cwd ? cwd.split(/[\\/]/).pop() : undefined}
+                    modelName={modelName}
+                    providerName={providerName}
+                    gitBranch={uiState?.workspace?.gitBranch}
+                  />
                 )}
                 {visibleTurns.map((turn, idx) => (
                   <TurnView

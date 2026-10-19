@@ -27,7 +27,8 @@ import {
   CurrentStepView,
   getTerminalLayout,
   truncateText,
-  ThinkingBlock
+  ThinkingBlock,
+  WelcomeView
 } from "./index.js";
 import type { CommandDef } from "../commands.js";
 
@@ -1332,5 +1333,50 @@ describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
       expect(frame).toContain("Custom formatted telemetry dump");
     });
   });
+
+  describe("WelcomeView", () => {
+    it("renders full FE ASCII logo, metadata and tips in wide layout", () => {
+      const { lastFrame } = render(
+        <WelcomeView
+          version="v1.0.3"
+          projectName="my-test-project"
+          modelName="claude-3.5-sonnet"
+          providerName="anthropic"
+          cwd="D:/test/fecode"
+          gitBranch="feature/welcome"
+          columns={100}
+        />
+      );
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("███████╗███████╗");
+      expect(frame).toContain("FeCode Agent");
+      expect(frame).toContain("v1.0.3");
+      expect(frame).toContain("Autonomous Pair Programmer");
+      expect(frame).toContain("anthropic:claude-3.5-sonnet");
+      expect(frame).toContain("my-test-project");
+      expect(frame).toContain("feature/welcome");
+      expect(frame).toContain("/help");
+      expect(frame).toContain("/plan");
+      expect(frame).toContain("/git");
+    });
+
+    it("renders micro-banner fallback on narrow viewports", () => {
+      const { lastFrame } = render(
+        <WelcomeView
+          version="v1.0.3"
+          modelName="claude-3.5-sonnet"
+          providerName="anthropic"
+          cwd="D:/test/fecode"
+          columns={55}
+        />
+      );
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("[FE]");
+      expect(frame).toContain("FeCode Agent v1.0.3");
+      expect(frame).toContain("(anthropic:claude-3.5-sonnet)");
+      expect(frame).not.toContain("███████╗███████╗");
+    });
+  });
 });
+
 
