@@ -76,7 +76,6 @@ describe("CLI App Component", () => {
     const { lastFrame } = render(<App cwd="/test/dir" />);
     const output = lastFrame();
     expect(output).toContain("FeCode");
-    expect(output).toContain("Working directory:");
     expect(output).toContain("/test/dir");
     expect(output).toContain("›");
   });
@@ -3619,7 +3618,7 @@ describe("CLI App Component", () => {
       frame = lastFrame() ?? "";
 
       // Exactly ONE header and ONE task prompt in frame
-      const headerMatches = frame.match(/FeCode project: fecode/g);
+      const headerMatches = frame.match(/FeCode\s+fecode/g);
       expect(headerMatches).toHaveLength(1);
       const taskMatches = frame.match(/Task/g);
       expect(taskMatches).toHaveLength(1);

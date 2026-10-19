@@ -26,6 +26,18 @@ export const Header: React.FC<HeaderProps> = ({
   elapsedMs,
   sessionId
 }) => {
+  const formatCwd = (dir: string) => {
+    try {
+      const home = process.env.HOME || process.env.USERPROFILE || "";
+      if (home && dir.startsWith(home)) {
+        return "~" + dir.slice(home.length);
+      }
+    } catch {
+      // fallback
+    }
+    return dir;
+  };
+
   const getStatusBadge = () => {
     switch (status.toLowerCase()) {
       case "in_progress":
@@ -34,16 +46,16 @@ export const Header: React.FC<HeaderProps> = ({
       case "running":
         return <Text bold color="green">● LIVE (EXECUTING)</Text>;
       case "planning":
-        return <Text bold color="cyan">◌ PLANNING</Text>;
+        return <Text bold color="cyan">● PLANNING</Text>;
       case "verifying":
-        return <Text bold color="cyan">◌ VERIFYING</Text>;
+        return <Text bold color="cyan">● VERIFYING</Text>;
       case "awaiting_plan_approval":
       case "awaiting_step_approval":
         return <Text bold color="yellow">⚠ APPROVAL REQUIRED</Text>;
       case "blocked":
         return <Text bold color="red">! BLOCKED</Text>;
       case "recovering":
-        return <Text bold color="yellow">◌ RECOVERING</Text>;
+        return <Text bold color="yellow">● RECOVERING</Text>;
       case "completed":
         return <Text bold color="green">✓ COMPLETED</Text>;
       case "failed":
@@ -69,7 +81,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   const branchDisplay = gitBranch ? (
     <Text>
-      <Text color="gray"> │ ⎇ </Text>
+      <Text color="gray">⎇ </Text>
       <Text color="cyan">{gitBranch}</Text>
       <Text color="gray"> ● </Text>
       <Text color={isGitClean ? "green" : "yellow"}>
@@ -80,47 +92,31 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <Box
-      flexDirection="column"
-      borderStyle="single"
-      borderColor="cyan"
-      paddingX={1}
-      marginBottom={1}
+      flexDirection="row"
+      justifyContent="space-between"
+      width="100%"
+      marginBottom={0}
+      flexWrap="wrap"
     >
-      <Box justifyContent="space-between">
-        <Box>
-          <Text bold color="cyan">FeCode</Text>
-          <Text color="gray"> project: </Text>
-          <Text bold color="white">{projectName}</Text>
-          {modelInfo && <Text color="gray"> ({modelInfo})</Text>}
-          {branchDisplay}
-        </Box>
-        <Box>
-          {elapsedMs !== undefined && elapsedMs > 0 && (
-            <Text color="gray">{formatElapsed(elapsedMs)} </Text>
-          )}
-          {getStatusBadge()}
-        </Box>
+      <Box flexDirection="row" flexWrap="wrap">
+        <Box marginRight={1}><Text bold color="cyan">FeCode</Text></Box>
+        <Box marginRight={1}><Text bold color="white">{projectName}</Text></Box>
+        {branchDisplay && <Box marginRight={1}>{branchDisplay}</Box>}
+        {modelInfo && <Box marginRight={1}><Text color="gray">({modelInfo})</Text></Box>}
+        {cwd && <Box marginRight={1}><Text color="gray">{formatCwd(cwd)}</Text></Box>}
+        {runId ? (
+          <Box marginRight={1}><Text color="gray">Run: <Text color="cyan">{runId.slice(0, 16)}</Text></Text></Box>
+        ) : sessionId ? (
+          <Box marginRight={1}><Text color="gray">Session: <Text color="gray">{sessionId.slice(0, 16)}</Text></Text></Box>
+        ) : null}
       </Box>
 
-      {(cwd || runId || sessionId) && (
-        <Box justifyContent="space-between" marginTop={0}>
-          <Box>
-            <Text color="gray">Working directory: </Text>
-            <Text color="white">{cwd}</Text>
-          </Box>
-          {runId ? (
-            <Box>
-              <Text color="gray">Run: </Text>
-              <Text color="cyan">{runId.slice(0, 16)}</Text>
-            </Box>
-          ) : sessionId ? (
-            <Box>
-              <Text color="gray">Session: </Text>
-              <Text color="gray">{sessionId.slice(0, 16)}</Text>
-            </Box>
-          ) : null}
-        </Box>
-      )}
+      <Box flexDirection="row" flexShrink={0}>
+        {elapsedMs !== undefined && elapsedMs > 0 && (
+          <Text color="gray">{formatElapsed(elapsedMs)} </Text>
+        )}
+        {getStatusBadge()}
+      </Box>
     </Box>
   );
 };

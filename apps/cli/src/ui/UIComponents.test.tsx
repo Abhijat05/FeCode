@@ -339,8 +339,9 @@ describe("Phase 5AD: Modular UI Components", () => {
       />
     );
     const frame = lastFrame();
-    expect(frame).toContain("FeCode project: fecode");
-    expect(frame).toContain("Working directory: /workspace/fecode");
+    expect(frame).toContain("FeCode");
+    expect(frame).toContain("fecode");
+    expect(frame).toContain("/workspace/fecode");
   });
 
   it("renders StatusBar with responsive delimited shortcuts on wide terminals", () => {
@@ -453,7 +454,8 @@ describe("Phase 5AD: Modular UI Components", () => {
       </AppShell>
     );
     const frame = lastFrame();
-    expect(frame).toContain("FeCode project: fecode");
+    expect(frame).toContain("FeCode");
+    expect(frame).toContain("fecode");
     expect(frame).toContain("Available Commands:");
     expect(frame).toContain("○ Ready for task");
   });
@@ -1142,7 +1144,7 @@ describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
       const frame = lastFrame();
       expect(frame).toContain("FeCode");
       expect(frame).toContain("Test Prompt");
-      expect(frame).toContain("Working directory:");
+      expect(frame).toContain("fecode");
     });
   });
 
@@ -1159,7 +1161,8 @@ describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
         />
       );
       const frame = lastFrame();
-      expect(frame).toContain("FeCode project: my-app");
+      expect(frame).toContain("FeCode");
+      expect(frame).toContain("my-app");
       expect(frame).toContain("⎇ feature/auth ● clean");
       expect(frame).toContain("● LIVE (EXECUTING)");
       expect(frame).toContain("5s");
