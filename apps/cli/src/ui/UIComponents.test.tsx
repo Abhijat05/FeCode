@@ -381,6 +381,17 @@ describe("Phase 5AD: Modular UI Components", () => {
     expect(frame).not.toContain("[/runs]");
   });
 
+  it("renders StatusBar as a clean borderless single line", () => {
+    const { lastFrame } = render(
+      <StatusBar status="idle" isGenerating={false} columns={80} />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).not.toContain("┌");
+    expect(frame).not.toContain("└");
+    expect(frame).not.toContain("│");
+    expect(frame).toContain("○ Ready for task");
+  });
+
   it("renders StatusBar with spinner in executing and active states", () => {
     const { lastFrame } = render(
       <StatusBar status="executing" isGenerating={true} />

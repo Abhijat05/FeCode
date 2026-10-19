@@ -303,16 +303,14 @@ export const StatusBar: React.FC<StatusBarProps> = ({
 
   return (
     <Box
-      flexDirection="column"
-      borderStyle="single"
-      borderColor="gray"
-      paddingX={1}
-      marginTop={1}
+      flexDirection="row"
+      justifyContent="space-between"
+      width="100%"
+      marginTop={0}
+      marginBottom={0}
     >
-      <Box justifyContent="space-between">
-        <Box>{renderStatusText()}</Box>
-        <Box>{renderShortcuts()}</Box>
-      </Box>
+      <Box flexShrink={1}>{renderStatusText()}</Box>
+      <Box flexShrink={0}>{renderShortcuts()}</Box>
     </Box>
   );
 };
