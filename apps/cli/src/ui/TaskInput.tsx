@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Text } from "ink";
+import { Box, Text, useStdout } from "ink";
 import { EnhancedTextInput } from "./EnhancedTextInput.js";
 import { CommandPalette } from "./CommandPalette.js";
 import type { CommandDef } from "../commands.js";
@@ -15,6 +15,7 @@ export interface TaskInputProps {
   suggestions?: CommandDef[];
   selectedSuggestion?: number;
   maxSuggestionsVisible?: number;
+  columns?: number;
 }
 
 export const TaskInput: React.FC<TaskInputProps> = ({
@@ -27,8 +28,14 @@ export const TaskInput: React.FC<TaskInputProps> = ({
   pendingQuery,
   suggestions,
   selectedSuggestion = 0,
-  maxSuggestionsVisible
+  maxSuggestionsVisible,
+  columns: explicitColumns
 }) => {
+  const { stdout } = useStdout();
+  const cols = explicitColumns ?? stdout?.columns ?? 80;
+  const sepLength = Math.max(20, Math.min(cols - 2, 80));
+  const separator = "─".repeat(sepLength);
+
   const handleInputSubmit = (submittedValue: string) => {
     if (suggestions && suggestions.length > 0) {
       const clamped = Math.max(0, Math.min(selectedSuggestion, suggestions.length - 1));
@@ -45,7 +52,7 @@ export const TaskInput: React.FC<TaskInputProps> = ({
     <Box flexDirection="column" marginY={0}>
       {!label && (
         <Box marginBottom={0}>
-          <Text color="gray" dimColor>{"─".repeat(48)}</Text>
+          <Text color="gray" dimColor>{separator}</Text>
         </Box>
       )}
       {label && (
@@ -95,4 +102,3 @@ export const TaskInput: React.FC<TaskInputProps> = ({
     </Box>
   );
 };
-

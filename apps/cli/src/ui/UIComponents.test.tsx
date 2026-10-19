@@ -193,6 +193,20 @@ describe("TurnView", () => {
     expect(frame).toMatch(/─{3,}/);
   });
 
+  it("renders dynamically sized separator based on columns in TurnView", () => {
+    const { lastFrame } = render(
+      <TurnView
+        prompt="Task A"
+        response="Done A"
+        status="done"
+        isLast={false}
+        columns={50}
+      />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("─".repeat(48));
+  });
+
   it("does NOT render separator when isLast is true", () => {
     const { lastFrame } = render(
       <TurnView
@@ -513,6 +527,19 @@ describe("Phase 5AD: Modular UI Components", () => {
     const frame = lastFrame() ?? "";
     expect(frame).toContain("›");
     expect(frame).toMatch(/─{3,}/);
+  });
+
+  it("renders dynamically sized separator based on columns in TaskInput", () => {
+    const { lastFrame } = render(
+      <TaskInput
+        value=""
+        onChange={() => {}}
+        onSubmit={() => {}}
+        columns={50}
+      />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("─".repeat(48));
   });
 
   it("renders CommandPalette inside TaskInput when suggestions are passed", () => {

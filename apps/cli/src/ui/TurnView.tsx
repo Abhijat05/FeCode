@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Text } from "ink";
+import { Box, Text, useStdout } from "ink";
 import { MessageBubble } from "./MessageBubble.js";
 import { ThinkingBlock } from "./ThinkingBlock.js";
 
@@ -12,9 +12,8 @@ export interface TurnViewProps {
   thinkingMs?: number;
   thinkingTokens?: number;
   thinkingSummary?: string;
+  columns?: number;
 }
-
-const SEPARATOR = "─".repeat(48);
 
 const TurnViewComponent: React.FC<TurnViewProps> = ({
   prompt,
@@ -24,8 +23,14 @@ const TurnViewComponent: React.FC<TurnViewProps> = ({
   isLast = false,
   thinkingMs,
   thinkingTokens,
-  thinkingSummary
+  thinkingSummary,
+  columns: explicitColumns
 }) => {
+  const { stdout } = useStdout();
+  const cols = explicitColumns ?? stdout?.columns ?? 80;
+  const sepLength = Math.max(20, Math.min(cols - 2, 80));
+  const separator = "─".repeat(sepLength);
+
   const isStreaming = status === "streaming" || status === "thinking";
   const hasError = status === "error";
 
@@ -33,9 +38,6 @@ const TurnViewComponent: React.FC<TurnViewProps> = ({
     <Box flexDirection="column" marginY={0}>
       {/* User message */}
       <MessageBubble role="user" content={prompt} />
-
-      {/* Spacer between user and agent */}
-      <Box height={0} />
 
       {/* Thinking summary if available */}
       {thinkingMs !== undefined && thinkingMs > 0 && (
@@ -64,7 +66,7 @@ const TurnViewComponent: React.FC<TurnViewProps> = ({
       {/* Turn separator — only between turns, not after the last one */}
       {!isLast && (
         <Box marginTop={1} marginBottom={0}>
-          <Text color="gray" dimColor>{SEPARATOR}</Text>
+          <Text color="gray" dimColor>{separator}</Text>
         </Box>
       )}
     </Box>
@@ -72,4 +74,3 @@ const TurnViewComponent: React.FC<TurnViewProps> = ({
 };
 
 export const TurnView = React.memo(TurnViewComponent);
-
