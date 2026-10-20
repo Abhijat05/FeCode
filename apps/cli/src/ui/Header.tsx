@@ -13,6 +13,7 @@ export interface HeaderProps {
   runId?: string;
   elapsedMs?: number;
   sessionId?: string;
+  compactGit?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -25,7 +26,8 @@ export const Header: React.FC<HeaderProps> = ({
   isGitClean = true,
   runId,
   elapsedMs,
-  sessionId
+  sessionId,
+  compactGit = false
 }) => {
   const getStatusBadge = () => {
     switch (status.toLowerCase()) {
@@ -72,10 +74,18 @@ export const Header: React.FC<HeaderProps> = ({
     <Text>
       <Text color="gray">⎇ </Text>
       <Text color="cyan">{gitBranch}</Text>
-      <Text color="gray"> ● </Text>
-      <Text color={isGitClean ? "green" : "yellow"}>
-        {isGitClean ? "clean" : "modified"}
-      </Text>
+      {compactGit ? (
+        <Text color={isGitClean ? "green" : "yellow"} bold>
+          {" "}{isGitClean ? "✓" : "●"}
+        </Text>
+      ) : (
+        <>
+          <Text color="gray"> ● </Text>
+          <Text color={isGitClean ? "green" : "yellow"}>
+            {isGitClean ? "clean" : "modified"}
+          </Text>
+        </>
+      )}
     </Text>
   ) : null;
 

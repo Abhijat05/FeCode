@@ -1317,6 +1317,30 @@ describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
       expect(frame).toContain("○ IDLE");
     });
 
+    it("renders compact git status with icons when compactGit is enabled", () => {
+      const { lastFrame: lastFrameClean } = render(
+        <Header
+          projectName="my-app"
+          status="idle"
+          gitBranch="main"
+          isGitClean={true}
+          compactGit={true}
+        />
+      );
+      expect(lastFrameClean()).toContain("⎇ main ✓");
+
+      const { lastFrame: lastFrameDirty } = render(
+        <Header
+          projectName="my-app"
+          status="idle"
+          gitBranch="feature/auth"
+          isGitClean={false}
+          compactGit={true}
+        />
+      );
+      expect(lastFrameDirty()).toContain("⎇ feature/auth ●");
+    });
+
     it("renders session ID when runId is not present", () => {
       const { lastFrame } = render(
         <Header
