@@ -3,6 +3,9 @@ import { render } from "ink-testing-library";
 import * as fs from "fs/promises";
 import * as path from "path";
 import * as os from "os";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import {
   DefaultGitRepository,
   getProjectIdentifier,
@@ -603,6 +606,86 @@ describe("CLI App Component", () => {
     expect(frame).toContain("Session:");
     expect(frame).not.toContain("sk-");
     expect(frame).not.toContain("AIza");
+  });
+
+  describe("MCP server status (real connections, no mocked SDK)", () => {
+    const ECHO_SERVER_PATH = path.join(
+      __dirname,
+      "..",
+      "..",
+      "..",
+      "packages",
+      "agent",
+      "src",
+      "mcp",
+      "fixtures",
+      "echoServer.mjs"
+    );
+
+    it("handles /mcp command with no servers configured", async () => {
+      const mockAgent = new MockAgent();
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      await typeAndSubmit(stdin, "/mcp");
+      await delay(100);
+
+      const frame = lastFrame();
+      expect(frame).toContain("MCP Servers");
+      expect(frame).toContain("No MCP servers configured");
+    });
+
+    it("handles /mcp command after a real server connected, showing its tool count", async () => {
+      const { DefaultToolRegistry } = await import("@fecode/models");
+      const { registerMcpServers } = await import("@fecode/agent");
+      const registry = new DefaultToolRegistry();
+      const mcpStatus = await registerMcpServers(registry, {
+        fixture: { command: "node", args: [ECHO_SERVER_PATH] }
+      });
+      expect(mcpStatus.connected).toEqual(["fixture"]);
+
+      const mockAgent = new MockAgent();
+      const { lastFrame, stdin } = render(
+        <App agent={mockAgent} cwd="/test" mcpStatus={mcpStatus} />
+      );
+      await delay(50);
+
+      await typeAndSubmit(stdin, "/mcp");
+      await delay(100);
+
+      const frame = lastFrame();
+      expect(frame).toContain("MCP Servers");
+      expect(frame).toContain("fixture");
+      expect(frame).toContain("1 tool(s)");
+      expect(frame).not.toContain("✗");
+    }, 15000);
+
+    it("shows a non-fatal warning banner when a real MCP server fails to connect, without blocking the rest of the UI", async () => {
+      const { DefaultToolRegistry } = await import("@fecode/models");
+      const { registerMcpServers } = await import("@fecode/agent");
+      const registry = new DefaultToolRegistry();
+      const mcpStatus = await registerMcpServers(registry, {
+        broken: { command: "node", args: ["/path/does/not/exist/not-a-real-server.mjs"] }
+      });
+      expect(mcpStatus.failed).toHaveLength(1);
+      expect(mcpStatus.failed[0].name).toBe("broken");
+
+      const mockAgent = new MockAgent();
+      const { lastFrame, stdin } = render(
+        <App agent={mockAgent} cwd="/test" mcpStatus={mcpStatus} />
+      );
+      await delay(50);
+
+      const frame = lastFrame();
+      expect(frame).toContain("MCP Server Connection Issue");
+      expect(frame).toContain("broken");
+      expect(frame).toContain("Other tools remain available");
+
+      // The rest of the UI must still be fully usable despite the failed server.
+      await typeAndSubmit(stdin, "/status");
+      await delay(100);
+      expect(lastFrame()).toContain("Provider:");
+    }, 15000);
   });
 
   it("handles /clear command", async () => {
