@@ -24,7 +24,9 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0",
     "@google/genai": "^2.16.0",
+    "@modelcontextprotocol/sdk": "^1.25.2",
     "dotenv": "^16.6.1",
     "ink": "^5.1.0",
     "ink-text-input": "^6.0.0",
