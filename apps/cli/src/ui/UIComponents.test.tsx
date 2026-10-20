@@ -813,6 +813,24 @@ describe("Phase 5AD: Modular UI Components", () => {
     expect(frame).toContain("Test suite passed");
   });
 
+  it("groups consecutive identical tool calls with count badge in ExecutionTimeline", () => {
+    const now = Date.now();
+    const { lastFrame } = render(
+      <ExecutionTimeline
+        items={[
+          { id: "e1", timestamp: now - 300, type: "tool_call", title: "read_file", description: "src/a.ts" },
+          { id: "e2", timestamp: now - 200, type: "tool_call", title: "read_file", description: "src/b.ts" },
+          { id: "e3", timestamp: now - 100, type: "tool_call", title: "read_file", description: "src/c.ts" },
+          { id: "e4", timestamp: now, type: "verification", title: "Lint check passed" }
+        ]}
+      />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("read_file");
+    expect(frame).toContain("(x3)");
+    expect(frame).toContain("Lint check passed");
+  });
+
   it("renders ApprovalPrompt distinguishing tool permission and structured change reviews", () => {
     const { lastFrame } = render(
       <ApprovalPrompt

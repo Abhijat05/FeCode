@@ -10,21 +10,51 @@ export interface TimelineItemData {
   status?: string;
 }
 
+export interface GroupedTimelineItem extends TimelineItemData {
+  count?: number;
+}
+
+export function groupConsecutiveTimelineItems(items: TimelineItemData[]): GroupedTimelineItem[] {
+  const result: GroupedTimelineItem[] = [];
+  for (const item of items) {
+    const isTool = item.type === "tool_call" || item.type === "tool" || item.type === "tool_execution";
+    const last = result[result.length - 1];
+    const lastIsTool = last && (last.type === "tool_call" || last.type === "tool" || last.type === "tool_execution");
+
+    if (isTool && lastIsTool && last.title === item.title) {
+      last.count = (last.count || 1) + 1;
+      last.timestamp = item.timestamp;
+      if (item.description) {
+        last.description = item.description;
+      }
+      if (item.status) {
+        last.status = item.status;
+      }
+    } else {
+      result.push({ ...item, count: 1 });
+    }
+  }
+  return result;
+}
+
 export interface ExecutionTimelineProps {
   items?: TimelineItemData[];
   maxItems?: number;
+  groupToolCalls?: boolean;
 }
 
 export const ExecutionTimeline: React.FC<ExecutionTimelineProps> = ({
   items = [],
-  maxItems = 8
+  maxItems = 8,
+  groupToolCalls = true
 }) => {
   if (items.length === 0) {
     return null;
   }
 
+  const grouped = groupToolCalls ? groupConsecutiveTimelineItems(items) : items;
   // Keep history bounded to avoid terminal buffer overflow
-  const recentItems = items.slice(-maxItems);
+  const recentItems = grouped.slice(-maxItems);
 
   const formatTimestamp = (ts: number) => {
     const d = new Date(ts);
@@ -88,6 +118,9 @@ export const ExecutionTimeline: React.FC<ExecutionTimelineProps> = ({
           {getStatusIcon(item.type, item.status)}
           <Text color="gray"> </Text>
           <Text color="white">{item.title}</Text>
+          {"count" in item && (item as GroupedTimelineItem).count && (item as GroupedTimelineItem).count! > 1 ? (
+            <Text color="cyan" bold> (x{(item as GroupedTimelineItem).count})</Text>
+          ) : null}
           {item.description && (
             <Text color="gray"> — {item.description}</Text>
           )}
