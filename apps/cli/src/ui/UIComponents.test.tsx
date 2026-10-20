@@ -1366,6 +1366,19 @@ describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
       expect(frame).toContain("○ IDLE");
     });
 
+    it("does not render elapsed timer when status is idle", () => {
+      const { lastFrame } = render(
+        <Header
+          projectName="my-app"
+          status="idle"
+          elapsedMs={4500}
+        />
+      );
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("○ IDLE");
+      expect(frame).not.toContain("5s");
+    });
+
     it("renders compact git status with icons when compactGit is enabled", () => {
       const { lastFrame: lastFrameClean } = render(
         <Header

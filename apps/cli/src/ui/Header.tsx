@@ -70,6 +70,23 @@ export const Header: React.FC<HeaderProps> = ({
     return `${min}m ${rem}s`;
   };
 
+  const isStatusActive = (s: string) => {
+    const lower = s.toLowerCase();
+    return (
+      lower === "in_progress" ||
+      lower === "generating" ||
+      lower === "executing" ||
+      lower === "running" ||
+      lower === "thinking" ||
+      lower === "planning" ||
+      lower === "verifying" ||
+      lower === "recovering" ||
+      lower === "awaiting_plan_approval" ||
+      lower === "awaiting_step_approval" ||
+      lower === "blocked"
+    );
+  };
+
   const branchDisplay = gitBranch ? (
     <Text>
       <Text color="gray">⎇ </Text>
@@ -111,7 +128,7 @@ export const Header: React.FC<HeaderProps> = ({
       </Box>
 
       <Box flexDirection="row" flexShrink={0}>
-        {elapsedMs !== undefined && elapsedMs > 0 && (
+        {isStatusActive(status) && elapsedMs !== undefined && elapsedMs > 0 && (
           <Text color="gray">{formatElapsed(elapsedMs)} </Text>
         )}
         {getStatusBadge()}
