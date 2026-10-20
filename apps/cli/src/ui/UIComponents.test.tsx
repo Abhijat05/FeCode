@@ -920,6 +920,32 @@ describe("Phase 5AD: Modular UI Components", () => {
     unmount();
   });
 
+  it("supports scrolling through long diffs using [ and ] keys in ApprovalPrompt", async () => {
+    const longDiff = Array.from({ length: 25 }, (_, i) => `+line ${i + 1}`).join("\n");
+    const { lastFrame, stdin, unmount } = render(
+      <ApprovalPrompt
+        toolName="edit_file"
+        diff={longDiff}
+        onSubmit={() => {}}
+      />
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+    let frame = lastFrame() ?? "";
+    expect(frame).toContain("Lines 1–15 of 25");
+    expect(frame).toContain("+line 1");
+    expect(frame).not.toContain("+line 16");
+
+    // Scroll down with ']'
+    stdin.write("]");
+    await new Promise((r) => setTimeout(r, 50));
+    frame = lastFrame() ?? "";
+    expect(frame).toContain("Lines 2–16 of 25");
+    expect(frame).toContain("+line 16");
+
+    unmount();
+  });
+
   it("renders RiskNotice with reasons and checkpoint requirement", () => {
     const { lastFrame } = render(
       <RiskNotice

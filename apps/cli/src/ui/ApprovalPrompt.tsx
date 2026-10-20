@@ -60,6 +60,16 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
   isScrolled = false
 }) => {
   const [selectedIndex, setSelectedIndex] = useState<number>(defaultIndex ?? 1);
+  const [diffOffset, setDiffOffset] = useState<number>(0);
+
+  const primaryDiff =
+    changeReview?.files?.find((f) => f.diff)?.diff || diff || "";
+  const diffLines = React.useMemo(
+    () => (primaryDiff ? primaryDiff.split(/\r?\n/) : []),
+    [primaryDiff]
+  );
+  const maxDiffVisible = 15;
+  const maxDiffOffset = Math.max(0, diffLines.length - maxDiffVisible);
 
   useInput(
     (input, key) => {
@@ -82,12 +92,21 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
         return;
       }
 
+      // Diff scrolling via [ / ] or up / down when diff has overflow
+      if ((input === "[" || (key.upArrow && maxDiffOffset > 0)) && maxDiffOffset > 0) {
+        setDiffOffset((prev) => Math.max(0, prev - 1));
+        return;
+      }
+      if ((input === "]" || (key.downArrow && maxDiffOffset > 0)) && maxDiffOffset > 0) {
+        setDiffOffset((prev) => Math.min(maxDiffOffset, prev + 1));
+        return;
+      }
+
       if (
         key.leftArrow ||
         key.rightArrow ||
-        key.upArrow ||
-        key.downArrow ||
-        key.tab
+        key.tab ||
+        ((key.upArrow || key.downArrow) && maxDiffOffset === 0)
       ) {
         setSelectedIndex((prev) => (prev === 0 ? 1 : 0));
         return;
@@ -243,7 +262,7 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
                   marginY={0}
                   flexDirection="column"
                 >
-                  {cf.diff.split("\n").slice(0, 15).map((line, lIdx) => {
+                  {cf.diff.split(/\r?\n/).slice(diffOffset, diffOffset + maxDiffVisible).map((line, lIdx) => {
                     const isAdd = line.startsWith("+") && !line.startsWith("+++");
                     const isDel = line.startsWith("-") && !line.startsWith("---");
                     return (
@@ -255,10 +274,20 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
                       </Text>
                     );
                   })}
-                  {cf.diff.split("\n").length > 15 && (
-                    <Text color="gray">
-                      ... ({cf.diff.split("\n").length - 15} lines omitted)
-                    </Text>
+                  {maxDiffOffset > 0 && (
+                    <Box marginTop={0} justifyContent="space-between">
+                      <Text color="gray">
+                        {diffOffset > 0 ? `▲ ... ${diffOffset} earlier lines` : " "}
+                      </Text>
+                      <Text color="cyan" dimColor>
+                        Lines {diffOffset + 1}–{Math.min(diffLines.length, diffOffset + maxDiffVisible)} of {diffLines.length} [↑/↓ or [/] to scroll]
+                      </Text>
+                      <Text color="gray">
+                        {diffOffset + maxDiffVisible < diffLines.length
+                          ? `▼ ... ${diffLines.length - (diffOffset + maxDiffVisible)} more lines`
+                          : " "}
+                      </Text>
+                    </Box>
                   )}
                 </Box>
               )}
@@ -276,7 +305,7 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
           marginY={1}
           flexDirection="column"
         >
-          {diff.split("\n").slice(0, 15).map((line, lIdx) => {
+          {diffLines.slice(diffOffset, diffOffset + maxDiffVisible).map((line, lIdx) => {
             const isAdd = line.startsWith("+") && !line.startsWith("+++");
             const isDel = line.startsWith("-") && !line.startsWith("---");
             return (
@@ -288,6 +317,21 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
               </Text>
             );
           })}
+          {maxDiffOffset > 0 && (
+            <Box marginTop={0} justifyContent="space-between">
+              <Text color="gray">
+                {diffOffset > 0 ? `▲ ... ${diffOffset} earlier lines` : " "}
+              </Text>
+              <Text color="cyan" dimColor>
+                Lines {diffOffset + 1}–{Math.min(diffLines.length, diffOffset + maxDiffVisible)} of {diffLines.length} [↑/↓ or [/] to scroll]
+              </Text>
+              <Text color="gray">
+                {diffOffset + maxDiffVisible < diffLines.length
+                  ? `▼ ... ${diffLines.length - (diffOffset + maxDiffVisible)} more lines`
+                  : " "}
+              </Text>
+            </Box>
+          )}
         </Box>
       )}
 
