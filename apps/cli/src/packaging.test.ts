@@ -60,6 +60,7 @@ describe("FeCode Packaging & Distribution Verification (Phase 5AH)", () => {
     expect(output).toContain("GEMINI_API_KEY");
     expect(output).toContain("OPENAI_API_KEY");
     expect(output).toContain("ANTHROPIC_API_KEY");
+    expect(output).toContain(".fecode/mcp.json");
   });
 
   it("Help flag: -h shorthand prints usage instructions", () => {

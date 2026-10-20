@@ -17,6 +17,7 @@ export const COMMANDS: CommandDef[] = [
   { command: "/tasks",          description: "List session task summaries (/tasks [page])" },
   { command: "/task",           description: "View task details by index (/task <index>)" },
   { command: "/git",            description: "Inspect git repository status and branch" },
+  { command: "/mcp",            description: "List configured MCP servers and their connection status" },
   { command: "/checkpoints",    description: "List available rollback checkpoints" },
   { command: "/checkpoint",     description: "Create a new manual checkpoint" },
   { command: "/recover",        description: "Inspect or initiate checkpoint recovery" },

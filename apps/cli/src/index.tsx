@@ -14,7 +14,10 @@ import {
   DefaultSessionStore,
   DefaultRunHistoryStore,
   DefaultProductRuntime,
-  type PersistedSessionData
+  loadMcpConfig,
+  registerMcpServers,
+  type PersistedSessionData,
+  type McpRegistrationResult
 } from "@fecode/agent";
 import type { ProjectContext } from "@fecode/agent";
 import { App } from "./App.js";
@@ -25,6 +28,7 @@ async function main(): Promise<void> {
   let configError: string | undefined;
   let projectContext: ProjectContext | undefined;
   let initialSessionData: PersistedSessionData | undefined;
+  let mcpStatus: McpRegistrationResult | undefined;
 
   const args = process.argv.slice(2);
 
@@ -56,6 +60,10 @@ Environment Variables:
   OPENAI_BASE_URL     Base URL for OpenAI or OpenAI-compatible provider
   OLLAMA_BASE_URL     Base URL for Ollama provider [default: http://localhost:11434/v1]
 
+MCP Servers:
+  Configure external Model Context Protocol servers in .fecode/mcp.json
+  (searched upward from the working directory). See README for the format.
+
 Interactive Commands (inside TUI):
   /help               Show in-terminal command list
   /plan [id]          Display active plan or details for a run
@@ -64,6 +72,7 @@ Interactive Commands (inside TUI):
   /diagnostics [id]   Show diagnostics and telemetry for active/specified run
   /runs [limit]       List historical runs for current project
   /git                Inspect Git workspace status and modified files
+  /mcp                List configured MCP servers and their connection status
   /clear              Clear conversation turns
   /exit               Exit FeCode`);
     process.exit(0);
@@ -202,6 +211,12 @@ Interactive Commands (inside TUI):
         });
 
     const registry = createDefaultToolRegistry();
+
+    const mcpConfig = loadMcpConfig(cwd);
+    if (mcpConfig.mcpServers && Object.keys(mcpConfig.mcpServers).length > 0) {
+      mcpStatus = await registerMcpServers(registry, mcpConfig.mcpServers);
+    }
+
     const skillLoader = new SkillLoader();
     const skillRegistry = new DefaultSkillRegistry();
     const activationPolicy = new SkillActivationPolicy();
@@ -269,6 +284,7 @@ Interactive Commands (inside TUI):
       projectContext={projectContext}
       sessionStore={sessionStore}
       initialSessionData={initialSessionData}
+      mcpStatus={mcpStatus}
     />
   );
 }
