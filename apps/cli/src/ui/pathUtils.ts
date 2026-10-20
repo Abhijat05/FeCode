@@ -6,12 +6,12 @@ import os from "node:os";
  */
 export function formatCwd(dir: string): string {
   if (!dir) return "";
+  const normDir = dir.replace(/\\/g, "/");
   try {
     const home = os.homedir();
     const envHome = process.env.HOME || process.env.USERPROFILE || "";
     const effectiveHome = home || envHome;
     if (effectiveHome) {
-      const normDir = dir.replace(/\\/g, "/");
       const normHome = effectiveHome.replace(/\\/g, "/");
 
       if (
@@ -29,5 +29,5 @@ export function formatCwd(dir: string): string {
   } catch {
     // fallback
   }
-  return dir;
+  return normDir;
 }

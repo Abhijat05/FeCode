@@ -1199,6 +1199,10 @@ describe("Phase 5AD: Modular UI Components", () => {
       expect(formatCwd("/other/absolute/path")).toBe("/other/absolute/path");
     });
 
+    it("normalizes cross-drive Windows backslashes to forward slashes", () => {
+      expect(formatCwd("D:\\Abhijat\\Code PlayGround\\fecode")).toBe("D:/Abhijat/Code PlayGround/fecode");
+    });
+
     it("renders WorkspaceStatus with collapsed home directory path", () => {
       const home = process.env.HOME || process.env.USERPROFILE || "";
       const testDir = home ? `${home}/test-app` : "/test/app";
