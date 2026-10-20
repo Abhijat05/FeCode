@@ -137,6 +137,21 @@ describe("CommandPalette", () => {
     expect(frame).not.toContain("/cmd4");
     expect(frame).toContain("…5 more");
   });
+
+  it("renders invariant-width column alignment for commands with varying lengths", () => {
+    const suggestions: CommandDef[] = [
+      { command: "/c", description: "Short" },
+      { command: "/delete-session", description: "Longer command" }
+    ];
+    const { lastFrame } = render(
+      <CommandPalette suggestions={suggestions} selectedIndex={0} />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("●");
+    expect(frame).toContain("/c");
+    expect(frame).toContain("/delete-session");
+    expect(frame).toContain("Longer command");
+  });
 });
 
 describe("TurnView", () => {

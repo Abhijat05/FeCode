@@ -38,6 +38,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   const visible = suggestions.slice(startIndex, startIndex + effectiveMaxVisible);
   const remaining = suggestions.length - (startIndex + visible.length);
 
+  const maxCmdLength = visible.reduce((max, c) => Math.max(max, c.command.length), 0);
+  const cmdColumnWidth = Math.max(16, maxCmdLength + 2);
+
   return (
     <Box
       flexDirection="column"
@@ -55,8 +58,10 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         const isSelected = startIndex + idx === clampedIndex;
         return (
           <Box key={cmd.command}>
-            <Text color="cyan" bold>{isSelected ? "● " : "  "}</Text>
-            <Box width={16}>
+            <Box width={2} flexShrink={0}>
+              <Text color="cyan" bold>{isSelected ? "●" : " "}</Text>
+            </Box>
+            <Box width={cmdColumnWidth} flexShrink={0}>
               <Text color={isSelected ? "whiteBright" : "white"} bold={isSelected}>
                 {cmd.command}
               </Text>
