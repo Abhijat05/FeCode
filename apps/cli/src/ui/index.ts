@@ -28,3 +28,4 @@ export * from "./WelcomeView.js";
 export * from "./textEditingUtils.js";
 export * from "./pathUtils.js";
 export * from "./spinnerUtils.js";
+export * from "./KeymapView.js";

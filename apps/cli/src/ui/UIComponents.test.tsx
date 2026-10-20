@@ -30,7 +30,8 @@ import {
   ThinkingBlock,
   WelcomeView,
   formatCwd,
-  getGlobalSpinnerFrame
+  getGlobalSpinnerFrame,
+  KeymapView
 } from "./index.js";
 import type { CommandDef } from "../commands.js";
 
@@ -1585,3 +1586,41 @@ describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
 });
 
 
+
+describe("KeymapView", () => {
+  it("renders categorized shortcut groups and key badges", () => {
+    const { lastFrame } = render(<KeymapView />);
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("FeCode Keyboard Shortcuts");
+    expect(frame).toContain("Views & Navigation");
+    expect(frame).toContain("Conversation & Input");
+    expect(frame).toContain("Approvals & Tasks");
+    expect(frame).toContain("[p]");
+    expect(frame).toContain("[r]");
+    expect(frame).toContain("[d]");
+    expect(frame).toContain("[PgUp/PgDn]");
+    expect(frame).toContain("[y / n]");
+    expect(frame).toContain("[Ctrl+C]");
+  });
+
+  it("handles onClose when user presses Escape, q, or ?", async () => {
+    let closed = false;
+    const { stdin, unmount } = render(
+      <KeymapView onClose={() => { closed = true; }} />
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+    stdin.write("q");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(closed).toBe(true);
+
+    unmount();
+  });
+
+  it("renders narrow stacked layout without errors on narrow viewports", () => {
+    const { lastFrame } = render(<KeymapView terminalColumns={60} />);
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("FeCode Keyboard Shortcuts");
+    expect(frame).toContain("[Esc / ? / q to close]");
+  });
+});
