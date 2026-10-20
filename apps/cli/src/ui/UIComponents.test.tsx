@@ -784,6 +784,9 @@ describe("Phase 5AD: Modular UI Components", () => {
     expect(frame).toContain("Allow? [y/N]:");
     expect(frame).toContain("Yes (Approve)");
     expect(frame).toContain("No (Deny)");
+    // Should use modern round border, not old double border
+    expect(frame).not.toContain("═");
+    expect(frame).toContain("╭");
   });
 
   it("handles interactive arrow-key navigation and submission in ApprovalPrompt", async () => {

@@ -156,15 +156,21 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
   return (
     <Box
       flexDirection="column"
-      borderStyle="double"
+      borderStyle="round"
       borderColor="yellow"
       paddingX={1}
       marginY={1}
     >
-      <Box marginBottom={0}>
+      <Box marginBottom={0} justifyContent="space-between">
         <Text bold color="yellow">
           {getHeaderTitle()}
         </Text>
+        <Box>
+          <Text color="gray">Risk: </Text>
+          <Text bold color={getRiskColor(riskLevel)}>
+            {riskLevel.toUpperCase()}
+          </Text>
+        </Box>
       </Box>
 
       {stepTitle && (
@@ -178,20 +184,12 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
         </Box>
       )}
 
-      <Box marginTop={0} justifyContent="space-between">
-        <Box>
-          <Text color="gray">Risk: </Text>
-          <Text bold color={getRiskColor(riskLevel)}>
-            {riskLevel.toUpperCase()}
-          </Text>
-        </Box>
-        <Box>
+      {(checkpointId || riskLevel.toLowerCase() === "elevated" || riskLevel.toLowerCase() === "critical") && (
+        <Box marginTop={0}>
           <Text color="gray">Checkpoint: </Text>
-          <Text color={checkpointId || riskLevel.toLowerCase() === "elevated" || riskLevel.toLowerCase() === "critical" ? "yellow" : "gray"}>
-            {checkpointId ? `REQUIRED (${checkpointId.slice(0, 18)})` : "REQUIRED"}
-          </Text>
+          <Text color="yellow">REQUIRED</Text>
         </Box>
-      </Box>
+      )}
 
       {toolName && (
         <Box marginTop={0}>
