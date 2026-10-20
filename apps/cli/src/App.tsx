@@ -3632,6 +3632,7 @@ export const App: React.FC<AppProps> = ({
                       isActive={isGenerating}
                       isScrolled={scrollOffset > 0}
                       label={isThinking ? "Thinking..." : "Agent is working..."}
+                      elapsedMs={activeElapsedMs}
                     />
                   </Box>
                 )}

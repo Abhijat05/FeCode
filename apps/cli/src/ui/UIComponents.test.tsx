@@ -335,6 +335,13 @@ describe("ThinkingIndicator", () => {
     expect(lastFrame()).toContain("Thinking");
   });
 
+  it("renders elapsed time when elapsedMs is provided", () => {
+    const { lastFrame } = render(
+      <ThinkingIndicator isActive={true} label="Thinking" elapsedMs={4200} />
+    );
+    expect(lastFrame()).toContain("Thinking (4s)");
+  });
+
   it("renders nothing when not active", () => {
     const { lastFrame } = render(<ThinkingIndicator isActive={false} />);
     expect(lastFrame()).toBe("");
