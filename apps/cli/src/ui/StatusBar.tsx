@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { Box, Text, useStdout } from "ink";
 import { getTerminalLayout, truncateText } from "./AppShell.js";
+import { useGlobalSpinner } from "./spinnerUtils.js";
 
 export interface StatusBarProps {
   status?: string;
@@ -17,9 +18,6 @@ export interface StatusBarProps {
   activeView?: string;
   columns?: number;
 }
-
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-const INTERVAL_MS = 300;
 
 const ACTIVE_STATUSES = new Set([
   "executing",
@@ -47,21 +45,13 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   const terminalColumns = explicitColumns ?? stdout?.columns ?? 80;
   const layout = getTerminalLayout(terminalColumns);
 
-  const [frame, setFrame] = useState(0);
   const isAnimating =
     !hasModal &&
     !isScrolled &&
     (isGenerating || ACTIVE_STATUSES.has(status.toLowerCase()));
 
-  useEffect(() => {
-    if (!isAnimating) return;
-    const timer = setInterval(() => {
-      setFrame((prev) => (prev + 1) % SPINNER_FRAMES.length);
-    }, INTERVAL_MS);
-    return () => clearInterval(timer);
-  }, [isAnimating]);
-
-  const spinner = isAnimating ? `${SPINNER_FRAMES[frame]} ` : "";
+  const spinnerGlyph = useGlobalSpinner(isAnimating);
+  const spinner = isAnimating && spinnerGlyph ? `${spinnerGlyph} ` : isAnimating ? "⠋ " : "";
 
   const renderStatusText = () => {
     if (customMessage) {

@@ -29,7 +29,8 @@ import {
   truncateText,
   ThinkingBlock,
   WelcomeView,
-  formatCwd
+  formatCwd,
+  getGlobalSpinnerFrame
 } from "./index.js";
 import type { CommandDef } from "../commands.js";
 
@@ -330,6 +331,14 @@ describe("MessageBubble", () => {
   });
 });
 
+describe("spinnerUtils", () => {
+  it("computes synchronized spinner frame deterministically from timestamp", () => {
+    expect(getGlobalSpinnerFrame(0)).toBe("⠋");
+    expect(getGlobalSpinnerFrame(300)).toBe("⠙");
+    expect(getGlobalSpinnerFrame(600)).toBe("⠹");
+  });
+});
+
 describe("ThinkingIndicator", () => {
   it("renders thinking label when active", () => {
     const { lastFrame } = render(<ThinkingIndicator isActive={true} label="Thinking" />);
@@ -341,6 +350,13 @@ describe("ThinkingIndicator", () => {
       <ThinkingIndicator isActive={true} label="Thinking" elapsedMs={4200} />
     );
     expect(lastFrame()).toContain("Thinking (4s)");
+  });
+
+  it("renders live token count and elapsed time when both provided", () => {
+    const { lastFrame } = render(
+      <ThinkingIndicator isActive={true} label="Thinking" elapsedMs={3500} tokenCount={412} />
+    );
+    expect(lastFrame()).toContain("Thinking (3s · 412 tokens)");
   });
 
   it("renders nothing when not active", () => {

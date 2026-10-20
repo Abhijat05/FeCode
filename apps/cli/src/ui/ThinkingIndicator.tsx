@@ -1,40 +1,29 @@
 import React, { useState, useEffect } from "react";
 import { Box, Text } from "ink";
+import { useGlobalSpinner } from "./spinnerUtils.js";
 
 export interface ThinkingIndicatorProps {
   isActive: boolean;
   isScrolled?: boolean;
   label?: string;
   elapsedMs?: number;
+  tokenCount?: number;
 }
-
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-const INTERVAL_MS = 300;
 
 export const ThinkingIndicator: React.FC<ThinkingIndicatorProps> = ({
   isActive,
   isScrolled = false,
   label = "Working...",
-  elapsedMs
+  elapsedMs,
+  tokenCount
 }) => {
-  const [frame, setFrame] = useState(0);
+  const isAnimating = isActive && !isScrolled;
+  const spinnerGlyph = useGlobalSpinner(isAnimating);
   const [internalElapsedMs, setInternalElapsedMs] = useState(0);
 
   useEffect(() => {
-    if (!isActive || isScrolled) {
-      setFrame(0);
-      setInternalElapsedMs(0);
-      return;
-    }
-    const timer = setInterval(() => {
-      setFrame((prev) => (prev + 1) % SPINNER_FRAMES.length);
-    }, INTERVAL_MS);
-    return () => clearInterval(timer);
-  }, [isActive, isScrolled]);
-
-  useEffect(() => {
-    if (!isActive || isScrolled || elapsedMs !== undefined) {
-      if (!isActive || isScrolled) setInternalElapsedMs(0);
+    if (!isAnimating || elapsedMs !== undefined) {
+      if (!isAnimating) setInternalElapsedMs(0);
       return;
     }
     const start = Date.now();
@@ -42,19 +31,22 @@ export const ThinkingIndicator: React.FC<ThinkingIndicatorProps> = ({
       setInternalElapsedMs(Date.now() - start);
     }, 1000);
     return () => clearInterval(timer);
-  }, [isActive, isScrolled, elapsedMs]);
+  }, [isAnimating, elapsedMs]);
 
-  if (!isActive || isScrolled) return null;
+  if (!isAnimating) return null;
 
   const currentElapsed = elapsedMs !== undefined ? elapsedMs : internalElapsedMs;
   const elapsedSec = currentElapsed >= 1000 ? Math.floor(currentElapsed / 1000) : null;
-  const elapsedSuffix = elapsedSec !== null ? ` (${elapsedSec}s)` : "";
+  const elapsedPart = elapsedSec !== null ? `${elapsedSec}s` : "";
+  const tokenPart = tokenCount !== undefined && tokenCount > 0 ? `${tokenCount} tokens` : "";
+  const metrics = [elapsedPart, tokenPart].filter(Boolean).join(" · ");
+  const metricsSuffix = metrics ? ` (${metrics})` : "";
 
   return (
     <Box height={1}>
-      <Text color="cyan">{SPINNER_FRAMES[frame]} </Text>
+      <Text color="cyan">{spinnerGlyph || "⠋"} </Text>
       <Text color="cyan" wrap="truncate-end">
-        {label}{elapsedSuffix}
+        {label}{metricsSuffix}
       </Text>
     </Box>
   );

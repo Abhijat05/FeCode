@@ -540,11 +540,14 @@ export const App: React.FC<AppProps> = ({
     }
   }, []);
 
+  const [activeTokenCount, setActiveTokenCount] = useState<number | undefined>(undefined);
+
   // Track active execution elapsed time for Header
   useEffect(() => {
     if (!isGenerating || !executionStartTime || hasModal || scrollOffset > 0) {
       if (!isGenerating || !executionStartTime) {
         setActiveElapsedMs(undefined);
+        setActiveTokenCount(undefined);
       }
       return;
     }
@@ -2679,6 +2682,7 @@ export const App: React.FC<AppProps> = ({
       flushTextUpdates = () => {
         if (!pendingTextChunk) return;
         const chunkToFlush = pendingTextChunk;
+        setActiveTokenCount(Math.max(1, Math.round(accumulatedRawText.length / 4)));
         pendingTextChunk = "";
         lastRenderMs = Date.now();
         const elapsed = Date.now() - turnStartMs;
@@ -3633,6 +3637,7 @@ export const App: React.FC<AppProps> = ({
                       isScrolled={scrollOffset > 0}
                       label={isThinking ? "Thinking..." : "Agent is working..."}
                       elapsedMs={activeElapsedMs}
+                      tokenCount={activeTokenCount}
                     />
                   </Box>
                 )}
