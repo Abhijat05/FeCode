@@ -88,7 +88,7 @@ export const HelpView: React.FC<HelpViewProps> = ({
   return (
     <Box
       flexDirection="column"
-      borderStyle="single"
+      borderStyle="round"
       borderColor="cyan"
       paddingX={1}
       marginY={1}

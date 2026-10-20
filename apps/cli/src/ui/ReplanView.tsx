@@ -47,7 +47,7 @@ export const ReplanView: React.FC<ReplanViewProps> = ({
   return (
     <Box
       flexDirection="column"
-      borderStyle="double"
+      borderStyle="round"
       borderColor="yellow"
       paddingX={1}
       marginY={1}

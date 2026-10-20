@@ -1114,6 +1114,8 @@ describe("Phase 5AD: Modular UI Components", () => {
     const { lastFrame } = render(<HelpView />);
     const frame = lastFrame();
     expect(frame).toContain("Available Commands:");
+    expect(frame).toContain("╭");
+    expect(frame).not.toContain("═");
     expect(frame).toContain("/plan");
     expect(frame).toContain("/runs");
     expect(frame).toContain("/debug");

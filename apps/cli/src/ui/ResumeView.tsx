@@ -45,7 +45,7 @@ export const ResumeView: React.FC<ResumeViewProps> = ({
   return (
     <Box
       flexDirection="column"
-      borderStyle="double"
+      borderStyle="round"
       borderColor="yellow"
       paddingX={1}
       marginY={1}

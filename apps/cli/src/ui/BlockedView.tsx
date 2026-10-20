@@ -26,7 +26,7 @@ export const BlockedView: React.FC<BlockedViewProps> = ({
   return (
     <Box
       flexDirection="column"
-      borderStyle="double"
+      borderStyle="round"
       borderColor="red"
       paddingX={1}
       marginY={1}
