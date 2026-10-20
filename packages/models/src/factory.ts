@@ -2,6 +2,7 @@ import { OpenAIModelProvider } from "./providers/openai/index.js";
 import { OpenAICompatibleModelProvider } from "./providers/openai-compatible/index.js";
 import { GeminiModelProvider } from "./providers/gemini/index.js";
 import { OllamaModelProvider } from "./providers/ollama/index.js";
+import { AnthropicModelProvider } from "./providers/anthropic/index.js";
 import { FallbackModelProvider, type FallbackEvent, type FallbackCandidate } from "./fallback/fallbackProvider.js";
 import type { ModelProvider } from "./types.js";
 
@@ -38,6 +39,12 @@ export function createModelProvider(config: ModelConfig): ModelProvider {
         baseUrl: config.baseUrl,
         model: config.model
       });
+    case "anthropic":
+      return new AnthropicModelProvider({
+        apiKey: config.apiKey,
+        model: config.model,
+        baseURL: config.baseUrl
+      });
     default:
       throw new Error(`Unsupported model provider: ${config.provider}`);
   }
@@ -50,6 +57,7 @@ export interface FallbackConfigOptions {
   geminiApiKey?: string;
   openaiApiKey?: string;
   openaiCompatibleApiKey?: string;
+  anthropicApiKey?: string;
   ollamaBaseUrl?: string;
   openaiBaseUrl?: string;
   maxRetriesPerProvider?: number;
@@ -69,6 +77,10 @@ export function createConfiguredFallbackChain(
     process.env.OPENAI_COMPATIBLE_API_KEY ||
     process.env.FE_OPENAI_COMPATIBLE_API_KEY ||
     openaiKey;
+  const anthropicKey =
+    options.anthropicApiKey ||
+    process.env.ANTHROPIC_API_KEY ||
+    process.env.FE_ANTHROPIC_API_KEY;
   const ollamaUrl = options.ollamaBaseUrl || process.env.OLLAMA_BASE_URL || "http://localhost:11434/v1";
   const openaiUrl =
     options.openaiBaseUrl ||
@@ -86,7 +98,9 @@ export function createConfiguredFallbackChain(
         ? openaiKey
         : primaryName === "openai-compatible"
           ? openaiCompatibleKey
-          : undefined;
+          : primaryName === "anthropic"
+            ? anthropicKey
+            : undefined;
 
   const primaryBaseUrl =
     primaryName === "ollama"
@@ -110,7 +124,7 @@ export function createConfiguredFallbackChain(
   // 2. Determine ordered list of potential fallback provider names
   const candidateNames = options.fallbackProviders && options.fallbackProviders.length > 0
     ? options.fallbackProviders.map((p) => p.toLowerCase().trim())
-    : ["gemini", "openai", "ollama"];
+    : ["gemini", "openai", "anthropic", "ollama"];
 
   for (const name of candidateNames) {
     if (addedProviders.has(name)) {
@@ -146,6 +160,17 @@ export function createConfiguredFallbackChain(
             baseUrl: openaiUrl,
             apiKey: openaiCompatibleKey,
             model: options.primaryModel || process.env.FE_MODEL || "deepseek-ai/deepseek-v4.1-flash"
+          }),
+          maxRetries: options.maxRetriesPerProvider ?? 1
+        });
+        addedProviders.add(name);
+      }
+    } else if (name === "anthropic") {
+      if (anthropicKey) {
+        candidates.push({
+          provider: new AnthropicModelProvider({
+            apiKey: anthropicKey,
+            model: "claude-sonnet-5-5"
           }),
           maxRetries: options.maxRetriesPerProvider ?? 1
         });

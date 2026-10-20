@@ -38,6 +38,15 @@ describe("createModelProvider", () => {
     expect(provider.id).toBe("ollama");
   });
 
+  it("creates AnthropicModelProvider when provider is 'anthropic'", () => {
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test-key";
+    const provider = createModelProvider({
+      provider: "anthropic"
+    });
+
+    expect(provider.id).toBe("anthropic");
+  });
+
   it("creates OpenAICompatibleModelProvider when provider is 'openai-compatible'", () => {
     const provider = createModelProvider({
       provider: "openai-compatible",
@@ -192,5 +201,53 @@ describe("createConfiguredFallbackChain", () => {
 
     const candidates = chain.getCandidates();
     expect(candidates.map((c) => c.provider.id)).toEqual(["gemini", "openai"]);
+  });
+
+  it("creates a FallbackModelProvider with anthropic as primary provider", () => {
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test-key";
+    const chain = createConfiguredFallbackChain({
+      primaryProvider: "anthropic",
+      anthropicApiKey: "sk-ant-test-key",
+      fallbackProviders: ["openai"]
+    });
+
+    expect(chain.id).toBe("fallback");
+    expect(chain.getActiveProviderId()).toBe("anthropic");
+  });
+
+  it("includes anthropic in the default fallback order when credentials are present", () => {
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test-key";
+    const chain = createConfiguredFallbackChain({
+      primaryProvider: "gemini"
+      // no fallbackProviders override -> default ["gemini", "openai", "anthropic", "ollama"]
+    });
+
+    const candidates = chain.getCandidates();
+    expect(candidates.map((c) => c.provider.id)).toEqual([
+      "gemini",
+      "openai",
+      "anthropic",
+      "ollama"
+    ]);
+  });
+
+  it("omits anthropic from the default fallback order when ANTHROPIC_API_KEY is absent", () => {
+    const chain = createConfiguredFallbackChain({
+      primaryProvider: "gemini"
+    });
+
+    const candidates = chain.getCandidates();
+    expect(candidates.map((c) => c.provider.id)).toEqual(["gemini", "openai", "ollama"]);
+  });
+
+  it("preserves explicit fallbackProviders ordering including anthropic", () => {
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test-key";
+    const chain = createConfiguredFallbackChain({
+      primaryProvider: "gemini",
+      fallbackProviders: ["anthropic", "openai"]
+    });
+
+    const candidates = chain.getCandidates();
+    expect(candidates.map((c) => c.provider.id)).toEqual(["gemini", "anthropic", "openai"]);
   });
 });

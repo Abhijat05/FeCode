@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { classifyProviderError } from "./classification.js";
+import { classifyProviderError, sanitizeReason } from "./classification.js";
 
 describe("Provider Error Classification", () => {
   describe("Fallback-eligible errors (Quota exhaustion / Rate limit)", () => {
@@ -200,6 +200,16 @@ describe("Provider Error Classification", () => {
       expect(result.isFallbackEligible).toBe(false);
       expect(result.isRetryable).toBe(false);
       expect(result.category).toBe("internal_error");
+    });
+  });
+
+  describe("sanitizeReason", () => {
+    it("redacts an Anthropic sk-ant- key from an error message", () => {
+      const message = "Request rejected: key sk-ant-abcdefghijklmnopqrstuvwxyz0123 is invalid";
+      const sanitized = sanitizeReason(message);
+
+      expect(sanitized).not.toContain("sk-ant-abcdefghijklmnopqrstuvwxyz0123");
+      expect(sanitized).toContain("[REDACTED_API_KEY]");
     });
   });
 });

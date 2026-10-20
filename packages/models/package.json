@@ -23,6 +23,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0",
     "@fecode/shared": "*",
     "@google/genai": "^2.16.0",
     "openai": "^4.77.0"
