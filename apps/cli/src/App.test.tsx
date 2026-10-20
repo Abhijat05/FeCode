@@ -3620,8 +3620,8 @@ describe("CLI App Component", () => {
       // Exactly ONE header and ONE task prompt in frame
       const headerMatches = frame.match(/FeCode\s+fecode/g);
       expect(headerMatches).toHaveLength(1);
-      const taskMatches = frame.match(/Task/g);
-      expect(taskMatches).toHaveLength(1);
+      const promptMatches = frame.match(/›\s+\/p/g);
+      expect(promptMatches).toHaveLength(1);
 
       // Filtered to /plan
       expect(frame).toContain("/plan");
