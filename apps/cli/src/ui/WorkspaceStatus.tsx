@@ -1,5 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
+import { formatCwd } from "./pathUtils.js";
 
 export interface WorkspaceStatusProps {
   cwd?: string;
@@ -92,7 +93,7 @@ export const WorkspaceStatus: React.FC<WorkspaceStatusProps> = ({
 
       <Box marginTop={0}>
         <Text color="gray">Directory: </Text>
-        <Text color="white">{cwd}</Text>
+        <Text color="white">{formatCwd(cwd)}</Text>
       </Box>
 
       {branch !== undefined && (

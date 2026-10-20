@@ -1,5 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
+import { formatCwd } from "./pathUtils.js";
 
 export interface HeaderProps {
   projectName?: string;
@@ -26,18 +27,6 @@ export const Header: React.FC<HeaderProps> = ({
   elapsedMs,
   sessionId
 }) => {
-  const formatCwd = (dir: string) => {
-    try {
-      const home = process.env.HOME || process.env.USERPROFILE || "";
-      if (home && dir.startsWith(home)) {
-        return "~" + dir.slice(home.length);
-      }
-    } catch {
-      // fallback
-    }
-    return dir;
-  };
-
   const getStatusBadge = () => {
     switch (status.toLowerCase()) {
       case "in_progress":

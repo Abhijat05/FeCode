@@ -1,5 +1,6 @@
 import React from "react";
 import { Box, Text, useStdout } from "ink";
+import { formatCwd } from "./pathUtils.js";
 
 export interface WelcomeViewProps {
   version?: string;
@@ -22,19 +23,6 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({
 }) => {
   const { stdout } = useStdout();
   const cols = explicitColumns ?? stdout?.columns ?? 80;
-
-  // Format path with ~ if inside home
-  const formatCwd = (dir: string) => {
-    try {
-      const home = process.env.HOME || process.env.USERPROFILE || "";
-      if (home && dir.startsWith(home)) {
-        return "~" + dir.slice(home.length);
-      }
-    } catch {
-      // fallback
-    }
-    return dir;
-  };
 
   const displayModel =
     providerName && modelName

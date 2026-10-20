@@ -28,7 +28,8 @@ import {
   getTerminalLayout,
   truncateText,
   ThinkingBlock,
-  WelcomeView
+  WelcomeView,
+  formatCwd
 } from "./index.js";
 import type { CommandDef } from "../commands.js";
 
@@ -1084,6 +1085,29 @@ describe("Phase 5AD: Modular UI Components", () => {
     expect(frame).toContain("Branch: feature/cli-ui | State: modified");
     expect(frame).toContain("src/App.tsx");
     expect(frame).toContain("src/ui/Header.tsx");
+  });
+
+  describe("formatCwd Path Collapsing", () => {
+    it("collapses home directory to tilde prefix", () => {
+      const home = process.env.HOME || process.env.USERPROFILE || "";
+      if (home) {
+        expect(formatCwd(home)).toBe("~");
+        expect(formatCwd(`${home}/projects/fecode`.replace(/\//g, "\\"))).toBe("~/projects/fecode");
+      }
+      expect(formatCwd("/other/absolute/path")).toBe("/other/absolute/path");
+    });
+
+    it("renders WorkspaceStatus with collapsed home directory path", () => {
+      const home = process.env.HOME || process.env.USERPROFILE || "";
+      const testDir = home ? `${home}/test-app` : "/test/app";
+      const { lastFrame } = render(<WorkspaceStatus cwd={testDir} branch="main" />);
+      const frame = lastFrame();
+      if (home) {
+        expect(frame).toContain("~/test-app");
+      } else {
+        expect(frame).toContain("/test/app");
+      }
+    });
   });
 
   it("renders HelpView with complete command and shortcut reference", () => {
