@@ -734,6 +734,8 @@ describe("Phase 5AD: Modular UI Components", () => {
     expect(frame).toContain("edit_file");
     expect(frame).toContain("npm test");
     expect(frame).toContain("Generating auth handlers...");
+    expect(frame).toContain("⚙");
+    expect(frame).toContain("✓");
   });
 
   it("renders ExecutionTimeline with bounded event list", () => {

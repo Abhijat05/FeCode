@@ -102,63 +102,43 @@ export const ExecutionView: React.FC<ExecutionViewProps> = ({
         />
       )}
 
-      {/* Active Tool Activity */}
+      {/* Active Tool Activity — compact borderless activity stream */}
       {activeTool && (
-        <Box
-          borderStyle="single"
-          borderColor="magenta"
-          paddingX={1}
-          marginY={0}
-          flexDirection="column"
-        >
-          <Box>
-            <Text bold color="magenta">Tool: </Text>
-            <Text bold color="white">{activeTool.toolName}</Text>
-          </Box>
+        <Box marginY={0} flexDirection="row">
+          <Text bold color="magenta">⚙ </Text>
+          <Text bold color="magenta">Tool: </Text>
+          <Text bold color="white">{activeTool.toolName}</Text>
           {activeTool.target && (
-            <Box>
+            <>
+              <Text color="gray"> · </Text>
               <Text color="gray">Target: </Text>
               <Text color="cyan">{activeTool.target}</Text>
-            </Box>
+            </>
           )}
         </Box>
       )}
 
-      {/* Active Verification Activity */}
+      {/* Active Verification Activity — compact borderless activity stream */}
       {activeVerification && (
-        <Box
-          borderStyle="single"
-          borderColor="cyan"
-          paddingX={1}
-          marginY={0}
-          flexDirection="column"
-        >
-          <Box>
-            <Text bold color="cyan">Verification: </Text>
-            <Text bold color="white">{activeVerification.command}</Text>
-            {activeVerification.attempt !== undefined && (
-              <Text color="gray"> (Attempt {activeVerification.attempt})</Text>
-            )}
-          </Box>
+        <Box marginY={0} flexDirection="row">
+          <Text bold color="cyan">✓ </Text>
+          <Text bold color="cyan">Verification: </Text>
+          <Text bold color="white">{activeVerification.command}</Text>
+          {activeVerification.attempt !== undefined && (
+            <Text color="gray"> (Attempt {activeVerification.attempt})</Text>
+          )}
         </Box>
       )}
 
-      {/* Active Recovery Activity */}
+      {/* Active Recovery Activity — compact borderless activity stream */}
       {activeRecovery && (
-        <Box
-          borderStyle="single"
-          borderColor="yellow"
-          paddingX={1}
-          marginY={0}
-          flexDirection="column"
-        >
-          <Box>
-            <Text bold color="yellow">Recovery: </Text>
-            <Text bold color="white">{activeRecovery.strategy}</Text>
-            {activeRecovery.recoveryId && (
-              <Text color="gray"> ({activeRecovery.recoveryId})</Text>
-            )}
-          </Box>
+        <Box marginY={0} flexDirection="row">
+          <Text bold color="yellow">⟳ </Text>
+          <Text bold color="yellow">Recovery: </Text>
+          <Text bold color="white">{activeRecovery.strategy}</Text>
+          {activeRecovery.recoveryId && (
+            <Text color="gray"> ({activeRecovery.recoveryId})</Text>
+          )}
         </Box>
       )}
 
