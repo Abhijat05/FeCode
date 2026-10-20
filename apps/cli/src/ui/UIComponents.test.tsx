@@ -1578,9 +1578,9 @@ describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
       expect(frame).toContain("anthropic:claude-3.5-sonnet");
       expect(frame).toContain("my-test-project");
       expect(frame).toContain("feature/welcome");
-      expect(frame).toContain("/help");
-      expect(frame).toContain("/plan");
-      expect(frame).toContain("/git");
+      expect(frame).toContain("• /help");
+      expect(frame).toContain("• /plan");
+      expect(frame).toContain("• /git");
     });
 
     it("renders micro-banner fallback on narrow viewports", () => {

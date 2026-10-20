@@ -122,30 +122,21 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({
         <Text color="gray" bold>
           Tips:
         </Text>
-        <Box marginLeft={1}>
-          <Text color="cyan" bold>
-            /help
-          </Text>
-          <Text color="gray">        List commands & shortcuts</Text>
-        </Box>
-        <Box marginLeft={1}>
-          <Text color="cyan" bold>
-            /plan
-          </Text>
-          <Text color="gray">        Generate execution plan before touching code</Text>
-        </Box>
-        <Box marginLeft={1}>
-          <Text color="cyan" bold>
-            /git
-          </Text>
-          <Text color="gray">         Inspect workspace status & modified files</Text>
-        </Box>
-        <Box marginLeft={1}>
-          <Text color="yellow" bold>
-            ?
-          </Text>
-          <Text color="gray">            Quick shortcut palette</Text>
-        </Box>
+        {[
+          { cmd: "/help", desc: "List commands & shortcuts" },
+          { cmd: "/plan", desc: "Generate execution plan before touching code" },
+          { cmd: "/git", desc: "Inspect workspace status & modified files" },
+          { cmd: "?", desc: "Quick shortcut palette" }
+        ].map((tip) => (
+          <Box key={tip.cmd} marginLeft={1}>
+            <Box width={10} flexShrink={0}>
+              <Text color="cyan" bold>
+                • {tip.cmd}
+              </Text>
+            </Box>
+            <Text color="gray">{tip.desc}</Text>
+          </Box>
+        ))}
       </Box>
     </Box>
   );

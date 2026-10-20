@@ -3658,7 +3658,6 @@ export const App: React.FC<AppProps> = ({
                 ? "Type next task (will be queued)..."
                 : "Describe task or type /help..."
             }
-            label={turns.length === 0 ? "Task" : undefined}
             pendingQuery={pendingQuery}
             suggestions={commandSuggestions}
             selectedSuggestion={selectedSuggestion}
