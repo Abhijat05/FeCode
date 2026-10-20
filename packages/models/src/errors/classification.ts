@@ -20,6 +20,7 @@ export interface ProviderErrorClassification {
 
 export function sanitizeReason(str: string): string {
   return str
+    .replace(/(?:sk-ant-[a-zA-Z0-9_-]{20,})/g, "[REDACTED_API_KEY]")
     .replace(/(?:sk-[a-zA-Z0-9_-]{20,})/g, "[REDACTED_API_KEY]")
     .replace(/(?:nvapi-[a-zA-Z0-9_-]{10,})/g, "[REDACTED_API_KEY]")
     .replace(/(?:AIza[0-9A-Za-z-_]{30,})/g, "[REDACTED_API_KEY]")

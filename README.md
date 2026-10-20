@@ -191,6 +191,11 @@ export FE_PROVIDER="openai-compatible"
 export FE_MODEL="deepseek-ai/deepseek-v4.1-flash"
 export OPENAI_API_KEY="your-nvidia-api-key"
 export OPENAI_BASE_URL="https://integrate.api.nvidia.com/v1"
+
+# Option 5: Anthropic Claude
+export FE_PROVIDER="anthropic"
+export FE_MODEL="claude-sonnet-5-5"
+export ANTHROPIC_API_KEY="your-anthropic-api-key"
 ```
 
 ### 2. Launch FeCode
@@ -232,10 +237,11 @@ CLI Flags  ──▶  Environment Variables  ──▶  Workspace .env  ──�
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| `FE_PROVIDER` | LLM provider backend (`gemini`, `openai`, `ollama`, `openai-compatible`) | `gemini` |
+| `FE_PROVIDER` | LLM provider backend (`gemini`, `openai`, `anthropic`, `ollama`, `openai-compatible`) | `gemini` |
 | `FE_MODEL` | Model name override | Provider-specific |
 | `GEMINI_API_KEY` | API key for Google Gemini provider | None (Required for Gemini) |
 | `OPENAI_API_KEY` | API key for OpenAI or OpenAI-compatible provider | None (Required for OpenAI / Compatible) |
+| `ANTHROPIC_API_KEY` | API key for Anthropic Claude provider | None (Required for Anthropic) |
 | `OPENAI_BASE_URL` | Base API endpoint for OpenAI or OpenAI-compatible services | Standard OpenAI API (`https://api.openai.com/v1`) |
 | `OLLAMA_BASE_URL` | Base API endpoint for local Ollama daemon | `http://localhost:11434/v1` |
 
@@ -251,6 +257,7 @@ FeCode abstracts model providers behind a unified streaming interface in `@fecod
 | :--- | :--- | :---: | :---: | :---: |
 | **Google Gemini** | `gemini-2.5-flash`, `gemini-1.5-pro` | Yes | Yes | Cloud |
 | **OpenAI** | `gpt-4o`, `gpt-4o-mini` | Yes | Yes | Cloud |
+| **Anthropic Claude** | `claude-sonnet-5-5`, `claude-opus-5-5` | Yes | Yes | Cloud |
 | **Generic OpenAI-Compatible** | `deepseek-ai/deepseek-v4.1-flash`, NVIDIA NIM, vLLM, etc. | Yes | Yes | Cloud / Self-Hosted |
 | **Ollama** | `qwen2.5-coder`, `deepseek-coder` | Yes | Yes | **Local (100% Offline)** |
 

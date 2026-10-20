@@ -15,6 +15,7 @@ export interface FeCodeConfig {
   openaiApiKey?: string;
   openaiCompatibleApiKey?: string;
   geminiApiKey?: string;
+  anthropicApiKey?: string;
   ollamaBaseUrl?: string;
   openaiBaseUrl?: string;
   fallback?: ProviderFallbackConfig;
@@ -62,7 +63,9 @@ export function loadConfig(options: LoadConfigOptions = {}): FeCodeConfig {
         ? "qwen2.5-coder"
         : provider === "openai-compatible"
           ? ""
-          : "gpt-4o";
+          : provider === "anthropic"
+            ? "claude-sonnet-5-5"
+            : "gpt-4o";
 
   const model = process.env.FE_MODEL || defaultModel;
   const openaiApiKey = process.env.OPENAI_API_KEY || process.env.FE_OPENAI_API_KEY;
@@ -71,6 +74,7 @@ export function loadConfig(options: LoadConfigOptions = {}): FeCodeConfig {
     process.env.FE_OPENAI_COMPATIBLE_API_KEY ||
     openaiApiKey;
   const geminiApiKey = process.env.GEMINI_API_KEY || process.env.FE_GEMINI_API_KEY;
+  const anthropicApiKey = process.env.ANTHROPIC_API_KEY || process.env.FE_ANTHROPIC_API_KEY;
   const ollamaBaseUrl =
     process.env.OLLAMA_BASE_URL || "http://localhost:11434/v1";
   const openaiBaseUrl =
@@ -101,6 +105,7 @@ export function loadConfig(options: LoadConfigOptions = {}): FeCodeConfig {
     openaiApiKey,
     openaiCompatibleApiKey,
     geminiApiKey,
+    anthropicApiKey,
     ollamaBaseUrl,
     openaiBaseUrl,
     fallback

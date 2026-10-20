@@ -48,10 +48,11 @@ Options:
   -r, --resume <id>   Resume a previous session or historical run by ID
 
 Environment Variables:
-  FE_PROVIDER         LLM provider ('gemini', 'openai', 'ollama', 'openai-compatible') [default: gemini]
-  FE_MODEL            Model name [default: gemini-2.5-flash / gpt-4o / qwen2.5-coder]
+  FE_PROVIDER         LLM provider ('gemini', 'openai', 'anthropic', 'ollama', 'openai-compatible') [default: gemini]
+  FE_MODEL            Model name [default: gemini-2.5-flash / gpt-4o / claude-sonnet-5-5 / qwen2.5-coder]
   GEMINI_API_KEY      API key for Google Gemini provider
   OPENAI_API_KEY      API key for OpenAI or OpenAI-compatible provider
+  ANTHROPIC_API_KEY   API key for Anthropic Claude provider
   OPENAI_BASE_URL     Base URL for OpenAI or OpenAI-compatible provider
   OLLAMA_BASE_URL     Base URL for Ollama provider [default: http://localhost:11434/v1]
 
@@ -150,11 +151,13 @@ Interactive Commands (inside TUI):
     initialSessionData?.model ||
     (providerName === "openai"
       ? "gpt-4o"
-      : providerName === "ollama"
-        ? "qwen2.5-coder"
-        : providerName === "openai-compatible"
-          ? (process.env.FE_MODEL || "")
-          : "gemini-2.5-flash");
+      : providerName === "anthropic"
+        ? "claude-sonnet-5-5"
+        : providerName === "ollama"
+          ? "qwen2.5-coder"
+          : providerName === "openai-compatible"
+            ? (process.env.FE_MODEL || "")
+            : "gemini-2.5-flash");
 
   const approvalResolver = new InteractiveApprovalResolver();
 
@@ -166,7 +169,9 @@ Interactive Commands (inside TUI):
           ? config.openaiApiKey
           : providerName === "openai-compatible"
             ? config.openaiCompatibleApiKey
-            : undefined;
+            : providerName === "anthropic"
+              ? config.anthropicApiKey
+              : undefined;
 
     const baseUrl =
       providerName === "ollama"
@@ -183,6 +188,7 @@ Interactive Commands (inside TUI):
           geminiApiKey: config.geminiApiKey,
           openaiApiKey: config.openaiApiKey,
           openaiCompatibleApiKey: config.openaiCompatibleApiKey,
+          anthropicApiKey: config.anthropicApiKey,
           ollamaBaseUrl: config.ollamaBaseUrl,
           openaiBaseUrl: config.openaiBaseUrl,
           maxRetriesPerProvider: config.fallback.maxRetriesPerProvider,
