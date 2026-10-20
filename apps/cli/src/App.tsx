@@ -2647,6 +2647,14 @@ export const App: React.FC<AppProps> = ({
       initialResponse = `${riskHeader}${cpReq}\n`;
     }
 
+    if (turns.length === 0 && process.stdout?.isTTY && !process.env.VITEST && !isTestEnv) {
+      try {
+        process.stdout.write("\x1b[2J\x1b[H");
+      } catch {
+        // ignore
+      }
+    }
+
     const turnId = `turn-${Date.now()}`;
     const turnStartMs = Date.now();
     setExecutionStartTime(turnStartMs);
