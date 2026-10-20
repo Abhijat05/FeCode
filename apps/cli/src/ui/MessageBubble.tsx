@@ -1,19 +1,51 @@
 import React from "react";
-import { Box, Text } from "ink";
+import { Box, Text, useStdout } from "ink";
 
 export interface MessageBubbleProps {
   role: "user" | "agent";
   content: string;
   isStreaming?: boolean;
   error?: string;
+  columns?: number;
+}
+
+export interface CodeHeader {
+  language: string;
+  filename?: string;
+}
+
+export function parseCodeHeader(rawHeader: string): CodeHeader {
+  const trimmed = rawHeader.trim();
+  if (!trimmed) return { language: "" };
+
+  const fileKeyMatch = trimmed.match(/(?:filename|file)=([^\s]+)/i);
+  if (fileKeyMatch) {
+    const filename = fileKeyMatch[1];
+    const language = trimmed.replace(/(?:filename|file)=[^\s]+/i, "").trim();
+    return { language, filename };
+  }
+
+  const colonIdx = trimmed.indexOf(":");
+  if (colonIdx > 0 && !trimmed.slice(0, colonIdx).includes(" ")) {
+    const language = trimmed.slice(0, colonIdx).trim();
+    const filename = trimmed.slice(colonIdx + 1).trim();
+    return { language, filename: filename || undefined };
+  }
+
+  const parts = trimmed.split(/\s+/);
+  if (parts.length === 2 && (parts[1].includes(".") || parts[1].includes("/") || parts[1].includes("\\"))) {
+    return { language: parts[0], filename: parts[1] };
+  }
+
+  return { language: trimmed };
 }
 
 type Block =
-  | { type: "code"; language: string; code: string }
+  | { type: "code"; language: string; filename?: string; code: string }
   | { type: "line"; text: string };
 
 function parseBlocks(content: string): Block[] {
-  const lines = content.split("\n");
+  const lines = content.split(/\r?\n/);
   const blocks: Block[] = [];
   let inCodeBlock = false;
   let codeLang = "";
@@ -30,9 +62,11 @@ function parseBlocks(content: string): Block[] {
         codeLines = [];
       } else {
         inCodeBlock = false;
+        const header = parseCodeHeader(codeLang);
         blocks.push({
           type: "code",
-          language: codeLang,
+          language: header.language,
+          filename: header.filename,
           code: codeLines.join("\n")
         });
         codeLines = [];
@@ -48,9 +82,11 @@ function parseBlocks(content: string): Block[] {
   }
 
   if (inCodeBlock && codeLines.length > 0) {
+    const header = parseCodeHeader(codeLang);
     blocks.push({
       type: "code",
-      language: codeLang,
+      language: header.language,
+      filename: header.filename,
       code: codeLines.join("\n")
     });
   }
@@ -132,7 +168,7 @@ export function renderInlineMarkdown(text: string): React.ReactNode {
   return parts.length === 1 ? parts[0] : parts;
 }
 
-export function renderMarkdownLine(line: string, index: number): React.ReactNode {
+export function renderMarkdownLine(line: string, index: number, columns: number = 80): React.ReactNode {
   const trimmed = line.trim();
 
   // Empty line
@@ -190,10 +226,11 @@ export function renderMarkdownLine(line: string, index: number): React.ReactNode
 
   // Horizontal divider: --- or *** or ___
   if (/^[-*_]{3,}$/.test(trimmed)) {
+    const hrLen = Math.max(20, Math.min(columns - 6, 76));
     return (
       <Box key={`l-${index}`} marginY={0}>
         <Text color="cyan" dimColor>│ </Text>
-        <Text color="gray" dimColor>{"─".repeat(40)}</Text>
+        <Text color="gray" dimColor>{"─".repeat(hrLen)}</Text>
       </Box>
     );
   }
@@ -265,8 +302,11 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
   role,
   content,
   isStreaming = false,
-  error
+  error,
+  columns: explicitColumns
 }) => {
+  const { stdout } = useStdout();
+  const effectiveColumns = explicitColumns ?? stdout?.columns ?? 80;
   if (role === "user") {
     return (
       <Box flexDirection="column" marginY={0}>
@@ -309,6 +349,8 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
         <Box flexDirection="column">
           {blocks.map((block, i) => {
             if (block.type === "code") {
+              const lines = block.code.split(/\r?\n/);
+              const padWidth = Math.max(2, String(lines.length).length);
               return (
                 <Box key={`block-${i}`} flexDirection="column" marginY={0}>
                   <Box>
@@ -319,17 +361,29 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
                       paddingX={1}
                       flexDirection="column"
                     >
-                      {block.language ? (
+                      {block.language || block.filename ? (
                         <Box marginBottom={0}>
-                          <Text color="cyan" dimColor bold>
-                            [{block.language}]
-                          </Text>
+                          {block.language ? (
+                            <Text color="cyan" dimColor bold>
+                              [{block.language}]
+                            </Text>
+                          ) : null}
+                          {block.filename ? (
+                            <Text color="whiteBright" bold>
+                              {block.language ? " " : ""}{block.filename}
+                            </Text>
+                          ) : null}
                         </Box>
                       ) : null}
-                      {block.code.split("\n").map((cLine, cIdx) => (
-                        <Text key={`c-${cIdx}`} color="whiteBright">
-                          {cLine || " "}
-                        </Text>
+                      {lines.map((cLine, cIdx) => (
+                        <Box key={`c-${cIdx}`}>
+                          <Text color="gray" dimColor>
+                            {String(cIdx + 1).padStart(padWidth, "0")} │{" "}
+                          </Text>
+                          <Text color="whiteBright">
+                            {cLine || " "}
+                          </Text>
+                        </Box>
                       ))}
                     </Box>
                   </Box>
@@ -337,7 +391,7 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
               );
             }
 
-            return renderMarkdownLine(block.text, i);
+            return renderMarkdownLine(block.text, i, effectiveColumns);
           })}
         </Box>
       ) : isStreaming ? (

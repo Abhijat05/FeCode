@@ -344,6 +344,32 @@ describe("MessageBubble", () => {
     expect(frame).toContain("• Second item");
     expect(frame).toContain("1. Numbered item");
   });
+
+  it("renders code blocks with line numbers and filename header when specified", () => {
+    const markdownWithFile = "```typescript:src/index.ts\nconst a = 1;\nconst b = 2;\n```";
+    const { lastFrame } = render(
+      <MessageBubble role="agent" content={markdownWithFile} />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("[typescript]");
+    expect(frame).toContain("src/index.ts");
+    expect(frame).toContain("01 │ const a = 1;");
+    expect(frame).toContain("02 │ const b = 2;");
+  });
+
+  it("renders horizontal divider responsive to terminal columns", () => {
+    const { lastFrame: lastFrameNarrow } = render(
+      <MessageBubble role="agent" content={"Before\n---\nAfter"} columns={40} />
+    );
+    const frameNarrow = lastFrameNarrow() ?? "";
+    expect(frameNarrow).toContain("─".repeat(34));
+
+    const { lastFrame: lastFrameWide } = render(
+      <MessageBubble role="agent" content={"Before\n---\nAfter"} columns={100} />
+    );
+    const frameWide = lastFrameWide() ?? "";
+    expect(frameWide).toContain("─".repeat(76));
+  });
 });
 
 describe("spinnerUtils", () => {
