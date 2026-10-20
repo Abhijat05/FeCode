@@ -31,7 +31,7 @@ const TurnViewComponent: React.FC<TurnViewProps> = ({
   const sepLength = Math.max(20, Math.min(cols - 2, 80));
   const separator = "─".repeat(sepLength);
 
-  const isStreaming = status === "streaming" || status === "thinking";
+  const isStreaming = status === "streaming";
   const hasError = status === "error";
 
   return (
@@ -49,12 +49,14 @@ const TurnViewComponent: React.FC<TurnViewProps> = ({
       )}
 
       {/* Agent response */}
-      <MessageBubble
-        role="agent"
-        content={response}
-        isStreaming={isStreaming && !response && !hasError}
-        error={hasError ? (error || "An error occurred.") : undefined}
-      />
+      {(status !== "thinking" || response || hasError) && (
+        <MessageBubble
+          role="agent"
+          content={response}
+          isStreaming={isStreaming && !response && !hasError}
+          error={hasError ? (error || "An error occurred.") : undefined}
+        />
+      )}
 
       {/* Cancelled badge */}
       {status === "cancelled" && (

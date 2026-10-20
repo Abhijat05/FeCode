@@ -185,6 +185,20 @@ describe("TurnView", () => {
     expect(frame).toContain("…");
   });
 
+  it("does NOT render empty agent bubble while status is thinking to avoid duplicate placeholders", () => {
+    const { lastFrame } = render(
+      <TurnView
+        prompt="Explain quantum computing"
+        response=""
+        status="thinking"
+      />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("Explain quantum computing");
+    expect(frame).not.toContain("…");
+    expect(frame).not.toContain("◆ fecode");
+  });
+
   it("renders error box for error status", () => {
     const { lastFrame } = render(
       <TurnView
