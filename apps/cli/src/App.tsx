@@ -3380,6 +3380,7 @@ export const App: React.FC<AppProps> = ({
               <ApprovalPrompt
                 toolName={pendingApproval.toolName}
                 reason={pendingApproval.reason}
+                arguments={pendingApproval.arguments}
                 changeReview={
                   pendingApproval.changeReview as
                     | import("./ui/ApprovalPrompt.js").ApprovalPromptProps["changeReview"]

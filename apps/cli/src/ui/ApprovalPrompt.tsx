@@ -24,6 +24,10 @@ export interface ApprovalPromptProps {
   stepOrder?: number;
   totalSteps?: number;
   toolName?: string;
+  command?: string;
+  target?: string;
+  arguments?: unknown;
+  toolArguments?: unknown;
   reason?: string;
   riskLevel?: string;
   affectedTargets?: string[];
@@ -48,6 +52,10 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
   stepOrder,
   totalSteps,
   toolName,
+  command,
+  target,
+  arguments: rawArguments,
+  toolArguments,
   reason,
   riskLevel = "elevated",
   affectedTargets = [],
@@ -133,14 +141,53 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
     { isActive: true }
   );
 
+  const parsedArgs = React.useMemo(() => {
+    const raw = toolArguments ?? rawArguments;
+    if (!raw) return undefined;
+    if (typeof raw === "object") return raw as Record<string, unknown>;
+    if (typeof raw === "string") {
+      try {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed === "object" && parsed !== null) {
+          return parsed as Record<string, unknown>;
+        }
+      } catch {
+        return { raw };
+      }
+    }
+    return undefined;
+  }, [toolArguments, rawArguments]);
+
+  const effectiveCommand =
+    command ||
+    (parsedArgs && typeof parsedArgs.command === "string"
+      ? parsedArgs.command
+      : undefined);
+
+  const effectiveTarget =
+    target ||
+    (parsedArgs && typeof parsedArgs.path === "string"
+      ? parsedArgs.path
+      : parsedArgs && typeof parsedArgs.target === "string"
+        ? parsedArgs.target
+        : undefined);
+
   const isFileEdit =
     toolName === "edit_file" ||
     toolName === "write_file" ||
     (changeReview?.files && changeReview.files.length > 0);
 
+  const isCommand =
+    toolName === "execute_command" ||
+    toolName === "bash" ||
+    toolName === "sh" ||
+    toolName === "shell" ||
+    Boolean(effectiveCommand);
+
   const getHeaderTitle = () => {
     if (title) return title;
     if (isFileEdit) return "⚠ FeCode wants to modify a file";
+    if (isCommand) return "⚠ FeCode wants to run a command";
     switch (approvalType) {
       case "plan":
         return "⚠ Plan approval required";
@@ -216,6 +263,37 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
           <Text color="gray">Tool: </Text>
           <Text bold color={getToolBadgeInfo(toolName).color}>
             {toolName}
+          </Text>
+        </Box>
+      )}
+
+      {effectiveCommand && (
+        effectiveCommand.includes("\n") ? (
+          <Box marginTop={0} flexDirection="column">
+            <Text color="gray">Command:</Text>
+            <Box marginLeft={2} flexDirection="column">
+              {effectiveCommand.split(/\r?\n/).map((line, idx) => (
+                <Text key={`cmd-line-${idx}`} bold color="yellow">
+                  {line}
+                </Text>
+              ))}
+            </Box>
+          </Box>
+        ) : (
+          <Box marginTop={0}>
+            <Text color="gray">Command: </Text>
+            <Text bold color="yellow">
+              {effectiveCommand}
+            </Text>
+          </Box>
+        )
+      )}
+
+      {effectiveTarget && !changeReview?.files?.length && (
+        <Box marginTop={0}>
+          <Text color="gray">Target: </Text>
+          <Text bold color="cyan">
+            {effectiveTarget}
           </Text>
         </Box>
       )}

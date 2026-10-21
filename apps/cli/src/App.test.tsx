@@ -258,6 +258,54 @@ describe("CLI App Component", () => {
     expect(finalFrame).toContain("✓ tool");
   });
 
+  it("renders command to be executed in approval prompt when execute_command requires approval", async () => {
+    const mockAgent = new MockAgent();
+    const resolver = new InteractiveApprovalResolver();
+
+    mockAgent.runFn = async function* () {
+      yield {
+        type: "approval_required",
+        request: {
+          id: "req-cmd-1",
+          toolName: "execute_command",
+          category: "execute",
+          arguments: { command: "git status" },
+          reason: "Tool 'execute_command' requires approval for execute permission."
+        }
+      };
+
+      const decision = await resolver.resolve({
+        id: "req-cmd-1",
+        toolName: "execute_command",
+        category: "execute",
+        arguments: { command: "git status" }
+      });
+
+      if (decision.approved) {
+        yield {
+          type: "tool_result",
+          result: { success: true, output: { stdout: "clean" } },
+          callId: "call-cmd-1"
+        };
+      }
+      yield { type: "done" };
+    };
+
+    const { lastFrame, stdin } = render(
+      <App agent={mockAgent} approvalResolver={resolver} cwd="/test" />
+    );
+    await delay(50);
+
+    await typeAndSubmit(stdin, "check status");
+    await delay(100);
+
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("⚠ FeCode wants to run a command");
+    expect(frame).toContain("Tool: execute_command");
+    expect(frame).toContain("Command: git status");
+    expect(frame).toContain("Reason: Tool 'execute_command' requires approval for execute permission.");
+  });
+
   it("denies tool execution by default when user presses Enter without navigating", async () => {
     const mockAgent = new MockAgent();
     const resolver = new InteractiveApprovalResolver();

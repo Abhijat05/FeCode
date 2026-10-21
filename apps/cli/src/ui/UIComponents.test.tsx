@@ -881,6 +881,23 @@ describe("Phase 5AD: Modular UI Components", () => {
     expect(frame).toContain("╭");
   });
 
+  it("renders ApprovalPrompt displaying the specific command and header for execute_command", () => {
+    const { lastFrame } = render(
+      <ApprovalPrompt
+        toolName="execute_command"
+        arguments={{ command: "git status" }}
+        reason="Tool 'execute_command' requires approval for execute permission."
+        onSubmit={() => {}}
+      />
+    );
+    const frame = lastFrame();
+    expect(frame).toContain("⚠ FeCode wants to run a command");
+    expect(frame).toContain("Tool: execute_command");
+    expect(frame).toContain("Command: git status");
+    expect(frame).toContain("Reason: Tool 'execute_command' requires approval for execute permission.");
+    expect(frame).toContain("Allow? [y/N]:");
+  });
+
   it("handles interactive arrow-key navigation and submission in ApprovalPrompt", async () => {
     let submittedValue = "";
     const { lastFrame, stdin, unmount } = render(
