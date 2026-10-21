@@ -1,5 +1,6 @@
 import React from "react";
 import { Box, Text, useStdout } from "ink";
+import { symbols } from "./symbols.js";
 
 export interface MessageBubbleProps {
   role: "user" | "agent";
@@ -365,7 +366,7 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
                         <Box marginBottom={0}>
                           {block.language ? (
                             <Text color="cyan" dimColor bold>
-                              [{block.language}]
+                              {symbols.rule} {block.language} {symbols.rule}
                             </Text>
                           ) : null}
                           {block.filename ? (

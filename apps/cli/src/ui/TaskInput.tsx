@@ -1,5 +1,6 @@
 import React from "react";
 import { Box, Text, useStdout } from "ink";
+import { symbols } from "./symbols.js";
 import { EnhancedTextInput } from "./EnhancedTextInput.js";
 import { CommandPalette } from "./CommandPalette.js";
 import type { CommandDef } from "../commands.js";
@@ -63,12 +64,12 @@ export const TaskInput: React.FC<TaskInputProps> = ({
 
       <Box flexDirection="row">
         <Box flexShrink={0}>
-          <Text color="cyan" bold>› </Text>
+          <Text color="cyan" bold>{symbols.prompt} </Text>
         </Box>
         <Box flexGrow={1} flexShrink={1}>
           {isDisabled ? (
             <Text color="gray" wrap="wrap">
-              {pendingQuery ? `[queued] ${pendingQuery}` : (value || placeholder)}
+              {pendingQuery ? "Waiting for current task to complete..." : (value || placeholder)}
             </Text>
           ) : (
             <EnhancedTextInput

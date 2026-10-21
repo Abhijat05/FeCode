@@ -31,7 +31,6 @@ export interface PlanViewProps {
 }
 
 export const PlanView: React.FC<PlanViewProps> = ({
-  planId,
   objective,
   summary,
   status = "ready",

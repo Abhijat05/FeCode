@@ -1,5 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
+import { symbols } from "./symbols.js";
+import { getToolBadgeInfo, formatCompactToolInvocation } from "./toolBadgingUtils.js";
 
 export interface CurrentStepViewProps {
   stepOrder?: number;
@@ -55,22 +57,20 @@ export const CurrentStepView: React.FC<CurrentStepViewProps> = ({
   return (
     <Box
       flexDirection="column"
-      borderStyle="single"
-      borderColor="cyan"
-      paddingX={1}
+      paddingLeft={1}
       marginY={0}
     >
       <Box justifyContent="space-between">
         <Box>
           <Text>
-            <Text bold color="cyan">▶ {stepPrefix} </Text>
+            <Text bold color="cyan">{symbols.play} {stepPrefix} </Text>
             <Text bold color="white">{title || toolName || command}</Text>
           </Text>
         </Box>
         <Box>
           <Text color="gray">Risk: </Text>
           <Text bold color={getRiskColor(riskLevel)}>
-            {riskLevel.toUpperCase()}
+            {riskLevel.toLowerCase()}
           </Text>
         </Box>
       </Box>
@@ -85,32 +85,23 @@ export const CurrentStepView: React.FC<CurrentStepViewProps> = ({
       <Box marginTop={0} flexWrap="wrap">
         {toolName && (
           <Box marginRight={2}>
-            <Text color="gray">Tool: </Text>
-            <Text bold color="magenta">
-              {toolName}
-            </Text>
+            <Text color={getToolBadgeInfo(toolName).color}>{symbols.dot} </Text>
+            <Text bold color="white">{formatCompactToolInvocation(toolName, target, command)}</Text>
           </Box>
         )}
-        {target && (
+        {!toolName && command && (
           <Box marginRight={2}>
-            <Text color="gray">Target: </Text>
-            <Text color="cyan">{target}</Text>
-          </Box>
-        )}
-        {command && (
-          <Box marginRight={2}>
-            <Text color="gray">Command: </Text>
-            <Text color="yellow">{command}</Text>
+            <Text color="yellow">{symbols.dot} bash({command})</Text>
           </Box>
         )}
         {checkpointRequired && (
           <Box marginRight={2}>
-            <Text color="yellow">[Checkpoint Required]</Text>
+            <Text color="yellow">{symbols.bullet} checkpoint required</Text>
           </Box>
         )}
         {verificationRequired && (
           <Box marginRight={2}>
-            <Text color="cyan">[Verification Required]</Text>
+            <Text color="cyan">{symbols.bullet} verify required</Text>
           </Box>
         )}
         {durationMs !== undefined && durationMs > 0 && (

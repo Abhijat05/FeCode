@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
+import { getToolBadgeInfo } from "./toolBadgingUtils.js";
 
 export interface ChangeReviewItem {
   path: string;
@@ -213,7 +214,7 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
       {toolName && (
         <Box marginTop={0}>
           <Text color="gray">Tool: </Text>
-          <Text bold color="magenta">
+          <Text bold color={getToolBadgeInfo(toolName).color}>
             {toolName}
           </Text>
         </Box>

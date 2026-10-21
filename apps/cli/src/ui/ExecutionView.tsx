@@ -2,6 +2,7 @@ import React from "react";
 import { Box, Text } from "ink";
 import { symbols } from "./symbols.js";
 import { PlanView, type PlanStepItem } from "./PlanView.js";
+import { getToolBadgeInfo } from "./toolBadgingUtils.js";
 
 export interface ExecutionViewProps {
   runId?: string;
@@ -103,18 +104,13 @@ export const ExecutionView: React.FC<ExecutionViewProps> = ({
         />
       )}
 
-      {/* Active Tool Activity — compact borderless activity stream */}
+      {/* Active Tool Activity — compact single-line activity stream */}
       {activeTool && (
         <Box marginY={0} flexDirection="row">
-          <Text bold color="magenta">⚙ </Text>
-          <Text bold color="magenta">Tool: </Text>
+          <Text color={getToolBadgeInfo(activeTool.toolName).color}>{symbols.dot} </Text>
           <Text bold color="white">{activeTool.toolName}</Text>
           {activeTool.target && (
-            <>
-              <Text color="gray"> · </Text>
-              <Text color="gray">Target: </Text>
-              <Text color="cyan">{activeTool.target}</Text>
-            </>
+            <Text color="cyan">({activeTool.target})</Text>
           )}
         </Box>
       )}
@@ -122,11 +118,11 @@ export const ExecutionView: React.FC<ExecutionViewProps> = ({
       {/* Active Verification Activity — compact borderless activity stream */}
       {activeVerification && (
         <Box marginY={0} flexDirection="row">
-          <Text bold color="cyan">✓ </Text>
-          <Text bold color="cyan">Verification: </Text>
+          <Text bold color="cyan">{symbols.verifying} </Text>
+          <Text bold color="cyan">verifying: </Text>
           <Text bold color="white">{activeVerification.command}</Text>
           {activeVerification.attempt !== undefined && (
-            <Text color="gray"> (Attempt {activeVerification.attempt})</Text>
+            <Text color="gray"> (attempt {activeVerification.attempt})</Text>
           )}
         </Box>
       )}
@@ -135,36 +131,40 @@ export const ExecutionView: React.FC<ExecutionViewProps> = ({
       {activeRecovery && (
         <Box marginY={0} flexDirection="row">
           <Text bold color="yellow">⟳ </Text>
-          <Text bold color="yellow">Recovery: </Text>
+          <Text bold color="yellow">recovery: </Text>
           <Text bold color="white">{activeRecovery.strategy}</Text>
-          {activeRecovery.recoveryId && (
-            <Text color="gray"> ({activeRecovery.recoveryId})</Text>
-          )}
         </Box>
       )}
 
-      {/* Live Streamed Command / Process Output */}
-      {streamedOutput && (
-        <Box
-          borderStyle="round"
-          borderColor="gray"
-          paddingX={1}
-          marginY={1}
-          flexDirection="column"
-        >
-          <Box marginBottom={0}>
-            <Text bold color="gray">[Command Output — Isolated]</Text>
+      {/* Live Streamed Command / Process Output — borderless with left rail & collapsing */}
+      {streamedOutput && (() => {
+        const lines = streamedOutput.split(/\r?\n/);
+        const maxLines = 15;
+        const isCollapsed = lines.length > maxLines;
+        const visibleLines = isCollapsed ? lines.slice(-maxLines) : lines;
+        const hiddenCount = lines.length - maxLines;
+
+        return (
+          <Box
+            marginY={1}
+            flexDirection="column"
+          >
+            <Box marginBottom={0}>
+              <Text color="gray" dimColor>
+                {symbols.rule} Command Output {isCollapsed ? `(${hiddenCount} earlier lines collapsed) ` : ""}{symbols.rule}
+              </Text>
+            </Box>
+            <Box flexDirection="row">
+              <Text color="gray" dimColor>{symbols.rail} </Text>
+              <Text color="white">{visibleLines.join("\n")}</Text>
+            </Box>
           </Box>
-          <Text color="white">{streamedOutput}</Text>
-        </Box>
-      )}
+        );
+      })()}
 
-      {/* Completion Summary */}
+      {/* Completion Summary — borderless inline summary */}
       {completionSummary && (
         <Box
-          borderStyle="single"
-          borderColor={completionSummary.status === "completed" ? "green" : "red"}
-          paddingX={1}
           marginY={1}
           flexDirection="column"
         >
@@ -174,17 +174,19 @@ export const ExecutionView: React.FC<ExecutionViewProps> = ({
               color={completionSummary.status === "completed" ? "green" : "red"}
             >
               {completionSummary.status === "completed"
-                ? "✓ Task completed"
-                : "⚠ Task blocked"}
+                ? `${symbols.tick} Task complete`
+                : `${symbols.warning} Task blocked`}
+              {completionSummary.completedFiles && completionSummary.completedFiles.length > 0 && (
+                <Text color="gray"> {symbols.rule} {completionSummary.completedFiles.length} file{completionSummary.completedFiles.length > 1 ? "s" : ""} changed</Text>
+              )}
             </Text>
           </Box>
           {completionSummary.completedFiles &&
             completionSummary.completedFiles.length > 0 && (
               <Box flexDirection="column" marginTop={0}>
-                <Text color="gray">Changed:</Text>
                 {completionSummary.completedFiles.map((f, i) => (
-                  <Text key={`cf-${i}`} color="white">
-                    {"  "}• {f}
+                  <Text key={`cf-${i}`} color="gray">
+                    {"  "}{symbols.bullet} <Text color="white">{f}</Text>
                   </Text>
                 ))}
               </Box>
@@ -195,7 +197,7 @@ export const ExecutionView: React.FC<ExecutionViewProps> = ({
                 <Text color="gray">Verified:</Text>
                 {completionSummary.verifiedCommands.map((c, i) => (
                   <Text key={`vc-${i}`} color="white">
-                    {"  "}• {c}
+                    {"  "}{symbols.bullet} {c}
                   </Text>
                 ))}
               </Box>
@@ -211,7 +213,7 @@ export const ExecutionView: React.FC<ExecutionViewProps> = ({
                 <Text color="yellow">Remaining:</Text>
                 {completionSummary.remainingRequirements.map((r, i) => (
                   <Text key={`rr-${i}`} color="white">
-                    {"  "}• {r}
+                    {"  "}{symbols.bullet} {r}
                   </Text>
                 ))}
               </Box>
@@ -219,16 +221,13 @@ export const ExecutionView: React.FC<ExecutionViewProps> = ({
         </Box>
       )}
 
-      {/* Error Output */}
+      {/* Error Output — clean borderless */}
       {error && (
         <Box
-          borderStyle="single"
-          borderColor="red"
-          paddingX={1}
           marginY={1}
           flexDirection="column"
         >
-          <Text bold color="red">✗ Error: {error}</Text>
+          <Text bold color="red">{symbols.cross} Error: {error}</Text>
         </Box>
       )}
     </Box>

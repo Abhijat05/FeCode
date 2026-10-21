@@ -35,7 +35,6 @@ export const PlanStep: React.FC<PlanStepProps> = ({
   title,
   status,
   riskLevel,
-  dependencies,
   checkpointRequired,
   verificationRequired,
   durationMs,

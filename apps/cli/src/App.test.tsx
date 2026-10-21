@@ -77,7 +77,7 @@ describe("CLI App Component", () => {
     const output = lastFrame();
     expect(output).toContain("FeCode");
     expect(output).toContain("/test/dir");
-    expect(output).toContain("›");
+    expect(output).toContain("❯");
   });
 
   it("passes user input to agent.run() and renders streamed response", async () => {
@@ -2486,7 +2486,7 @@ describe("CLI App Component", () => {
 
       // Verify task two is queued in UI and not yet executed
       const queueFrame = lastFrame() ?? "";
-      expect(queueFrame).toContain("[queued] task two");
+      expect(queueFrame).toContain("Waiting for current task to complete...");
       expect(queueFrame).toContain("Queued: task two");
       expect(queueFrame).toContain("Ctrl+C to cancel");
       expect(executedTasks).toEqual(["task one"]);
@@ -3606,7 +3606,7 @@ describe("CLI App Component", () => {
       await delay(50);
       let frame = lastFrame() ?? "";
       // Prompt should appear before suggestions dropdown
-      const promptSlashPos = frame.indexOf("› /");
+      const promptSlashPos = frame.indexOf("❯ /");
       const suggestionsTopBorder = frame.indexOf("╭");
       expect(promptSlashPos).toBeGreaterThanOrEqual(0);
       expect(suggestionsTopBorder).toBeGreaterThanOrEqual(0);
@@ -3620,7 +3620,7 @@ describe("CLI App Component", () => {
       // Exactly ONE header and ONE task prompt in frame
       const headerMatches = frame.match(/FeCode\s+fecode/g);
       expect(headerMatches).toHaveLength(1);
-      const promptMatches = frame.match(/›\s+\/p/g);
+      const promptMatches = frame.match(/❯\s+\/p/g);
       expect(promptMatches).toHaveLength(1);
 
       // Filtered to /plan

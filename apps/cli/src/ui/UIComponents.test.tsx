@@ -315,7 +315,7 @@ describe("MessageBubble", () => {
       <MessageBubble role="agent" content={markdownWithCode} />
     );
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("[typescript]");
+    expect(frame).toContain("─ typescript ─");
     expect(frame).toContain("const message = 'hello';");
     expect(frame).not.toContain("```");
     expect(frame).toContain("Here is the code:");
@@ -366,7 +366,7 @@ describe("MessageBubble", () => {
       <MessageBubble role="agent" content={markdownWithFile} />
     );
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("[typescript]");
+    expect(frame).toContain("─ typescript ─");
     expect(frame).toContain("src/index.ts");
     expect(frame).toContain("01 │ const a = 1;");
     expect(frame).toContain("02 │ const b = 2;");
@@ -591,7 +591,7 @@ describe("Phase 5AD: Modular UI Components", () => {
       />
     );
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("[queued] analyze bundle size");
+    expect(frame).toContain("Waiting for current task to complete...");
     expect(frame).toContain("Queued: analyze bundle size");
     expect(frame).toContain("Ctrl+C to cancel");
   });
@@ -606,7 +606,7 @@ describe("Phase 5AD: Modular UI Components", () => {
       />
     );
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("›");
+    expect(frame).toContain("❯");
     expect(frame).toMatch(/─{3,}/);
   });
 
@@ -655,7 +655,7 @@ describe("Phase 5AD: Modular UI Components", () => {
       />
     );
     const frame = lastFrame() ?? "";
-    const promptInputPos = frame.indexOf("› /he");
+    const promptInputPos = frame.indexOf("❯ /he");
     const paletteBorderPos = frame.indexOf("╭");
     expect(promptInputPos).toBeGreaterThanOrEqual(0);
     expect(paletteBorderPos).toBeGreaterThanOrEqual(0);
@@ -720,7 +720,7 @@ describe("Phase 5AD: Modular UI Components", () => {
       />
     );
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("› ");
+    expect(frame).toContain("❯ ");
     expect(frame).toContain("aaaaa");
     unmount();
   });
@@ -806,8 +806,8 @@ describe("Phase 5AD: Modular UI Components", () => {
     expect(frame).toContain("edit_file");
     expect(frame).toContain("npm test");
     expect(frame).toContain("Generating auth handlers...");
-    expect(frame).toContain("⚙");
-    expect(frame).toContain("✓");
+    expect(frame).toContain("●");
+    expect(frame).toContain("◎");
   });
 
   it("renders ExecutionTimeline with bounded event list", () => {
@@ -1295,12 +1295,11 @@ describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
       );
       const frame = lastFrame();
       expect(frame).toContain("Step 3/5: Modify authentication middleware");
-      expect(frame).toContain("Risk: ELEVATED");
+      expect(frame).toContain("Risk: elevated");
       expect(frame).toContain("Goal: Add session verification");
-      expect(frame).toContain("Tool: edit_file");
-      expect(frame).toContain("Target: src/auth/middleware.ts");
-      expect(frame).toContain("[Checkpoint Required]");
-      expect(frame).toContain("[Verification Required]");
+      expect(frame).toContain("edit_file(src/auth/middleware.ts)");
+      expect(frame).toContain("checkpoint required");
+      expect(frame).toContain("verify required");
       expect(frame).toContain("Elapsed: 1.2s");
     });
 
