@@ -3213,48 +3213,65 @@ export const App: React.FC<AppProps> = ({
           );
           setLastTaskStatus("cancelled");
         } else if (event.type === "task_summary") {
-          let summaryHeader = "";
+          let fullSummary = "";
+          const hasFileChanges = Boolean(
+            (event.summary.completedFiles && event.summary.completedFiles.length > 0) ||
+            (event.summary.fileChanges && event.summary.fileChanges.length > 0) ||
+            (event.summary.changeSet && event.summary.changeSet.files.length > 0)
+          );
+
           if (event.summary.status === "completed") {
-            summaryHeader = "✓ Task completed\n\n";
+            if (hasFileChanges) {
+              let text = "✓ Task completed\n\n";
+              if (event.summary.completedFiles && event.summary.completedFiles.length > 0) {
+                text += `Changed:\n${event.summary.completedFiles.map((f) => `  ${f}`).join("\n")}\n\n`;
+              } else if (event.summary.fileChanges && event.summary.fileChanges.length > 0) {
+                text += `Changed:\n${event.summary.fileChanges.map((f) => `  ${f.path}`).join("\n")}\n\n`;
+              } else if (event.summary.changeSet && event.summary.changeSet.files.length > 0) {
+                text += `Changed:\n${event.summary.changeSet.files.map((f) => `  ${f.path}`).join("\n")}\n\n`;
+              }
+
+              if (event.summary.verifiedCommands && event.summary.verifiedCommands.length > 0) {
+                text += `Verified:\n${event.summary.verifiedCommands.map((c) => `  ✓ ${c}`).join("\n")}\n\n`;
+              }
+              fullSummary = text.trimEnd();
+            }
           } else if (event.summary.status === "blocked") {
-            summaryHeader = "⚠ Task blocked\n\n";
+            let text = "⚠ Task blocked\n\n";
+            if (event.summary.blockedReason) {
+              text += `Reason:\n  ${event.summary.blockedReason}\n\n`;
+            }
+            if (event.summary.remainingRequirements && event.summary.remainingRequirements.length > 0) {
+              text += `Remaining:\n${event.summary.remainingRequirements.map((r) => `  ${r}`).join("\n")}\n\n`;
+            }
+            fullSummary = text.trimEnd();
           } else if (event.summary.status === "cancelled") {
-            summaryHeader = "⊘ Task cancelled\n\n";
+            let text = "⊘ Task cancelled\n";
             if (
               event.summary.checkpointId &&
               event.summary.completedFiles &&
               event.summary.completedFiles.length > 0
             ) {
-              summaryHeader += `Pre-task checkpoint: ${event.summary.checkpointId} (Run /restore ${event.summary.checkpointId} to revert partial mutations)\n\n`;
+              text += `\nPre-task checkpoint: ${event.summary.checkpointId} (Run /restore ${event.summary.checkpointId} to revert partial mutations)\n`;
             }
+            fullSummary = text.trimEnd();
           }
 
-          let summaryFormatted = SessionHistoryFormatter.formatTaskDetail(
-            event.summary
-          );
-          if (
-            event.summary.verifiedCommands &&
-            event.summary.verifiedCommands.length > 0
-          ) {
-            summaryFormatted = summaryFormatted.replace(
-              "Verification:",
-              "Verified:"
+          if (fullSummary) {
+            setTurns((prev) =>
+              prev.map((t) =>
+                t.id === turnId
+                  ? {
+                      ...t,
+                      response:
+                        (t.response ? t.response + "\n\n" : "") +
+                        fullSummary +
+                        "\n"
+                    }
+                  : t
+              )
             );
           }
-          const fullSummary = summaryHeader + summaryFormatted;
-          setTurns((prev) =>
-            prev.map((t) =>
-              t.id === turnId
-                ? {
-                    ...t,
-                    response:
-                      (t.response ? t.response + "\n\n" : "") +
-                      fullSummary +
-                      "\n"
-                  }
-                : t
-            )
-          );
           setCompletedSummaries((prev) => [...prev, event.summary]);
           setLastTaskStatus(event.summary.status);
           persistState(event.summary.status, event.summary, nextTaskCount).catch(

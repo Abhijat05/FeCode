@@ -525,6 +525,38 @@ describe("CLI App Component", () => {
     expect(frame).toContain("npm test");
   });
 
+  it("does not append redundant task summary card on read-only completed queries", async () => {
+    const mockAgent = new MockAgent();
+
+    mockAgent.runFn = async function* () {
+      yield { type: "text", content: "Your git working tree has 2 unstaged files." };
+      yield {
+        type: "task_summary",
+        summary: {
+          status: "completed",
+          completedFiles: [],
+          verifiedCommands: ["git status"],
+          completedRequirements: [],
+          remainingRequirements: []
+        }
+      };
+      yield { type: "done" };
+    };
+
+    const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+    await delay(50);
+
+    await typeAndSubmit(stdin, "check my git status and tell me what probblem are there");
+    await delay(200);
+
+    const frame = lastFrame();
+    expect(frame).toContain("Your git working tree has 2 unstaged files.");
+    expect(frame).not.toContain("✓ Task completed");
+    expect(frame).not.toContain("Task 1");
+    expect(frame).not.toContain("Request:");
+    expect(frame).not.toContain("Verified:");
+  });
+
   it("renders blocked task summary with reason and remaining requirements", async () => {
     const mockAgent = new MockAgent();
 
