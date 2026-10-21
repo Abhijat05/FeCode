@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
 import { formatCwd } from "./pathUtils.js";
+import { symbols } from "./symbols.js";
 
 export interface HeaderProps {
   projectName?: string;
@@ -35,27 +36,27 @@ export const Header: React.FC<HeaderProps> = ({
       case "generating":
       case "executing":
       case "running":
-        return <Text bold color="green">● LIVE (EXECUTING)</Text>;
+        return <Text bold color="green">{symbols.dot} running</Text>;
       case "planning":
-        return <Text bold color="cyan">● PLANNING</Text>;
+        return <Text bold color="cyan">{symbols.dot} planning</Text>;
       case "verifying":
-        return <Text bold color="cyan">● VERIFYING</Text>;
+        return <Text bold color="cyan">{symbols.verifying} verifying</Text>;
       case "awaiting_plan_approval":
       case "awaiting_step_approval":
-        return <Text bold color="yellow">⚠ APPROVAL REQUIRED</Text>;
+        return <Text bold color="yellow">{symbols.warning} approval required</Text>;
       case "blocked":
-        return <Text bold color="red">! BLOCKED</Text>;
+        return <Text bold color="red">! blocked</Text>;
       case "recovering":
-        return <Text bold color="yellow">● RECOVERING</Text>;
+        return <Text bold color="yellow">{symbols.dot} recovering</Text>;
       case "completed":
-        return <Text bold color="green">✓ COMPLETED</Text>;
+        return <Text bold color="green">{symbols.tick} completed</Text>;
       case "failed":
-        return <Text bold color="red">✗ FAILED</Text>;
+        return <Text bold color="red">{symbols.cross} failed</Text>;
       case "cancelled":
-        return <Text bold color="gray">⊘ CANCELLED</Text>;
+        return <Text bold color="gray">{symbols.cancelled} cancelled</Text>;
       case "idle":
       default:
-        return <Text color="gray">○ IDLE</Text>;
+        return <Text color="gray">{symbols.circle} idle</Text>;
     }
   };
 

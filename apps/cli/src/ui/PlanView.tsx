@@ -1,5 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
+import { symbols } from "./symbols.js";
 import { PlanStep } from "./PlanStep.js";
 import { ProgressBar } from "./ProgressBar.js";
 
@@ -92,19 +93,19 @@ export const PlanView: React.FC<PlanViewProps> = ({
           <Text bold color="white">
             {objective || summary || "Task Plan"}
           </Text>
-          {planId && <Text color="gray"> ({planId})</Text>}
+
         </Box>
         <Box>
           {riskLevel && (
-            <Text color={getRiskColor(riskLevel)} bold>
-              [{riskLevel.toUpperCase()}]{" "}
+            <Text color={getRiskColor(riskLevel)}>
+              {riskLevel.toLowerCase()} {symbols.rule}{" "}
             </Text>
           )}
           <Text color="gray">
-            [{completed}/{total}] Status:{" "}
+            {completed}/{total} {symbols.rule} Status:{" "}
           </Text>
           <Text bold color="cyan">
-            {status.toUpperCase()}
+            {status.toLowerCase()}
           </Text>
         </Box>
       </Box>

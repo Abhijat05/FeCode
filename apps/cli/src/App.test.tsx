@@ -3569,7 +3569,7 @@ describe("CLI App Component", () => {
 
       frame = lastFrame() ?? "";
       // During execution, elapsed timer should be passed and rendered
-      expect(frame).toMatch(/\d+s\s+● LIVE \(EXECUTING\)/);
+      expect(frame).toMatch(/\d+s\s+● running/);
 
       resolveStep();
       await delay(100);

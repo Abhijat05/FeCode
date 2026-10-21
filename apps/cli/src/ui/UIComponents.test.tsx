@@ -735,7 +735,7 @@ describe("Phase 5AD: Modular UI Components", () => {
         verificationRequired={false}
       />
     );
-    expect(completedFrame()).toContain("[1/3] ✓ Inspect package.json");
+    expect(completedFrame()).toContain("1/3 ─ ✔  Inspect package.json");
 
     const { lastFrame: blockedFrame } = render(
       <PlanStep
@@ -749,10 +749,9 @@ describe("Phase 5AD: Modular UI Components", () => {
         error="Migration failed: table exists"
       />
     );
-    expect(blockedFrame()).toContain("[2/3] ✗ Apply migrations");
-    expect(blockedFrame()).toContain("Deps: step-1");
-    expect(blockedFrame()).toContain("[Checkpoint Required]");
-    expect(blockedFrame()).toContain("[Verify Required]");
+    expect(blockedFrame()).toContain("2/3 ─ ✖  Apply migrations");
+    expect(blockedFrame()).toContain("• checkpoint required");
+    expect(blockedFrame()).toContain("• verify required");
     expect(blockedFrame()).toContain("Error: Migration failed: table exists");
   });
 
@@ -786,8 +785,8 @@ describe("Phase 5AD: Modular UI Components", () => {
       />
     );
     const frame = lastFrame();
-    expect(frame).toContain("Plan: Implement OAuth authentication (plan-auth-1)");
-    expect(frame).toContain("[1/3] Status: IN_PROGRESS");
+    expect(frame).toContain("Plan: Implement OAuth authentication");
+    expect(frame).toContain("1/3 ─ Status: in_progress");
     expect(frame).toContain("Add dependencies");
     expect(frame).toContain("Configure OAuth client");
   });
@@ -870,7 +869,7 @@ describe("Phase 5AD: Modular UI Components", () => {
     );
     const frame = lastFrame();
     expect(frame).toContain("⚠ FeCode wants to modify a file");
-    expect(frame).toContain("Risk: ELEVATED");
+    expect(frame).toContain("Risk: elevated");
     expect(frame).toContain("src/db.ts");
     expect(frame).toContain("Change: +3 -1");
     expect(frame).toContain("+const db = connect();");
@@ -1361,7 +1360,7 @@ describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
       expect(frame).toContain("FeCode");
       expect(frame).toContain("my-app");
       expect(frame).toContain("⎇ feature/auth ● clean");
-      expect(frame).toContain("● LIVE (EXECUTING)");
+      expect(frame).toContain("● running");
       expect(frame).toContain("5s");
       expect(frame).toContain("Run: run-1234567890ab");
     });
@@ -1377,7 +1376,7 @@ describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
       );
       const frame = lastFrame();
       expect(frame).toContain("⎇ main ● modified");
-      expect(frame).toContain("○ IDLE");
+      expect(frame).toContain("○ idle");
     });
 
     it("does not render elapsed timer when status is idle", () => {
@@ -1389,7 +1388,7 @@ describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
         />
       );
       const frame = lastFrame() ?? "";
-      expect(frame).toContain("○ IDLE");
+      expect(frame).toContain("○ idle");
       expect(frame).not.toContain("5s");
     });
 

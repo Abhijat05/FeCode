@@ -1,5 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
+import { symbols } from "./symbols.js";
 import { PlanView, type PlanStepItem } from "./PlanView.js";
 
 export interface ExecutionViewProps {
@@ -59,8 +60,8 @@ export const ExecutionView: React.FC<ExecutionViewProps> = ({
       {runId && (
         <Box marginBottom={0}>
           <Text color="gray">Run: </Text>
-          <Text color="white" bold>{runId}</Text>
-          <Text color="gray"> | Status: </Text>
+          <Text color="white" bold>{runId.slice(0, 16)}</Text>
+          <Text color="gray"> {symbols.rule} Status: </Text>
           <Text
             bold
             color={
@@ -75,7 +76,7 @@ export const ExecutionView: React.FC<ExecutionViewProps> = ({
                       : "cyan"
             }
           >
-            {status.toUpperCase()}
+            {status.toLowerCase()}
           </Text>
         </Box>
       )}

@@ -1,5 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
+import { symbols } from "./symbols.js";
 
 export interface TimelineItemData {
   id: string;
@@ -66,36 +67,36 @@ export const ExecutionTimeline: React.FC<ExecutionTimelineProps> = ({
 
   const getStatusIcon = (type: string, status?: string) => {
     if (type === "tool_call" || type === "tool") {
-      return <Text color="magenta">⚙</Text>;
+      return <Text color="magenta">{symbols.dot}</Text>;
     }
     if (type === "verification") {
-      return <Text color="cyan">◌</Text>;
+      return <Text color="cyan">{symbols.verifying}</Text>;
     }
     if (type === "approval") {
-      return <Text color="yellow">⚠</Text>;
+      return <Text color="yellow">{symbols.warning}</Text>;
     }
     if (type === "run_event") {
-      return <Text color="blue">◉</Text>;
+      return <Text color="blue">{symbols.dot}</Text>;
     }
 
     switch (status?.toLowerCase()) {
       case "completed":
       case "approved":
-        return <Text color="green">✓</Text>;
+        return <Text color="green">{symbols.tick}</Text>;
       case "running":
       case "in_progress":
       case "pending":
-        return <Text color="yellow">▸</Text>;
+        return <Text color="yellow">{symbols.play}</Text>;
       case "failed":
       case "rejected":
-        return <Text color="red">✗</Text>;
+        return <Text color="red">{symbols.cross}</Text>;
       case "skipped":
       case "cancelled":
-        return <Text color="gray">⊘</Text>;
+        return <Text color="gray">{symbols.cancelled}</Text>;
       case "blocked":
-        return <Text color="red">⚠</Text>;
+        return <Text color="red">{symbols.warning}</Text>;
       default:
-        return <Text color="gray">•</Text>;
+        return <Text color="gray">{symbols.bullet}</Text>;
     }
   };
 

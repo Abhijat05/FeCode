@@ -1,5 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
+import { symbols } from "./symbols.js";
 
 export interface PlanStepProps {
   stepIndex: number;
@@ -44,27 +45,27 @@ export const PlanStep: React.FC<PlanStepProps> = ({
     switch (status.toLowerCase()) {
       case "completed":
       case "done":
-        return <Text color="green">✓</Text>;
+        return <Text color="green">{symbols.tick}</Text>;
       case "in_progress":
       case "executing":
-        return <Text color="yellow">●</Text>;
+        return <Text color="yellow">{symbols.play}</Text>;
       case "verifying":
-        return <Text color="cyan">●</Text>;
+        return <Text color="cyan">{symbols.verifying}</Text>;
       case "waiting":
       case "waiting_approval":
-        return <Text color="yellow">⚠</Text>;
+        return <Text color="yellow">{symbols.warning}</Text>;
       case "ready":
-        return <Text color="gray">○</Text>;
+        return <Text color="gray">{symbols.circle}</Text>;
       case "skipped":
-        return <Text color="gray">⊘</Text>;
+        return <Text color="gray">{symbols.cancelled}</Text>;
       case "blocked":
         return <Text color="red">!</Text>;
       case "failed":
-        return <Text color="red">✗</Text>;
+        return <Text color="red">{symbols.cross}</Text>;
       case "pending":
       case "planned":
       default:
-        return <Text color="gray">○</Text>;
+        return <Text color="gray">{symbols.circle}</Text>;
     }
   };
 
@@ -72,27 +73,27 @@ export const PlanStep: React.FC<PlanStepProps> = ({
     switch (status.toLowerCase()) {
       case "completed":
       case "done":
-        return <Text color="green">COMPLETED</Text>;
+        return <Text color="green">completed</Text>;
       case "in_progress":
       case "executing":
-        return <Text color="yellow">EXECUTING</Text>;
+        return <Text color="yellow">running</Text>;
       case "verifying":
-        return <Text color="cyan">VERIFYING</Text>;
+        return <Text color="cyan">verifying</Text>;
       case "waiting":
       case "waiting_approval":
-        return <Text color="yellow">WAITING FOR APPROVAL</Text>;
+        return <Text color="yellow">waiting approval</Text>;
       case "ready":
-        return <Text color="blue">READY</Text>;
+        return <Text color="blue">ready</Text>;
       case "skipped":
-        return <Text color="gray">SKIPPED</Text>;
+        return <Text color="gray">skipped</Text>;
       case "blocked":
-        return <Text color="red">BLOCKED</Text>;
+        return <Text color="red">blocked</Text>;
       case "failed":
-        return <Text color="red">FAILED</Text>;
+        return <Text color="red">failed</Text>;
       case "pending":
       case "planned":
       default:
-        return <Text color="gray">PLANNED</Text>;
+        return <Text color="gray">planned</Text>;
     }
   };
 
@@ -108,7 +109,7 @@ export const PlanStep: React.FC<PlanStepProps> = ({
     <Box flexDirection="column" marginY={0}>
       <Box>
         <Text color="gray">
-          [{stepIndex}/{totalSteps}]{" "}
+          {stepIndex}/{totalSteps} {symbols.rule}{" "}
         </Text>
         {getStatusIcon()}
         <Text> </Text>
@@ -140,13 +141,10 @@ export const PlanStep: React.FC<PlanStepProps> = ({
       {/* Meta tags */}
       <Box marginLeft={4}>
         {checkpointRequired && (
-          <Text color="yellow">[Checkpoint Required] </Text>
+          <Text color="yellow">{symbols.bullet} checkpoint required </Text>
         )}
         {verificationRequired && (
-          <Text color="cyan">[Verify Required] </Text>
-        )}
-        {dependencies && dependencies.length > 0 && (
-          <Text color="gray">[Deps: {dependencies.join(", ")}] </Text>
+          <Text color="cyan">{symbols.bullet} verify required </Text>
         )}
       </Box>
 

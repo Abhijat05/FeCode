@@ -142,15 +142,15 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
     if (isFileEdit) return "⚠ FeCode wants to modify a file";
     switch (approvalType) {
       case "plan":
-        return "⚠ PLAN APPROVAL REQUIRED";
+        return "⚠ Plan approval required";
       case "step_checkpoint":
-        return "⚠ STEP CHECKPOINT APPROVAL REQUIRED";
+        return "⚠ Step checkpoint approval required";
       case "recovery":
-        return "⚠ RECOVERY APPROVAL REQUIRED";
+        return "⚠ Recovery approval required";
       case "continuation":
-        return "⚠ CONTINUATION APPROVAL REQUIRED";
+        return "⚠ Continuation approval required";
       case "replan":
-        return "⚠ REPLAN APPROVAL REQUIRED";
+        return "⚠ Replan approval required";
       case "tool_permission":
       default:
         return "⚠ FeCode wants to use a tool";
@@ -187,7 +187,7 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
         <Box>
           <Text color="gray">Risk: </Text>
           <Text bold color={getRiskColor(riskLevel)}>
-            {riskLevel.toUpperCase()}
+            {riskLevel.toLowerCase()}
           </Text>
         </Box>
       </Box>
@@ -206,7 +206,7 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
       {(checkpointId || riskLevel.toLowerCase() === "elevated" || riskLevel.toLowerCase() === "critical") && (
         <Box marginTop={0}>
           <Text color="gray">Checkpoint: </Text>
-          <Text color="yellow">REQUIRED</Text>
+          <Text color="yellow">required</Text>
         </Box>
       )}
 
