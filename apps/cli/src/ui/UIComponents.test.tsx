@@ -1361,7 +1361,7 @@ describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
   });
 
   describe("Header Enhanced Indicators", () => {
-    it("renders header with git branch, clean status, elapsed time and run ID", () => {
+    it("renders header with git branch, clean status, and elapsed time without raw UUID leaks", () => {
       const { lastFrame } = render(
         <Header
           projectName="my-app"
@@ -1378,7 +1378,7 @@ describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
       expect(frame).toContain("⎇ feature/auth ● clean");
       expect(frame).toContain("● running");
       expect(frame).toContain("5s");
-      expect(frame).toContain("Run: run-1234567890ab");
+      expect(frame).not.toContain("Run: run-1234567890ab");
     });
 
     it("renders dirty git status with modified indicator", () => {
@@ -1432,7 +1432,7 @@ describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
       expect(lastFrameDirty()).toContain("⎇ feature/auth ●");
     });
 
-    it("renders session ID when runId is not present", () => {
+    it("does not leak session UUID into header bar", () => {
       const { lastFrame } = render(
         <Header
           projectName="my-app"
@@ -1441,7 +1441,9 @@ describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
         />
       );
       const frame = lastFrame();
-      expect(frame).toContain("Session: session-98765432");
+      expect(frame).toContain("FeCode");
+      expect(frame).toContain("my-app");
+      expect(frame).not.toContain("Session: session-98765432");
     });
   });
 

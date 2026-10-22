@@ -25,9 +25,9 @@ export const Header: React.FC<HeaderProps> = ({
   status = "idle",
   gitBranch,
   isGitClean = true,
-  runId,
+  runId: _runId,
   elapsedMs,
-  sessionId,
+  sessionId: _sessionId,
   compactGit = false
 }) => {
   const getStatusBadge = () => {
@@ -121,11 +121,6 @@ export const Header: React.FC<HeaderProps> = ({
         {branchDisplay && <Box marginRight={1}>{branchDisplay}</Box>}
         {modelInfo && <Box marginRight={1}><Text color="gray">({modelInfo})</Text></Box>}
         {cwd && <Box marginRight={1}><Text color="gray">{formatCwd(cwd)}</Text></Box>}
-        {runId ? (
-          <Box marginRight={1}><Text color="gray">Run: <Text color="cyan">{runId.slice(0, 16)}</Text></Text></Box>
-        ) : sessionId ? (
-          <Box marginRight={1}><Text color="gray">Session: <Text color="gray">{sessionId.slice(0, 16)}</Text></Text></Box>
-        ) : null}
       </Box>
 
       <Box flexDirection="row" flexShrink={0}>

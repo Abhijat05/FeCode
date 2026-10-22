@@ -3621,7 +3621,7 @@ describe("CLI App Component", () => {
   });
 
   describe("Header Indicators in CLI App", () => {
-    it("displays session ID in Header when idle and elapsed timer while task is executing", async () => {
+    it("displays elapsed timer in Header while task is executing without leaking session UUID", async () => {
       const mockAgent = new MockAgent();
       let resolveStep!: () => void;
       const stepBlocker = new Promise<void>((resolve) => {
@@ -3639,9 +3639,10 @@ describe("CLI App Component", () => {
       );
       await delay(50);
 
-      // When idle, Header should display Session ID
+      // When idle, Header should remain clean without leaking session UUID
       let frame = lastFrame() ?? "";
-      expect(frame).toContain("Session: sess-test-9988");
+      expect(frame).toContain("FeCode");
+      expect(frame).not.toContain("Session: sess-test-9988");
 
       // Submit a task
       await typeAndSubmit(stdin, "run long task");
