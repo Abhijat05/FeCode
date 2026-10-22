@@ -202,30 +202,26 @@ export const StatusBar: React.FC<StatusBarProps> = ({
       if (layout === "very_narrow") {
         return (
           <Box>
-            <Text color="gray">[Esc] Main</Text>
+            <Text color="gray">
+              <Text color="cyan">esc</Text> main
+            </Text>
           </Box>
         );
       }
       if (layout === "narrow") {
         return (
           <Box>
-            <Text color="gray">[Esc] Main </Text>
-            <Text color="cyan">[?]</Text>
-            <Text color="gray"> Help</Text>
+            <Text color="gray">
+              <Text color="cyan">esc</Text> main · <Text color="cyan">?</Text> help
+            </Text>
           </Box>
         );
       }
       return (
         <Box>
-          <Text color="gray">[Esc] Main </Text>
-          <Text color="cyan">[p]</Text>
-          <Text color="gray"> Plan </Text>
-          <Text color="cyan">[r]</Text>
-          <Text color="gray"> Runs </Text>
-          <Text color="cyan">[d]</Text>
-          <Text color="gray"> Diagnostics </Text>
-          <Text color="cyan">[?]</Text>
-          <Text color="gray"> Help</Text>
+          <Text color="gray">
+            <Text color="cyan">esc</Text> main · <Text color="cyan">p</Text> plan · <Text color="cyan">r</Text> runs · <Text color="cyan">d</Text> diagnostics · <Text color="cyan">?</Text> help
+          </Text>
         </Box>
       );
     }
@@ -233,8 +229,9 @@ export const StatusBar: React.FC<StatusBarProps> = ({
     if (isGenerating || ACTIVE_STATUSES.has(status.toLowerCase())) {
       return (
         <Box>
-          <Text color="cyan">[Ctrl+C]</Text>
-          <Text color="gray"> Cancel</Text>
+          <Text color="gray">
+            <Text color="cyan">ctrl+c</Text> cancel
+          </Text>
         </Box>
       );
     }
@@ -242,16 +239,9 @@ export const StatusBar: React.FC<StatusBarProps> = ({
     if (layout === "wide") {
       return (
         <Box>
-          <Text color="cyan">[Ctrl+C]</Text>
-          <Text color="gray"> Exit  •  </Text>
-          <Text color="cyan">[/plan]</Text>
-          <Text color="gray">  </Text>
-          <Text color="cyan">[/runs]</Text>
-          <Text color="gray">  </Text>
-          <Text color="cyan">[/debug]</Text>
-          <Text color="gray">  </Text>
-          <Text color="cyan">[/help]</Text>
-          <Text color="gray"> Help</Text>
+          <Text color="gray">
+            <Text color="cyan">ctrl+c</Text> exit · <Text color="cyan">/plan</Text> · <Text color="cyan">/runs</Text> · <Text color="cyan">/debug</Text> · <Text color="cyan">?</Text> help
+          </Text>
         </Box>
       );
     }
@@ -259,15 +249,9 @@ export const StatusBar: React.FC<StatusBarProps> = ({
     if (layout === "medium") {
       return (
         <Box>
-          <Text color="cyan">[Ctrl+C]</Text>
-          <Text color="gray"> Exit  •  </Text>
-          <Text color="cyan">[/plan]</Text>
-          <Text color="gray">  </Text>
-          <Text color="cyan">[/runs]</Text>
-          <Text color="gray">  </Text>
-          <Text color="cyan">[/debug]</Text>
-          <Text color="gray">  </Text>
-          <Text color="cyan">[/help]</Text>
+          <Text color="gray">
+            <Text color="cyan">ctrl+c</Text> exit · <Text color="cyan">/plan</Text> · <Text color="cyan">/runs</Text> · <Text color="cyan">/debug</Text> · <Text color="cyan">?</Text> help
+          </Text>
         </Box>
       );
     }
@@ -275,18 +259,18 @@ export const StatusBar: React.FC<StatusBarProps> = ({
     if (layout === "narrow") {
       return (
         <Box>
-          <Text color="cyan">[Ctrl+C]</Text>
-          <Text color="gray"> Exit  •  </Text>
-          <Text color="cyan">[/help]</Text>
-          <Text color="gray"> Help</Text>
+          <Text color="gray">
+            <Text color="cyan">ctrl+c</Text> exit · <Text color="cyan">?</Text> help
+          </Text>
         </Box>
       );
     }
 
     return (
       <Box>
-        <Text color="cyan">[Ctrl+C]</Text>
-        <Text color="gray"> Exit</Text>
+        <Text color="gray">
+          <Text color="cyan">ctrl+c</Text> exit
+        </Text>
       </Box>
     );
   };

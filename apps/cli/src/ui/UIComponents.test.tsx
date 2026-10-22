@@ -445,11 +445,7 @@ describe("Phase 5AD: Modular UI Components", () => {
     );
     const frame = lastFrame() ?? "";
     expect(frame).toContain("○ Ready for task");
-    expect(frame).toContain("[Ctrl+C] Exit");
-    expect(frame).toContain("[/plan]");
-    expect(frame).toContain("[/runs]");
-    expect(frame).toContain("[/debug]");
-    expect(frame).toContain("[/help] Help");
+    expect(frame).toContain("ctrl+c exit · /plan · /runs · /debug · ? help");
   });
 
   it("renders compact non-overflowing shortcuts on standard 80-column terminals", () => {
@@ -458,11 +454,7 @@ describe("Phase 5AD: Modular UI Components", () => {
     );
     const frame = lastFrame() ?? "";
     expect(frame).toContain("○ Ready for task");
-    expect(frame).toContain("[Ctrl+C] Exit");
-    expect(frame).toContain("[/plan]");
-    expect(frame).toContain("[/runs]");
-    expect(frame).toContain("[/debug]");
-    expect(frame).toContain("[/help]");
+    expect(frame).toContain("ctrl+c exit · /plan · /runs · /debug · ? help");
   });
 
   it("renders minimal shortcuts on narrow terminals without wrapping", () => {
@@ -471,9 +463,8 @@ describe("Phase 5AD: Modular UI Components", () => {
     );
     const frame = lastFrame() ?? "";
     expect(frame).toContain("○ Ready for task");
-    expect(frame).toContain("[Ctrl+C] Exit");
-    expect(frame).toContain("[/help] Help");
-    expect(frame).not.toContain("[/runs]");
+    expect(frame).toContain("ctrl+c exit · ? help");
+    expect(frame).not.toContain("/runs");
   });
 
   it("renders StatusBar as a clean borderless single line", () => {
@@ -1534,7 +1525,7 @@ describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
         />
       );
       const frame = lastFrame() ?? "";
-      expect(frame).toContain("[Ctrl+C] Cancel");
+      expect(frame).toContain("ctrl+c cancel");
     });
 
     it("renders return to main and view switch shortcuts when in a secondary view", () => {
@@ -1547,7 +1538,7 @@ describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
         />
       );
       const frame = lastFrame() ?? "";
-      expect(frame).toContain("[Esc] Main [p] Plan [r] Runs [d] Diagnostics [?] Help");
+      expect(frame).toContain("esc main · p plan · r runs · d diagnostics · ? help");
     });
   });
 
