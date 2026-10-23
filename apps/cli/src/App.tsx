@@ -36,6 +36,10 @@ import { InteractiveApprovalResolver } from "./approvalResolver.js";
 import { filterCommands, type CommandDef } from "./commands.js";
 import { processPastedInput, expandPastedTokens } from "./pasteUtils.js";
 import {
+  notifyApprovalRequired,
+  notifyTaskCompleted
+} from "./notificationUtils.js";
+import {
   AppShell,
   Header,
   StatusBar,
@@ -2875,6 +2879,7 @@ export const App: React.FC<AppProps> = ({
           setLastTaskStatus("blocked");
         } else if (event.type === "approval_required") {
           setPendingApproval(event.request);
+          notifyApprovalRequired(event.request.toolName || "tool");
         } else if (
           event.type === "checkpoint_approval_requested" ||
           event.type === "execution_handoff_waiting_approval"
@@ -2886,6 +2891,7 @@ export const App: React.FC<AppProps> = ({
             arguments: {},
             reason: event.reason
           });
+          notifyApprovalRequired("checkpoint");
         } else if (event.type === "tool_call") {
           toolCallMap.set(event.call.id, event.call.name);
         } else if (event.type === "tool_result") {
@@ -3278,6 +3284,7 @@ export const App: React.FC<AppProps> = ({
             () => {}
           );
         } else if (event.type === "done") {
+          notifyTaskCompleted();
           setTurns((prev) =>
             prev.map((t) =>
               t.id === turnId
