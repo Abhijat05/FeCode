@@ -45,4 +45,19 @@ describe("TurnView Component", () => {
     const frame = lastFrame() ?? "";
     expect(frame).toContain("────");
   });
+
+  it("scales separator past 80 columns up to 120 columns on wide viewports", () => {
+    const { lastFrame } = render(
+      <TurnView
+        prompt="wide"
+        response="wide response"
+        status="done"
+        isLast={false}
+        columns={95}
+      />
+    );
+    const frame = lastFrame() ?? "";
+    // Separator should scale to 93 columns (95 - 2), exceeding the old 80 cap
+    expect(frame).toContain("─".repeat(93));
+  });
 });

@@ -28,7 +28,7 @@ const TurnViewComponent: React.FC<TurnViewProps> = ({
 }) => {
   const { stdout } = useStdout();
   const cols = explicitColumns ?? stdout?.columns ?? 80;
-  const sepLength = Math.max(20, Math.min(cols - 2, 80));
+  const sepLength = Math.max(20, Math.min(cols - 2, 120));
   const separator = "─".repeat(sepLength);
 
   const isStreaming = status === "streaming";
