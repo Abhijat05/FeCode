@@ -59,7 +59,7 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
   reason,
   riskLevel = "elevated",
   affectedTargets = [],
-  checkpointId,
+  checkpointId: _checkpointId,
   diff,
   changeReview,
   value: _value,
@@ -186,22 +186,22 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
 
   const getHeaderTitle = () => {
     if (title) return title;
-    if (isFileEdit) return "⚠ FeCode wants to modify a file";
-    if (isCommand) return "⚠ FeCode wants to run a command";
+    if (isFileEdit) return "⚠ Edit file";
+    if (isCommand) return "⚠ Run command";
     switch (approvalType) {
       case "plan":
-        return "⚠ Plan approval required";
+        return "⚠ Approve plan";
       case "step_checkpoint":
-        return "⚠ Step checkpoint approval required";
+        return "⚠ Step checkpoint";
       case "recovery":
-        return "⚠ Recovery approval required";
+        return "⚠ Recovery approval";
       case "continuation":
-        return "⚠ Continuation approval required";
+        return "⚠ Continuation approval";
       case "replan":
-        return "⚠ Replan approval required";
+        return "⚠ Replan approval";
       case "tool_permission":
       default:
-        return "⚠ FeCode wants to use a tool";
+        return "⚠ Run tool";
     }
   };
 
@@ -248,13 +248,6 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
               ? `[${stepOrder}/${totalSteps}] ${stepTitle}`
               : stepTitle}
           </Text>
-        </Box>
-      )}
-
-      {(checkpointId || riskLevel.toLowerCase() === "elevated" || riskLevel.toLowerCase() === "critical") && (
-        <Box marginTop={0}>
-          <Text color="gray">Checkpoint: </Text>
-          <Text color="yellow">required</Text>
         </Box>
       )}
 
@@ -417,28 +410,23 @@ export const ApprovalPrompt: React.FC<ApprovalPromptProps> = ({
       {/* Approval Selection Prompt with Interactive Arrow Navigation */}
       <Box marginTop={1} flexDirection="column">
         <Box>
-          <Text color="yellow" bold>
-            Allow? [y/N]:{" "}
+          <Text
+            color={selectedIndex === 0 ? "green" : "gray"}
+            bold={selectedIndex === 0}
+          >
+            {selectedIndex === 0 ? "● Yes (Approve)" : "○ Yes (Approve)"}
           </Text>
-          <Box marginLeft={1}>
-            <Text
-              color={selectedIndex === 0 ? "green" : "gray"}
-              bold={selectedIndex === 0}
-            >
-              {selectedIndex === 0 ? "● Yes (Approve)" : "○ Yes (Approve)"}
-            </Text>
-            <Text>   </Text>
-            <Text
-              color={selectedIndex === 1 ? "red" : "gray"}
-              bold={selectedIndex === 1}
-            >
-              {selectedIndex === 1 ? "● No (Deny)" : "○ No (Deny)"}
-            </Text>
-          </Box>
+          <Text>   </Text>
+          <Text
+            color={selectedIndex === 1 ? "red" : "gray"}
+            bold={selectedIndex === 1}
+          >
+            {selectedIndex === 1 ? "● No (Deny)" : "○ No (Deny)"}
+          </Text>
         </Box>
         <Box marginTop={0}>
           <Text color="gray" dimColor>
-            (Use ←/→ or Tab to select, Enter to confirm, or press y/n)
+            ←/→ to select · Enter to confirm · y/n
           </Text>
         </Box>
       </Box>

@@ -861,12 +861,12 @@ describe("Phase 5AD: Modular UI Components", () => {
       />
     );
     const frame = lastFrame();
-    expect(frame).toContain("⚠ FeCode wants to modify a file");
+    expect(frame).toContain("⚠ Edit file");
     expect(frame).toContain("Risk: elevated");
     expect(frame).toContain("src/db.ts");
     expect(frame).toContain("Change: +3 -1");
     expect(frame).toContain("+const db = connect();");
-    expect(frame).toContain("Allow? [y/N]:");
+    expect(frame).toContain("←/→ to select · Enter to confirm · y/n");
     expect(frame).toContain("Yes (Approve)");
     expect(frame).toContain("No (Deny)");
     // Should use modern round border, not old double border
@@ -884,11 +884,11 @@ describe("Phase 5AD: Modular UI Components", () => {
       />
     );
     const frame = lastFrame();
-    expect(frame).toContain("⚠ FeCode wants to run a command");
+    expect(frame).toContain("⚠ Run command");
     expect(frame).toContain("Tool: execute_command");
     expect(frame).toContain("Command: git status");
     expect(frame).toContain("Reason: Tool 'execute_command' requires approval for execute permission.");
-    expect(frame).toContain("Allow? [y/N]:");
+    expect(frame).toContain("←/→ to select · Enter to confirm · y/n");
   });
 
   it("handles interactive arrow-key navigation and submission in ApprovalPrompt", async () => {
@@ -905,7 +905,7 @@ describe("Phase 5AD: Modular UI Components", () => {
 
     await new Promise((r) => setTimeout(r, 50));
     let frame = lastFrame() ?? "";
-    expect(frame).toContain("Allow? [y/N]:");
+    expect(frame).toContain("←/→ to select · Enter to confirm · y/n");
     expect(frame).toContain("○ Yes (Approve)");
     expect(frame).toContain("● No (Deny)");
 

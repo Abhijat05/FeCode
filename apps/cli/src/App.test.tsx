@@ -186,9 +186,9 @@ describe("CLI App Component", () => {
     await delay(100);
 
     const promptFrame = lastFrame();
-    expect(promptFrame).toContain("FeCode wants to use a tool");
+    expect(promptFrame).toContain("Run tool");
     expect(promptFrame).toContain("Tool: mock_write");
-    expect(promptFrame).toContain("Allow? [y/N]:");
+    expect(promptFrame).toContain("Yes (Approve)");
 
     // Submit 'y'
     await typeAndSubmit(stdin, "y");
@@ -240,7 +240,7 @@ describe("CLI App Component", () => {
     await delay(100);
 
     let promptFrame = lastFrame() ?? "";
-    expect(promptFrame).toContain("Allow? [y/N]:");
+    expect(promptFrame).toContain("←/→ to select · Enter to confirm · y/n");
     expect(promptFrame).toContain("● No (Deny)");
 
     // Navigate left to Yes
@@ -300,7 +300,7 @@ describe("CLI App Component", () => {
     await delay(100);
 
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("⚠ FeCode wants to run a command");
+    expect(frame).toContain("⚠ Run command");
     expect(frame).toContain("Tool: execute_command");
     expect(frame).toContain("Command: git status");
     expect(frame).toContain("Reason: Tool 'execute_command' requires approval for execute permission.");
@@ -348,7 +348,7 @@ describe("CLI App Component", () => {
     await delay(100);
 
     const promptFrame = lastFrame() ?? "";
-    expect(promptFrame).toContain("Allow? [y/N]:");
+    expect(promptFrame).toContain("←/→ to select · Enter to confirm · y/n");
     expect(promptFrame).toContain("● No (Deny)");
 
     // Press Enter directly to confirm default denial
@@ -417,7 +417,7 @@ describe("CLI App Component", () => {
     await delay(100);
 
     const frame = lastFrame();
-    expect(frame).toContain("⚠ FeCode wants to modify a file");
+    expect(frame).toContain("⚠ Edit file");
     expect(frame).toContain("src/components/Header.tsx");
     expect(frame).toContain("Change:");
     expect(frame).toContain("+1 -1");

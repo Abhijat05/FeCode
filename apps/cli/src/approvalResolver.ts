@@ -19,7 +19,7 @@ export function formatApprovalRequest(request: ApprovalRequest): string {
   if (request.toolName === "execute_command") {
     const args = request.arguments as { command?: string } | undefined;
     const cmd = args?.command || "";
-    return `⚠ FeCode wants to run a command\n\nCommand:\n  ${cmd}\n`;
+    return `⚠ Run command\n\nCommand:\n  ${cmd}\n`;
   }
 
   return formatApprovalArguments(request.arguments);
