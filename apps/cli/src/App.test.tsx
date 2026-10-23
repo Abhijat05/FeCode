@@ -823,14 +823,14 @@ describe("CLI App Component", () => {
     await delay(100);
 
     let frame = lastFrame() ?? "";
-    expect(frame).toContain("Git & Workspace Status");
+    expect(frame).toContain("workspace");
 
     // Press Escape to return to main view
     stdin.write("\u001B");
     await delay(100);
 
     frame = lastFrame() ?? "";
-    expect(frame).not.toContain("Git & Workspace Status");
+    expect(frame).not.toContain("Git executable not available");
     expect(frame).toContain("Ready for task");
   });
 

@@ -139,11 +139,8 @@ export const RunHistoryView: React.FC<RunHistoryViewProps> = ({
             <Box width="15%">
               <Text bold color="gray">STATUS</Text>
             </Box>
-            <Box width="25%">
-              <Text bold color="gray">RUN ID</Text>
-            </Box>
-            <Box width="45%">
-              <Text bold color="gray">REQUEST / PLAN</Text>
+            <Box width="70%">
+              <Text bold color="gray">REQUEST / TASK</Text>
             </Box>
             <Box width="15%">
               <Text bold color="gray">TIME</Text>
@@ -152,12 +149,10 @@ export const RunHistoryView: React.FC<RunHistoryViewProps> = ({
           {pagedRuns.map((r, idx) => (
             <Box key={`run-${r.runId || idx}`} justifyContent="space-between">
               <Box width="15%">{getStatusDisplay(r.status)}</Box>
-              <Box width="25%">
-                <Text color="white">{r.runId.substring(0, 16)}</Text>
-              </Box>
-              <Box width="45%">
+              <Box width="70%">
+                <Text color="gray" dimColor>{r.runId.substring(0, 16)} </Text>
                 <Text color="white">
-                  {(r.userRequestSummary || "Untitled task").substring(0, 35)}
+                  {(r.userRequestSummary || "Untitled task").substring(0, 60)}
                 </Text>
               </Box>
               <Box width="15%">

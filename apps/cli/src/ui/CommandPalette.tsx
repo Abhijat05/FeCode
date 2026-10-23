@@ -45,7 +45,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     <Box
       flexDirection="column"
       borderStyle="round"
-      borderColor="cyan"
+      borderColor="gray"
       paddingX={1}
       marginBottom={0}
     >

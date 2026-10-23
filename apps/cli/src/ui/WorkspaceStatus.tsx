@@ -25,8 +25,8 @@ export const WorkspaceStatus: React.FC<WorkspaceStatusProps> = ({
   branch,
   isClean = true,
   riskLevel = "low",
-  checkpointRequired = false,
-  approvalRequired = false,
+  checkpointRequired: _checkpointRequired = false,
+  approvalRequired: _approvalRequired = false,
   modifiedFiles = [],
   stagedFiles = [],
   untrackedFiles = [],
@@ -48,7 +48,7 @@ export const WorkspaceStatus: React.FC<WorkspaceStatusProps> = ({
       >
         <Box marginBottom={0}>
           <Text bold color="cyan">
-            Git & Workspace Status
+            workspace
           </Text>
         </Box>
         <Text color="white">{formattedOutput}</Text>
@@ -81,12 +81,12 @@ export const WorkspaceStatus: React.FC<WorkspaceStatusProps> = ({
     >
       <Box justifyContent="space-between" marginBottom={0}>
         <Text bold color="cyan">
-          Git & Workspace Status
+          workspace
         </Text>
         <Box>
           <Text color="gray">Risk: </Text>
           <Text bold color={getRiskColor(riskLevel)}>
-            {riskLevel.toUpperCase()}
+            {riskLevel.toLowerCase()}
           </Text>
         </Box>
       </Box>
@@ -96,29 +96,14 @@ export const WorkspaceStatus: React.FC<WorkspaceStatusProps> = ({
         <Text color="white">{formatCwd(cwd)}</Text>
       </Box>
 
-      {branch !== undefined && (
-        <Box marginTop={0} justifyContent="space-between">
-          <Box>
-            <Text color="gray">Branch: </Text>
-            <Text color="cyan">{branch || "(detached / none)"}</Text>
-            <Text color="gray"> | State: </Text>
-            <Text color={isClean ? "green" : "yellow"}>
-              {isClean ? "clean" : "modified"}
-            </Text>
-          </Box>
-          <Box>
-            <Text color="gray">Checkpoint: </Text>
-            <Text color={checkpointRequired ? "yellow" : "gray"}>
-              {checkpointRequired ? "REQUIRED" : "OPTIONAL"}
-            </Text>
-            <Text color="gray"> | Approval: </Text>
-            <Text color={approvalRequired ? "yellow" : "gray"}>
-              {approvalRequired ? "REQUIRED" : "NONE"}
-            </Text>
-          </Box>
+            {branch !== undefined && (
+        <Box marginTop={0}>
+          <Text color="cyan">⎇ {branch || "(detached / none)"} </Text>
+          <Text color={isClean ? "green" : "yellow"}>
+            {isClean ? "✓ clean" : "● modified"}
+          </Text>
         </Box>
       )}
-
       {hasDrift && (
         <Box marginTop={0}>
           <Text color="yellow" bold>

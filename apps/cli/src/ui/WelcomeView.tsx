@@ -35,7 +35,7 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({
       <Box flexDirection="column" marginY={1}>
         <Box>
           <Text bold color="cyan">
-            [FE]
+            FE ›
           </Text>
           <Text bold color="white">
             {" "}
@@ -93,10 +93,7 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({
       <Text key="info-4" color="gray" dimColor>
         Ready for tasks
       </Text>
-    ),
-    <Text key="info-5" color="gray" dimColor>
-      ───────────────────────────────
-    </Text>
+    )
   ];
 
   return (

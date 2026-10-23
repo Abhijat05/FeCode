@@ -1206,8 +1206,9 @@ describe("Phase 5AD: Modular UI Components", () => {
       />
     );
     const frame = lastFrame();
-    expect(frame).toContain("Git & Workspace Status");
-    expect(frame).toContain("Branch: feature/cli-ui | State: modified");
+    expect(frame).toContain("workspace");
+    expect(frame).toContain("feature/cli-ui");
+    expect(frame).toContain("modified");
     expect(frame).toContain("src/App.tsx");
     expect(frame).toContain("src/ui/Header.tsx");
   });
@@ -1618,7 +1619,7 @@ describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
         />
       );
       const frame = lastFrame() ?? "";
-      expect(frame).toContain("[FE]");
+      expect(frame).toContain("FE ›");
       expect(frame).toContain("FeCode Agent v1.0.3");
       expect(frame).toContain("(anthropic:claude-3.5-sonnet)");
       expect(frame).not.toContain("███████╗███████╗");

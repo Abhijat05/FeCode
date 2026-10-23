@@ -61,7 +61,7 @@ export const KeymapView: React.FC<KeymapViewProps> = ({
     <Box
       flexDirection="column"
       borderStyle="round"
-      borderColor="cyan"
+      borderColor="gray"
       paddingX={1}
       marginY={1}
     >
@@ -85,7 +85,7 @@ export const KeymapView: React.FC<KeymapViewProps> = ({
           >
             <Box marginBottom={0}>
               <Text bold color="yellow">
-                ● {cat.title}
+                › {cat.title}
               </Text>
             </Box>
             {cat.items.map((item) => (
@@ -102,17 +102,10 @@ export const KeymapView: React.FC<KeymapViewProps> = ({
         ))}
       </Box>
 
-      <Box
-        marginTop={0}
-        borderStyle="single"
-        borderColor="gray"
-        paddingX={1}
-        justifyContent="space-between"
-      >
-        <Text color="gray">
-          Tip: Type <Text color="cyan">/help</Text> to see all slash commands and detailed usage.
+      <Box marginTop={0}>
+        <Text color="gray" dimColor>
+          /help for all commands · ? or esc to close
         </Text>
-        <Text color="cyan">fe-keymap</Text>
       </Box>
     </Box>
   );
