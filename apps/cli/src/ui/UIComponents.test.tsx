@@ -199,7 +199,7 @@ describe("TurnView", () => {
     expect(frame).not.toContain("◆ fecode");
   });
 
-  it("renders error box for error status", () => {
+  it("renders error aligned to message rail for error status without standalone box", () => {
     const { lastFrame } = render(
       <TurnView
         prompt="Run tests"
@@ -209,8 +209,9 @@ describe("TurnView", () => {
       />
     );
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("✗ Error");
-    expect(frame).toContain("Agent failed: timeout");
+    expect(frame).toContain("│ ✗ Error: Agent failed: timeout");
+    expect(frame).not.toContain("┌");
+    expect(frame).not.toContain("└");
   });
 
   it("renders turn separator when isLast is false", () => {
@@ -300,13 +301,14 @@ describe("MessageBubble", () => {
     expect(frame).toContain("…");
   });
 
-  it("renders error box when error is provided", () => {
+  it("renders error aligned to message rail when error is provided without standalone box", () => {
     const { lastFrame } = render(
       <MessageBubble role="agent" content="" error="Connection refused" />
     );
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("✗ Error");
-    expect(frame).toContain("Connection refused");
+    expect(frame).toContain("│ ✗ Error: Connection refused");
+    expect(frame).not.toContain("┌");
+    expect(frame).not.toContain("└");
   });
 
   it("renders code blocks in a bordered box with language badge and no raw backtick fences", () => {

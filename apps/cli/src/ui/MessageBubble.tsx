@@ -335,18 +335,7 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
       </Box>
 
       {/* Body with left gutter │ */}
-      {error ? (
-        <Box
-          borderStyle="single"
-          borderColor="red"
-          paddingX={1}
-          marginLeft={2}
-          flexDirection="column"
-        >
-          <Text bold color="red">✗ Error</Text>
-          <Text color="red" wrap="wrap">{error}</Text>
-        </Box>
-      ) : content ? (
+      {content ? (
         <Box flexDirection="column">
           {blocks.map((block, i) => {
             if (block.type === "code") {
@@ -395,7 +384,31 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
             return renderMarkdownLine(block.text, i, effectiveColumns);
           })}
         </Box>
-      ) : isStreaming ? (
+      ) : null}
+
+      {error ? (
+        <Box flexDirection="column">
+          {error.split(/\r?\n/).map((errLine, errIdx) => {
+            const cleanLine =
+              errIdx === 0
+                ? errLine.replace(/^✗\s*(?:Error:\s*)?/i, "")
+                : errLine;
+            return (
+              <Box key={`err-${errIdx}`}>
+                <Text color="cyan" dimColor>│ </Text>
+                {errIdx === 0 ? (
+                  <Text>
+                    <Text bold color="red">✗ Error: </Text>
+                    <Text color="red" wrap="wrap">{cleanLine}</Text>
+                  </Text>
+                ) : (
+                  <Text color="red" wrap="wrap">  {cleanLine}</Text>
+                )}
+              </Box>
+            );
+          })}
+        </Box>
+      ) : !content && isStreaming ? (
         <Box>
           <Text color="cyan" dimColor>│ </Text>
           <Text color="gray" dimColor>…</Text>

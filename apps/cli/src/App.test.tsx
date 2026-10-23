@@ -113,7 +113,7 @@ describe("CLI App Component", () => {
 
     const output = lastFrame();
     expect(output).toContain("Fail prompt");
-    expect(output).toContain("✗ Model request failed.");
+    expect(output).toContain("│ ✗ Error: Model request failed.");
   });
 
   it("handles cancellation via cancel()", async () => {
