@@ -101,7 +101,7 @@ export const PlanStep: React.FC<PlanStepProps> = ({
       return null;
     }
     const isCrit = riskLevel.toLowerCase() === "critical";
-    return <Text color={isCrit ? "red" : "yellow"}> [{riskLevel.toUpperCase()}]</Text>;
+    return <Text color={isCrit ? "red" : "yellow"}> [{riskLevel.toLowerCase()}]</Text>;
   };
 
   return (
@@ -114,6 +114,7 @@ export const PlanStep: React.FC<PlanStepProps> = ({
         <Text> </Text>
         <Text
           bold={status === "in_progress" || status === "executing"}
+          dimColor={status === "completed" || status === "done" || status === "skipped"}
           color={
             status === "failed" || status === "blocked"
               ? "red"
