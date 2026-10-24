@@ -48,6 +48,8 @@ await build({
         "ink-text-input",
         "@google/genai",
         "openai",
+        "@anthropic-ai/sdk",
+        /^@modelcontextprotocol\/sdk/,
         "dotenv",
         /^node:/,
         "fs",
