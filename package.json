@@ -1,7 +1,7 @@
 {
   "name": "fecode-monorepo",
   "private": true,
-  "version": "1.1.2",
+  "version": "1.1.3",
   "type": "module",
   "workspaces": [
     "apps/*",
@@ -29,6 +29,6 @@
     "vitest": "^4.1.12"
   },
   "dependencies": {
-    "fecode-cli": "^1.1.2"
+    "fecode-cli": "^1.1.3"
   }
 }

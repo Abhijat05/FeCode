@@ -4,6 +4,49 @@ All notable changes to FeCode are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] - 2026-10-24
+
+### Added
+- **Anthropic Claude Model Provider (`anthropic`)**:
+  - Implemented `AnthropicModelProvider` conforming to the unified `ModelProvider` interface, supporting Claude 3.5 Sonnet, Claude 3.5 Haiku, and Claude 3 Opus.
+  - Native streaming, structured tool calling, token usage tracking, and multi-turn message handling via `@anthropic-ai/sdk`.
+  - Configurable via `ANTHROPIC_API_KEY` (or `FE_ANTHROPIC_API_KEY`), `FE_PROVIDER=anthropic`, and `FE_MODEL`.
+- **Centralized UI Design System & Symbol Standardization**:
+  - Centralized UI symbols module (`symbols.ts`) replacing legacy inconsistent emojis with calm, professional, terminal-native Unicode glyphs.
+  - Standardized component borders with a consistent two-tier hierarchy (round borders for primary panels, clean single borders for cards).
+  - Modernized `WelcomeView` with FE ASCII art monogram logo and idle state metadata.
+  - Added `KeymapView` overlay providing an interactive keyboard shortcut reference.
+  - Added native out-of-window notifications using terminal bell (`\x07`) and OSC 9 escape sequences when long-running tasks complete.
+- **Enhanced Terminal Text Input**:
+  - Added `EnhancedTextInput` supporting `Ctrl+Backspace`, `Ctrl+Delete`, `Ctrl+A`, and word-by-word arrow navigation.
+  - Handled multi-chunk bracketed paste across stdin buffers without fracturing paste tokens.
+
+### Improved & Polished
+- **Approval & Execution Views**:
+  - Streamlined `ApprovalPrompt` with concise action titles, interactive selection, and scrollable inline diff inspection.
+  - Displayed exact shell commands to be executed in execution approval prompts.
+  - Grouped consecutive identical tool calls in `ExecutionTimeline` for clean, compact activity streams.
+  - Added live elapsed time display and synchronized token spinners across `ThinkingIndicator` and `StatusBar`.
+- **Markdown & Message Formatting**:
+  - Added syntax line numbers, file path header tags, and responsive dividers in `MessageBubble`.
+  - Automatically collapsed home directory paths with tilde `~` across headers and status views.
+  - Normalized Windows backslashes to forward slashes in path formatting.
+  - Stripped internal UUID clutter from header bars and eliminated redundant task summary cards on read-only queries.
+
+### Fixed
+- **Terminal Stability & First-Turn Rendering**:
+  - Eliminated rogue terminal clear on first turn to ensure clean welcome screen transitions without duplicate blocks or empty agent bubbles.
+  - Hid hardware terminal cursor during generation and synchronized header status flags.
+  - Resolved `INIT_CWD` to preserve actual terminal working directory when running in npm workspaces.
+  - Resolved Backspace key handling in raw mode by properly distinguishing `0x7f` from escape sequence delete.
+- **Provider & Agent Robustness**:
+  - Added recursive depth parameter to `list_directory` and updated agent exploration guidance.
+  - Resolved `ECONNRESET` on NVIDIA NIM endpoints with socket pooling retry and client connection refresh.
+- **Dependency Upgrades**:
+  - Updated `vitest` and `@vitest/coverage-v8` to 4.1.12, alongside `@oxc-project/types` and rolldown.
+
+---
+
 ## [1.1.2] - 2026-10-16
 
 ### Security & Process Safety
