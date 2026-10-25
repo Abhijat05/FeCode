@@ -35,6 +35,7 @@ import type { ApprovalRequest, ModelMessage } from "@fecode/models";
 import { InteractiveApprovalResolver } from "./approvalResolver.js";
 import { filterCommands, type CommandDef } from "./commands.js";
 import { processPastedInput, expandPastedTokens } from "./pasteUtils.js";
+import { CLI_VERSION_DISPLAY } from "./version.js";
 import {
   notifyApprovalRequired,
   notifyTaskCompleted
@@ -90,6 +91,7 @@ export interface AppProps {
   executionPolicy?: ExecutionPolicy;
   historyStore?: RunHistoryStore;
   clampResponses?: boolean;
+  version?: string;
 }
 
 export const App: React.FC<AppProps> = ({
@@ -109,7 +111,8 @@ export const App: React.FC<AppProps> = ({
   checkpointManager: checkpointManagerProp,
   recoveryManager: recoveryManagerProp,
   executionPolicy: executionPolicyProp,
-  clampResponses
+  clampResponses,
+  version = CLI_VERSION_DISPLAY
 }) => {
   const gitRepo = useMemo(
     () => gitRepoProp || new DefaultGitRepository(),
@@ -3634,6 +3637,7 @@ export const App: React.FC<AppProps> = ({
                 )}
                 {turns.length === 0 && !isGenerating && (
                   <WelcomeView
+                    version={version}
                     cwd={cwd}
                     projectName={uiState?.workspace?.gitBranch ? undefined : cwd ? cwd.split(/[\\/]/).pop() : undefined}
                     modelName={modelName}

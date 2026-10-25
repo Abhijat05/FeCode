@@ -1586,7 +1586,7 @@ describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
     it("renders full FE ASCII logo, metadata and tips in wide layout", () => {
       const { lastFrame } = render(
         <WelcomeView
-          version="v1.0.3"
+          version="v1.1.3"
           projectName="my-test-project"
           modelName="claude-3.5-sonnet"
           providerName="anthropic"
@@ -1598,7 +1598,7 @@ describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
       const frame = lastFrame() ?? "";
       expect(frame).toContain("███████╗███████╗");
       expect(frame).toContain("FeCode Agent");
-      expect(frame).toContain("v1.0.3");
+      expect(frame).toContain("v1.1.3");
       expect(frame).toContain("Autonomous Pair Programmer");
       expect(frame).toContain("anthropic:claude-3.5-sonnet");
       expect(frame).toContain("my-test-project");
@@ -1611,7 +1611,7 @@ describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
     it("renders micro-banner fallback on narrow viewports", () => {
       const { lastFrame } = render(
         <WelcomeView
-          version="v1.0.3"
+          version="v1.1.3"
           modelName="claude-3.5-sonnet"
           providerName="anthropic"
           cwd="D:/test/fecode"
@@ -1620,9 +1620,21 @@ describe("Phase 5AF: V1 CLI Experience & Responsive TUI", () => {
       );
       const frame = lastFrame() ?? "";
       expect(frame).toContain("FE ›");
-      expect(frame).toContain("FeCode Agent v1.0.3");
+      expect(frame).toContain("FeCode Agent v1.1.3");
       expect(frame).toContain("(anthropic:claude-3.5-sonnet)");
       expect(frame).not.toContain("███████╗███████╗");
+    });
+
+    it("defaults to current CLI_VERSION_DISPLAY when version prop is omitted", () => {
+      const { lastFrame } = render(
+        <WelcomeView
+          modelName="gemini-2.5-flash"
+          providerName="gemini"
+          cwd="/test/dir"
+        />
+      );
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("v1.1.3");
     });
   });
 });

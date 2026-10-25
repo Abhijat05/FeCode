@@ -18,6 +18,7 @@ import {
 } from "@fecode/agent";
 import type { ProjectContext } from "@fecode/agent";
 import { App } from "./App.js";
+import { CLI_VERSION } from "./version.js";
 import { InteractiveApprovalResolver } from "./approvalResolver.js";
 
 async function main(): Promise<void> {
@@ -30,13 +31,13 @@ async function main(): Promise<void> {
 
   // Check --version / -v
   if (args.includes("--version") || args.includes("-v")) {
-    console.log("1.1.3");
+    console.log(CLI_VERSION);
     process.exit(0);
   }
 
   // Check --help / -h
   if (args.includes("--help") || args.includes("-h")) {
-    console.log(`FeCode - Interactive Terminal Coding Assistant (v1.1.3)
+    console.log(`FeCode - Interactive Terminal Coding Assistant (v${CLI_VERSION})
 
 Usage:
   fe [options]

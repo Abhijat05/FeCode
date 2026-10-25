@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, Text, useStdout } from "ink";
 import { formatCwd } from "./pathUtils.js";
+import { CLI_VERSION_DISPLAY } from "../version.js";
 
 export interface WelcomeViewProps {
   version?: string;
@@ -13,7 +14,7 @@ export interface WelcomeViewProps {
 }
 
 export const WelcomeView: React.FC<WelcomeViewProps> = ({
-  version = "v1.0.3",
+  version = CLI_VERSION_DISPLAY,
   projectName,
   modelName,
   providerName,
