@@ -20,9 +20,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     explicitMaxVisible ??
     (stdout?.rows
       ? stdout.rows <= 24
-        ? 4
+        ? 3
         : stdout.rows <= 32
-          ? 5
+          ? 4
           : 6
       : 8);
 

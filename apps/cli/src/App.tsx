@@ -388,7 +388,16 @@ export const App: React.FC<AppProps> = ({
   const isTestEnv = Boolean(process.env.VITEST);
   const shouldClampResponses = clampResponses ?? !isTestEnv;
   const terminalRows = process.stdout?.rows || 24;
-  const availableTurnRows = Math.max(4, terminalRows - 14);
+
+  const commandSuggestions: CommandDef[] =
+    !isGenerating && !hasModal && query.startsWith("/") && !query.includes(" ")
+      ? filterCommands(query)
+      : [];
+
+  const paletteHeight = commandSuggestions.length > 0
+    ? (terminalRows <= 24 ? 6 : Math.min(8, Math.max(4, terminalRows - 20)))
+    : 0;
+  const availableTurnRows = Math.max(2, terminalRows - 14 - paletteHeight);
 
   useEffect(() => {
     if (process.stdout.isTTY && !isTestEnv) {
@@ -437,11 +446,6 @@ export const App: React.FC<AppProps> = ({
       hiddenTurnsCount: startIndex
     };
   }, [turns, shouldClampResponses, availableTurnRows, isGenerating, responseScrollOffset]);
-
-  const commandSuggestions: CommandDef[] =
-    !isGenerating && !hasModal && query.startsWith("/") && !query.includes(" ")
-      ? filterCommands(query)
-      : [];
 
   const handleQueryChange = (rawVal: string) => {
     if (scrollOffset > 0 || responseScrollOffset > 0) {
@@ -3643,6 +3647,8 @@ export const App: React.FC<AppProps> = ({
                     modelName={modelName}
                     providerName={providerName}
                     gitBranch={uiState?.workspace?.gitBranch}
+                    compact={Boolean(commandSuggestions.length > 0 || terminalRows <= 22)}
+                    terminalRows={terminalRows}
                   />
                 )}
                 {visibleTurns.map((turn, idx) => (
@@ -3691,6 +3697,7 @@ export const App: React.FC<AppProps> = ({
             pendingQuery={pendingQuery}
             suggestions={commandSuggestions}
             selectedSuggestion={selectedSuggestion}
+            maxSuggestionsVisible={terminalRows <= 24 ? 3 : terminalRows <= 32 ? 4 : 6}
           />
         )}
       </Box>

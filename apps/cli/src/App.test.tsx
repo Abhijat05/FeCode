@@ -3710,6 +3710,56 @@ describe("CLI App Component", () => {
       expect(frame).toContain("Display current active task plan");
     });
 
+    it("preserves single layout header and stays within viewport when typing / and pressing backspace", async () => {
+      const mockAgent = new MockAgent();
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      const initialFrame = lastFrame() ?? "";
+      expect(initialFrame).toContain("FeCode");
+      const initialHeaderMatches = initialFrame.match(/FeCode\s+fecode/g);
+      expect(initialHeaderMatches).toHaveLength(1);
+
+      // Type /
+      stdin.write("/");
+      await delay(50);
+      const slashFrame = lastFrame() ?? "";
+
+      // Prompt and command palette should be visible
+      expect(slashFrame).toContain("❯ /");
+      expect(slashFrame).toContain("╭");
+      expect(slashFrame).toContain("/help");
+
+      // Header must still appear exactly ONCE
+      const slashHeaderMatches = slashFrame.match(/FeCode\s+fecode/g);
+      expect(slashHeaderMatches).toHaveLength(1);
+
+      // Total lines rendered while palette is open must remain well-budgeted (<= 20 lines)
+      const slashLineCount = slashFrame.split("\n").length;
+      expect(slashLineCount).toBeLessThanOrEqual(20);
+
+      // Press Backspace
+      stdin.write("\x7f");
+      await delay(50);
+      const backspaceFrame = lastFrame() ?? "";
+
+      // Must be back to idle state
+      expect(backspaceFrame).toContain("❯ Describe task or type /help...");
+      expect(backspaceFrame).not.toContain("╭");
+
+      // Header must appear exactly ONCE (no duplicate banners)
+      const backspaceHeaderMatches = backspaceFrame.match(/FeCode\s+fecode/g);
+      expect(backspaceHeaderMatches).toHaveLength(1);
+
+      // Logo lines must appear exactly once
+      const logoMatches = backspaceFrame.match(/███████╗███████╗/g);
+      expect(logoMatches).toHaveLength(1);
+
+      // Frame height must stay well-budgeted
+      const backspaceLineCount = backspaceFrame.split("\n").length;
+      expect(backspaceLineCount).toBeLessThanOrEqual(20);
+    });
+
     it("submits navigated slash command suggestion on Enter instead of raw prefix", async () => {
       const mockAgent = new MockAgent();
       const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);

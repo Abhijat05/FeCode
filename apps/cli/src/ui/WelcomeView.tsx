@@ -11,6 +11,8 @@ export interface WelcomeViewProps {
   cwd?: string;
   gitBranch?: string | null;
   columns?: number;
+  terminalRows?: number;
+  compact?: boolean;
 }
 
 export const WelcomeView: React.FC<WelcomeViewProps> = ({
@@ -20,18 +22,21 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({
   providerName,
   cwd = process.cwd(),
   gitBranch,
-  columns: explicitColumns
+  columns: explicitColumns,
+  terminalRows: explicitRows,
+  compact = false
 }) => {
   const { stdout } = useStdout();
   const cols = explicitColumns ?? stdout?.columns ?? 80;
+  const rows = explicitRows ?? stdout?.rows ?? 24;
 
   const displayModel =
     providerName && modelName
       ? `${providerName}:${modelName}`
       : modelName || providerName || "default";
 
-  // Micro-banner for narrow viewports (< 65 cols)
-  if (cols < 65) {
+  // Micro-banner for narrow viewports (< 65 cols) or very short terminals (< 20 rows)
+  if (cols < 65 || rows < 20) {
     return (
       <Box flexDirection="column" marginY={1}>
         <Box>
@@ -115,27 +120,29 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({
         </Box>
       </Box>
 
-      {/* Suggested quick actions & tips */}
-      <Box flexDirection="column" marginTop={1}>
-        <Text color="gray" bold>
-          Tips:
-        </Text>
-        {[
-          { cmd: "/help", desc: "List commands & shortcuts" },
-          { cmd: "/plan", desc: "Generate execution plan before touching code" },
-          { cmd: "/git", desc: "Inspect workspace status & modified files" },
-          { cmd: "?", desc: "Quick shortcut palette" }
-        ].map((tip) => (
-          <Box key={tip.cmd} marginLeft={1}>
-            <Box width={10} flexShrink={0}>
-              <Text color="cyan" bold>
-                • {tip.cmd}
-              </Text>
+      {/* Suggested quick actions & tips (omitted in compact mode or when screen space is tight) */}
+      {!compact && rows > 22 && (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color="gray" bold>
+            Tips:
+          </Text>
+          {[
+            { cmd: "/help", desc: "List commands & shortcuts" },
+            { cmd: "/plan", desc: "Generate execution plan before touching code" },
+            { cmd: "/git", desc: "Inspect workspace status & modified files" },
+            { cmd: "?", desc: "Quick shortcut palette" }
+          ].map((tip) => (
+            <Box key={tip.cmd} marginLeft={1}>
+              <Box width={10} flexShrink={0}>
+                <Text color="cyan" bold>
+                  • {tip.cmd}
+                </Text>
+              </Box>
+              <Text color="gray">{tip.desc}</Text>
             </Box>
-            <Text color="gray">{tip.desc}</Text>
-          </Box>
-        ))}
-      </Box>
+          ))}
+        </Box>
+      )}
     </Box>
   );
 };
