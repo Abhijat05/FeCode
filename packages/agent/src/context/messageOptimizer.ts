@@ -2,6 +2,13 @@ import type { ModelMessage } from "@fecode/models";
 import { estimateTokens } from "../optimization/estimator.js";
 import { sanitizeToolResultForContext } from "./toolResultSanitizer.js";
 
+export interface OptimizeModelMessagesResult {
+  messages: ModelMessage[];
+  compacted: boolean;
+  droppedTurnsCount?: number;
+  savedTokens?: number;
+}
+
 export interface PrepareModelMessagesOptions {
   maxToolResultChars?: number;
   summarizeCompactedTurns?: (messages: ModelMessage[]) => string;
@@ -76,21 +83,17 @@ export function extractCompactedHistorySummary(
 }
 
 /**
- * Prepares and bounds the message history before sending to the model provider.
- * Ensures:
- * 1. Internal thinking tags (<think>...</think>) from earlier assistant turns are stripped so they don't bloat the context window.
- * 2. Excessively large tool results (e.g. huge file reads or command outputs) are safely truncated while retaining head and tail.
- * 3. If total estimated tokens exceed the budget, older turns are compacted starting at clean turn boundaries (role: "user")
- *    while strictly preserving:
- *    - The current active turn (the latest user message and all subsequent assistant/tool messages in the current loop)
- *    - Pairing of tool calls with tool results to avoid API protocol errors.
+ * Bounds and compacts message history before sending to the model provider, returning
+ * optimization metadata (compacted, droppedTurnsCount, savedTokens).
  */
-export function prepareModelMessages(
+export function optimizeModelMessages(
   messages: ModelMessage[],
   maxBudgetTokens: number = 16384,
   options: PrepareModelMessagesOptions = {}
-): ModelMessage[] {
-  if (messages.length === 0) return [];
+): OptimizeModelMessagesResult {
+  if (messages.length === 0) {
+    return { messages: [], compacted: false };
+  }
 
   const defaultMaxToolChars = Math.max(
     3500,
@@ -163,9 +166,9 @@ export function prepareModelMessages(
     return total;
   };
 
-  let currentTokens = estimateMessageTokens(cleanedMessages);
-  if (currentTokens <= maxBudgetTokens) {
-    return cleanedMessages;
+  const initialTokens = estimateMessageTokens(cleanedMessages);
+  if (initialTokens <= maxBudgetTokens) {
+    return { messages: cleanedMessages, compacted: false };
   }
 
   // Step 3: We are over budget. Find the start of the current active turn.
@@ -181,7 +184,15 @@ export function prepareModelMessages(
   // If there is only one user message (or none), we can't drop earlier turns.
   // Compact older tool results in the active turn if over budget.
   if (lastUserIdx <= 0) {
-    return compactOlderToolResults(cleanedMessages, maxBudgetTokens, estimateMessageTokens);
+    const compactedMsgs = compactOlderToolResults(cleanedMessages, maxBudgetTokens, estimateMessageTokens);
+    const finalTokens = estimateMessageTokens(compactedMsgs);
+    const wasCompacted = finalTokens < initialTokens;
+    return {
+      messages: compactedMsgs,
+      compacted: wasCompacted,
+      droppedTurnsCount: 0,
+      savedTokens: wasCompacted ? initialTokens - finalTokens : 0
+    };
   }
 
   // Identify turn boundaries (indices of all messages with role: "user" except index 0)
@@ -195,6 +206,7 @@ export function prepareModelMessages(
   // Try dropping turns from oldest to newest until within budget
   for (const cutoffIdx of userIndices) {
     const dropped = cleanedMessages.slice(0, cutoffIdx);
+    const droppedUserTurns = dropped.filter((m) => m.role === "user").length;
     const summary = extractCompactedHistorySummary(dropped, options.summarizeCompactedTurns);
     const noticeContent = summary
       ? `[Context notice: Earlier conversation history was compacted to fit within the model context budget.]\n\n${summary}`
@@ -212,14 +224,20 @@ export function prepareModelMessages(
       ...cleanedMessages.slice(cutoffIdx)
     ];
 
-    currentTokens = estimateMessageTokens(candidateMessages);
+    const currentTokens = estimateMessageTokens(candidateMessages);
     if (currentTokens <= maxBudgetTokens) {
-      return candidateMessages;
+      return {
+        messages: candidateMessages,
+        compacted: true,
+        droppedTurnsCount: Math.max(1, droppedUserTurns),
+        savedTokens: Math.max(0, initialTokens - currentTokens)
+      };
     }
   }
 
   // If still over budget, retain only the active turn from lastUserIdx
   const dropped = cleanedMessages.slice(0, lastUserIdx);
+  const droppedUserTurns = dropped.filter((m) => m.role === "user").length;
   const summary = extractCompactedHistorySummary(dropped, options.summarizeCompactedTurns);
   const noticeContent = summary
     ? `[Context notice: Earlier conversation history was compacted to fit within the model context budget.]\n\n${summary}`
@@ -237,11 +255,42 @@ export function prepareModelMessages(
     ...cleanedMessages.slice(lastUserIdx)
   ];
 
-  if (estimateMessageTokens(finalActiveTurn) > maxBudgetTokens) {
-    return compactOlderToolResults(finalActiveTurn, maxBudgetTokens, estimateMessageTokens);
+  const candidateTokens = estimateMessageTokens(finalActiveTurn);
+  if (candidateTokens > maxBudgetTokens) {
+    const finalMsgs = compactOlderToolResults(finalActiveTurn, maxBudgetTokens, estimateMessageTokens);
+    const finalTokens = estimateMessageTokens(finalMsgs);
+    return {
+      messages: finalMsgs,
+      compacted: true,
+      droppedTurnsCount: Math.max(1, droppedUserTurns),
+      savedTokens: Math.max(0, initialTokens - finalTokens)
+    };
   }
 
-  return finalActiveTurn;
+  return {
+    messages: finalActiveTurn,
+    compacted: true,
+    droppedTurnsCount: Math.max(1, droppedUserTurns),
+    savedTokens: Math.max(0, initialTokens - candidateTokens)
+  };
+}
+
+/**
+ * Prepares and bounds the message history before sending to the model provider.
+ * Ensures:
+ * 1. Internal thinking tags (<think>...</think>) from earlier assistant turns are stripped so they don't bloat the context window.
+ * 2. Excessively large tool results (e.g. huge file reads or command outputs) are safely truncated while retaining head and tail.
+ * 3. If total estimated tokens exceed the budget, older turns are compacted starting at clean turn boundaries (role: "user")
+ *    while strictly preserving:
+ *    - The current active turn (the latest user message and all subsequent assistant/tool messages in the current loop)
+ *    - Pairing of tool calls with tool results to avoid API protocol errors.
+ */
+export function prepareModelMessages(
+  messages: ModelMessage[],
+  maxBudgetTokens: number = 16384,
+  options: PrepareModelMessagesOptions = {}
+): ModelMessage[] {
+  return optimizeModelMessages(messages, maxBudgetTokens, options).messages;
 }
 
 /**

@@ -17,6 +17,7 @@ export interface StatusBarProps {
   recoveryMode?: "confirm" | "continuation" | "still_blocked" | string;
   activeView?: string;
   columns?: number;
+  exitPending?: boolean;
 }
 
 const ACTIVE_STATUSES = new Set([
@@ -39,7 +40,8 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   isReconciliation = false,
   recoveryMode = "confirm",
   activeView = "main",
-  columns: explicitColumns
+  columns: explicitColumns,
+  exitPending = false
 }) => {
   const { stdout } = useStdout();
   const terminalColumns = explicitColumns ?? stdout?.columns ?? 80;
@@ -120,6 +122,16 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   };
 
   const renderShortcuts = () => {
+    if (exitPending) {
+      return (
+        <Box>
+          <Text color="yellow" bold>
+            Press Ctrl+C again to exit
+          </Text>
+        </Box>
+      );
+    }
+
     if (hasModal) {
       if (modalType === "approval") {
         return (

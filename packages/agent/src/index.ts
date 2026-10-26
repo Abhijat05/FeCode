@@ -52,6 +52,12 @@ export type AgentEvent =
   | { type: "done" }
   | { type: "error"; error: Error }
   | { type: "skills_activated"; skills: string[] }
+  | {
+      type: "context_compacted";
+      droppedTurnsCount?: number;
+      savedTokens?: number;
+      timestamp?: number;
+    }
   | { type: "plan_created"; plan: TaskPlan }
   | {
       type: "plan_execution_started";

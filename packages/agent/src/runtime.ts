@@ -59,7 +59,7 @@ export interface AgentState {
 
 import type { RepositoryExplorer, ExplorationResult } from "./exploration/types.js";
 import type { CodeContextSelector, CodeContextResult } from "./context/types.js";
-import { prepareModelMessages } from "./context/messageOptimizer.js";
+import { optimizeModelMessages } from "./context/messageOptimizer.js";
 import { sanitizeToolResultForContext } from "./context/toolResultSanitizer.js";
 import { estimateTokens } from "./optimization/estimator.js";
 import type { AgentExecutionStrategy } from "./strategy/types.js";
@@ -1337,6 +1337,7 @@ export class AgentRuntime implements Agent {
 
     let turnCount = 0;
     let emptyToolNudgeSent = false;
+    let hasEmittedCompactedNotice = false;
     try {
       while (turnCount < this.maxTurns) {
         turnCount++;
@@ -1359,12 +1360,24 @@ export class AgentRuntime implements Agent {
           2048,
           maxContext - outputReserve - systemTokens
         );
-        const modelMessages = prepareModelMessages(
+        const optimization = optimizeModelMessages(
           this.state.messages,
           maxBudgetTokens
         );
+        const modelMessages = optimization.messages;
 
-        const request: ModelRequest = {
+        if (optimization.compacted && !hasEmittedCompactedNotice) {
+          hasEmittedCompactedNotice = true;
+          yield {
+            type: "context_compacted",
+            droppedTurnsCount: optimization.droppedTurnsCount,
+            savedTokens: optimization.savedTokens,
+            timestamp: Date.now()
+          };
+        } /*
+        );
+
+        */ const request: ModelRequest = {
           system: activeSystemPrompt,
           messages: modelMessages,
           tools: toolDefinitions.length ? toolDefinitions : undefined

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { prepareModelMessages } from "./messageOptimizer.js";
+import { prepareModelMessages, optimizeModelMessages } from "./messageOptimizer.js";
 import type { ModelMessage } from "@fecode/models";
 
 describe("prepareModelMessages", () => {
@@ -276,5 +276,34 @@ describe("prepareModelMessages", () => {
     const notice = prepared.find((m) => m.role === "user" && m.content?.includes("Custom LLM Summary"));
     expect(notice).toBeDefined();
     expect(notice?.content).toContain("Custom LLM Summary: User completed task 1 successfully.");
+  });
+});
+
+
+describe("optimizeModelMessages", () => {
+  it("returns compacted: false when within budget", () => {
+    const messages: ModelMessage[] = [
+      { role: "user", content: "Hello" },
+      { role: "assistant", content: "World" }
+    ];
+    const res = optimizeModelMessages(messages, 4000);
+    expect(res.compacted).toBe(false);
+    expect(res.messages.length).toBe(2);
+  });
+
+  it("compacts older turns and returns compacted: true with droppedTurnsCount and savedTokens", () => {
+    const messages: ModelMessage[] = [
+      { role: "user", content: "Turn 1: Setup project " + "A".repeat(5000) },
+      { role: "assistant", content: "Done setup " + "B".repeat(5000) },
+      { role: "user", content: "Turn 2: Add database " + "C".repeat(5000) },
+      { role: "assistant", content: "Done database " + "D".repeat(5000) },
+      { role: "user", content: "Turn 3: Active query" }
+    ];
+
+    const res = optimizeModelMessages(messages, 1000);
+    expect(res.compacted).toBe(true);
+    expect(res.droppedTurnsCount).toBeGreaterThanOrEqual(1);
+    expect(res.savedTokens).toBeGreaterThan(0);
+    expect(res.messages[res.messages.length - 1].content).toBe("Turn 3: Active query");
   });
 });

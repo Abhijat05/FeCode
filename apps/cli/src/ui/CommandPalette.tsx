@@ -66,7 +66,10 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                 {cmd.command}
               </Text>
             </Box>
-            <Text color="gray">{cmd.description}</Text>
+            <Text color="gray">
+              {cmd.category ? <Text color="gray" dimColor>{cmd.category} · </Text> : null}
+              {cmd.description}
+            </Text>
           </Box>
         );
       })}

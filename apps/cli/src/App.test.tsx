@@ -2681,11 +2681,11 @@ describe("CLI App Component", () => {
 
       // Submit first turn
       await typeAndSubmit(stdin, "First question");
-      await delay(150);
+      await delay(200);
 
       // Submit second turn
       await typeAndSubmit(stdin, "Second question");
-      await delay(150);
+      await delay(200);
 
       let frame = lastFrame() ?? "";
       expect(frame).toContain("Response for: Second question");
@@ -2763,11 +2763,11 @@ describe("CLI App Component", () => {
 
       // Submit turn 1
       await typeAndSubmit(stdin, "Turn 1");
-      await delay(150);
+      await delay(200);
 
       // Submit turn 2 (triggers approval prompt)
       await typeAndSubmit(stdin, "Turn 2 edit");
-      await delay(150);
+      await delay(200);
 
       let frame = lastFrame() ?? "";
       expect(frame).toContain("Modify main.ts");
@@ -2801,7 +2801,7 @@ describe("CLI App Component", () => {
 
       // Approve prompt with 'y'
       stdin.write("y");
-      await delay(150);
+      await delay(200);
 
       frame = lastFrame() ?? "";
       expect(frame).toContain("Edit approved and applied");
@@ -2836,7 +2836,7 @@ describe("CLI App Component", () => {
 
       // Submit turn 1
       await typeAndSubmit(stdin, "Question 1");
-      await delay(150);
+      await delay(200);
 
       let frame = lastFrame() ?? "";
       expect(frame).toContain("Answer to question 1");
@@ -2878,7 +2878,7 @@ describe("CLI App Component", () => {
 
       // Complete task
       if (finishTask) finishTask();
-      await delay(150);
+      await delay(200);
     });
 
     it("resets scrollOffset when user types into the task input while scrolled up", async () => {
@@ -2892,10 +2892,10 @@ describe("CLI App Component", () => {
       await delay(50);
 
       await typeAndSubmit(stdin, "History turn 1");
-      await delay(150);
+      await delay(200);
 
       await typeAndSubmit(stdin, "History turn 2");
-      await delay(150);
+      await delay(200);
 
       // Scroll up using Up Arrow
       stdin.write("\u001B[A");
@@ -2948,11 +2948,11 @@ describe("CLI App Component", () => {
 
       // Submit prompt 1
       await typeAndSubmit(stdin, "first command");
-      await delay(150);
+      await delay(200);
 
       // Submit prompt 2
       await typeAndSubmit(stdin, "second command");
-      await delay(150);
+      await delay(200);
 
       // Press Ctrl+P (\x10) to recall latest prompt
       stdin.write("\x10");
@@ -2998,7 +2998,7 @@ describe("CLI App Component", () => {
 
       // Press Enter to submit the combined paste
       stdin.write("\r");
-      await delay(150);
+      await delay(200);
 
       expect(submitted).toEqual(["line1\nline2"]);
     });
@@ -3043,7 +3043,7 @@ describe("CLI App Component", () => {
 
       // Press Ctrl+C while blocked modal is active
       stdin.write("\x03");
-      await delay(150);
+      await delay(200);
 
       frame = lastFrame() ?? "";
       expect(frame).not.toContain("⚠ PLAN EXECUTION BLOCKED");
@@ -3107,7 +3107,7 @@ describe("CLI App Component", () => {
 
       // Press Ctrl+C while resume modal is active
       stdin.write("\x03");
-      await delay(150);
+      await delay(200);
 
       const frame = lastFrame() ?? "";
       expect(frame).not.toContain("Resume this task as a new run? [y/N]");
@@ -3178,14 +3178,14 @@ describe("CLI App Component", () => {
 
       // Choose [r] to recover
       await typeAndSubmit(stdin, "r");
-      await delay(150);
+      await delay(200);
 
       let frame = lastFrame() ?? "";
       expect(frame).toContain("Proceed with recovery? [y/N]:");
 
       // Press Ctrl+C while recovery modal is active
       stdin.write("\x03");
-      await delay(150);
+      await delay(200);
 
       frame = lastFrame() ?? "";
       expect(frame).not.toContain("Recovery (repair)");
@@ -3193,10 +3193,10 @@ describe("CLI App Component", () => {
       expect(exited).toBe(false);
     });
 
-    it("calls onExit when Ctrl+C is pressed while idle with no active modals", async () => {
+    it("prompts on first Ctrl+C while idle and exits on second Ctrl+C within 2 seconds", async () => {
       let exited = false;
       const mockAgent = new MockAgent();
-      const { stdin } = render(
+      const { lastFrame, stdin } = render(
         <App agent={mockAgent} cwd="/test" onExit={() => (exited = true)} />
       );
       await delay(50);
@@ -3204,7 +3204,33 @@ describe("CLI App Component", () => {
       stdin.write("\x03");
       await delay(100);
 
+      expect(exited).toBe(false);
+      let frame = lastFrame() ?? "";
+      expect(frame).toContain("Press Ctrl+C again to exit");
+
+      // Second Ctrl+C within 2000ms: should trigger onExit
+      stdin.write("\x03");
+      await delay(100);
+
       expect(exited).toBe(true);
+    });
+
+    it("renders context compaction notice when context_compacted event is emitted", async () => {
+      const mockAgent = new MockAgent();
+      mockAgent.runFn = async function* () {
+        yield { type: "context_compacted", droppedTurnsCount: 3, savedTokens: 12400 } as any;
+        yield { type: "text", content: "Response after compaction" };
+        yield { type: "done" };
+      };
+
+      const { lastFrame, stdin } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+      await typeAndSubmit(stdin, "summarize recent tasks");
+      await delay(200);
+
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("Context optimized: 3 earlier turns summarized");
+      expect(frame).toContain("saved ~12,400 tokens");
     });
 
     it("dismisses active modal on Escape key without exiting", async () => {
@@ -3263,7 +3289,7 @@ describe("CLI App Component", () => {
 
       // Press Escape while resume modal is active
       stdin.write("\u001B");
-      await delay(150);
+      await delay(200);
 
       const frame = lastFrame() ?? "";
       expect(frame).not.toContain("Resume this task as a new run? [y/N]");
@@ -3313,7 +3339,7 @@ describe("CLI App Component", () => {
 
       // Type "please check"
       await typeAndSubmit(stdin, "please check");
-      await delay(150);
+      await delay(200);
 
       const frame = lastFrame() ?? "";
       expect(frame).toContain("please check");
@@ -3897,7 +3923,7 @@ describe("CLI App Component", () => {
       await delay(50);
 
       await typeAndSubmit(stdin, "test stream batching");
-      await delay(150);
+      await delay(200);
 
       const frame = lastFrame() ?? "";
       expect(frame).toContain("Chunk 1 Chunk 2 Chunk 3");

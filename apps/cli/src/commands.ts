@@ -1,29 +1,32 @@
+export type CommandCategory = "Navigation" | "Task & Plan" | "History & Recovery" | "System";
+
 export interface CommandDef {
   command: string;
   description: string;
+  category?: CommandCategory;
 }
 
 export const COMMANDS: CommandDef[] = [
-  { command: "/help",           description: "Show available commands & keyboard shortcuts" },
-  { command: "/status",         description: "Show current session, model, and project context" },
-  { command: "/plan",           description: "Display current active task plan (or /plan <runId>)" },
-  { command: "/runs",           description: "List recent durable historical runs (/runs [--all] [limit])" },
-  { command: "/run",            description: "Inspect specific historical run by ID (/run <id>)" },
-  { command: "/resume",         description: "Prepare and resume task from previous run (/resume <id>)" },
-  { command: "/replan",         description: "Request replanning for current task (or /replan <runId>)" },
-  { command: "/debug",          description: "Show diagnostics summary for current run" },
-  { command: "/diagnostics",    description: "Show complete diagnostic telemetry" },
-  { command: "/history",        description: "Show completed tasks in current session (/history [page])" },
-  { command: "/tasks",          description: "List session task summaries (/tasks [page])" },
-  { command: "/task",           description: "View task details by index (/task <index>)" },
-  { command: "/git",            description: "Inspect git repository status and branch" },
-  { command: "/checkpoints",    description: "List available rollback checkpoints" },
-  { command: "/checkpoint",     description: "Create a new manual checkpoint" },
-  { command: "/recover",        description: "Inspect or initiate checkpoint recovery" },
-  { command: "/sessions",       description: "List saved CLI sessions (/sessions [page])" },
-  { command: "/delete-session", description: "Delete a specific saved session (/delete-session <id>)" },
-  { command: "/clear",          description: "Clear current terminal conversation history" },
-  { command: "/exit",           description: "Persist session and exit FeCode" }
+  { command: "/help",           category: "System",             description: "Show available commands & keyboard shortcuts" },
+  { command: "/status",         category: "Task & Plan",        description: "Show current session, model, and project context" },
+  { command: "/plan",           category: "Navigation",         description: "Display current active task plan (or /plan <runId>)" },
+  { command: "/runs",           category: "Navigation",         description: "List recent durable historical runs (/runs [--all] [limit])" },
+  { command: "/run",            category: "History & Recovery", description: "Inspect specific historical run by ID (/run <id>)" },
+  { command: "/resume",         category: "History & Recovery", description: "Prepare and resume task from previous run (/resume <id>)" },
+  { command: "/replan",         category: "Task & Plan",        description: "Request replanning for current task (or /replan <runId>)" },
+  { command: "/debug",          category: "System",             description: "Show diagnostics summary for current run" },
+  { command: "/diagnostics",    category: "System",             description: "Show complete diagnostic telemetry" },
+  { command: "/history",        category: "History & Recovery", description: "Show completed tasks in current session (/history [page])" },
+  { command: "/tasks",          category: "Task & Plan",        description: "List session task summaries (/tasks [page])" },
+  { command: "/task",           category: "Task & Plan",        description: "View task details by index (/task <index>)" },
+  { command: "/git",            category: "Navigation",         description: "Inspect git repository status and branch" },
+  { command: "/checkpoints",    category: "History & Recovery", description: "List available rollback checkpoints" },
+  { command: "/checkpoint",     category: "History & Recovery", description: "Create a new manual checkpoint" },
+  { command: "/recover",        category: "History & Recovery", description: "Inspect or initiate checkpoint recovery" },
+  { command: "/sessions",       category: "History & Recovery", description: "List saved CLI sessions (/sessions [page])" },
+  { command: "/delete-session", category: "History & Recovery", description: "Delete a specific saved session (/delete-session <id>)" },
+  { command: "/clear",          category: "System",             description: "Clear current terminal conversation history" },
+  { command: "/exit",           category: "System",             description: "Persist session and exit FeCode" }
 ];
 
 /**

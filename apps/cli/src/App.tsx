@@ -346,6 +346,10 @@ export const App: React.FC<AppProps> = ({
   const prevIsGeneratingRef = useRef(false);
   const pastedTextsRef = useRef<Map<string, string>>(new Map());
   const pasteCounterRef = useRef<number>(0);
+  const [exitPending, setExitPending] = useState(false);
+  const exitTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastCtrlCTimeRef = useRef<number>(0);
+  const [compactionNotice, setCompactionNotice] = useState<string | null>(null);
   const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(
     null
   );
@@ -398,6 +402,14 @@ export const App: React.FC<AppProps> = ({
     ? (terminalRows <= 24 ? 6 : Math.min(8, Math.max(4, terminalRows - 20)))
     : 0;
   const availableTurnRows = Math.max(2, terminalRows - 14 - paletteHeight);
+
+  useEffect(() => {
+    return () => {
+      if (exitTimerRef.current) {
+        clearTimeout(exitTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (process.stdout.isTTY && !isTestEnv) {
@@ -648,6 +660,15 @@ export const App: React.FC<AppProps> = ({
   // Keyboard navigation & shortcuts
   useInput(
     (input, key) => {
+      if (exitPending && !(key.ctrl && input === "c")) {
+        setExitPending(false);
+        lastCtrlCTimeRef.current = 0;
+        if (exitTimerRef.current) {
+          clearTimeout(exitTimerRef.current);
+          exitTimerRef.current = null;
+        }
+      }
+
       // Tab: select top autocomplete suggestion
       if (key.tab && commandSuggestions.length > 0) {
         const clamped = Math.max(0, Math.min(selectedSuggestion, commandSuggestions.length - 1));
@@ -959,7 +980,25 @@ export const App: React.FC<AppProps> = ({
             return updated;
           });
         } else {
-          handleExit();
+          const now = Date.now();
+          if (now - lastCtrlCTimeRef.current <= 2000) {
+            if (exitTimerRef.current) {
+              clearTimeout(exitTimerRef.current);
+              exitTimerRef.current = null;
+            }
+            setExitPending(false);
+            handleExit();
+          } else {
+            lastCtrlCTimeRef.current = now;
+            setExitPending(true);
+            if (exitTimerRef.current) {
+              clearTimeout(exitTimerRef.current);
+            }
+            exitTimerRef.current = setTimeout(() => {
+              setExitPending(false);
+              lastCtrlCTimeRef.current = 0;
+            }, 2000);
+          }
         }
         return;
       }
@@ -2846,6 +2885,16 @@ export const App: React.FC<AppProps> = ({
               )
             );
           }
+        } else if (event.type === "context_compacted") {
+          const turnsCount = (event as any).droppedTurnsCount ?? 1;
+          const turnWord = turnsCount === 1 ? "turn" : "turns";
+          const savedStr =
+            (event as any).savedTokens && (event as any).savedTokens > 0
+              ? ` (saved ~${(event as any).savedTokens.toLocaleString()} tokens)`
+              : "";
+          setCompactionNotice(
+            `⚙ Context optimized: ${turnsCount} earlier ${turnWord} summarized${savedStr}`
+          );
         } else if (event.type === "provider_fallback_attempt") {
           const notice = event.partialTextInterrupted
             ? `⟳ [Interrupted] Quota reached on ${event.fromProvider}. Restarting response with ${event.toProvider}...`
@@ -3472,6 +3521,7 @@ export const App: React.FC<AppProps> = ({
       }
       footer={
         <StatusBar
+          exitPending={exitPending}
           status={uiState?.status || lastTaskStatus}
           isGenerating={isGenerating}
           hasModal={hasModal}
@@ -3636,6 +3686,13 @@ export const App: React.FC<AppProps> = ({
                   <Box marginY={0}>
                     <Text color="gray" dimColor>
                       ▲ {hiddenTurnsCount} earlier turn(s) [↑ / PageUp to scroll]
+                    </Text>
+                  </Box>
+                )}
+                {compactionNotice && (
+                  <Box marginY={0}>
+                    <Text color="gray" dimColor>
+                      {compactionNotice}
                     </Text>
                   </Box>
                 )}

@@ -153,6 +153,21 @@ describe("CommandPalette", () => {
     expect(frame).toContain("/delete-session");
     expect(frame).toContain("Longer command");
   });
+
+  it("renders command semantic category alongside description", () => {
+    const suggestions: CommandDef[] = [
+      { command: "/plan", category: "Navigation", description: "Display current active task plan" },
+      { command: "/clear", category: "System", description: "Clear current terminal conversation history" }
+    ];
+    const { lastFrame } = render(
+      <CommandPalette suggestions={suggestions} selectedIndex={0} />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("Navigation ·");
+    expect(frame).toContain("Display current active task plan");
+    expect(frame).toContain("System ·");
+    expect(frame).toContain("Clear current terminal conversation history");
+  });
 });
 
 describe("TurnView", () => {
