@@ -3205,7 +3205,7 @@ describe("CLI App Component", () => {
       await delay(100);
 
       expect(exited).toBe(false);
-      let frame = lastFrame() ?? "";
+      const frame = lastFrame() ?? "";
       expect(frame).toContain("Press Ctrl+C again to exit");
 
       // Second Ctrl+C within 2000ms: should trigger onExit
@@ -3218,7 +3218,7 @@ describe("CLI App Component", () => {
     it("renders context compaction notice when context_compacted event is emitted", async () => {
       const mockAgent = new MockAgent();
       mockAgent.runFn = async function* () {
-        yield { type: "context_compacted", droppedTurnsCount: 3, savedTokens: 12400 } as any;
+        yield { type: "context_compacted", droppedTurnsCount: 3, savedTokens: 12400 };
         yield { type: "text", content: "Response after compaction" };
         yield { type: "done" };
       };
@@ -4046,4 +4046,3 @@ describe("CLI App Component", () => {
     });
   });
 });
-

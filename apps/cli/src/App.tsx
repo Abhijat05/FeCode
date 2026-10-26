@@ -2886,11 +2886,12 @@ export const App: React.FC<AppProps> = ({
             );
           }
         } else if (event.type === "context_compacted") {
-          const turnsCount = (event as any).droppedTurnsCount ?? 1;
+          const turnsCount = event.droppedTurnsCount ?? 1;
           const turnWord = turnsCount === 1 ? "turn" : "turns";
+          const savedTokens = event.savedTokens;
           const savedStr =
-            (event as any).savedTokens && (event as any).savedTokens > 0
-              ? ` (saved ~${(event as any).savedTokens.toLocaleString()} tokens)`
+            savedTokens && savedTokens > 0
+              ? ` (saved ~${savedTokens.toLocaleString()} tokens)`
               : "";
           setCompactionNotice(
             `⚙ Context optimized: ${turnsCount} earlier ${turnWord} summarized${savedStr}`
