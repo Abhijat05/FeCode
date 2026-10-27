@@ -188,4 +188,84 @@ describe("ExecuteCommandTool", () => {
     expect(res.error?.message).toContain("Windows system cannot find file specified");
     expect(res.output?.maskedFailure).toBe(true);
   });
+
+  it("executes command in specified sub-directory when cwd is provided", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "fecode-cwd-test-"));
+    try {
+      const subDir = path.join(tmpDir, "packages", "agent");
+      await fs.mkdir(subDir, { recursive: true });
+
+      mockExecutor.defaultResult = {
+        exitCode: 0,
+        stdout: "Agent tests passed\n",
+        stderr: "",
+        timedOut: false,
+        truncated: false
+      };
+
+      const res = await tool.execute(
+        { command: "npm test", cwd: "packages/agent" },
+        { cwd: tmpDir, signal: controller.signal }
+      );
+
+      expect(res.success).toBe(true);
+      expect(mockExecutor.executedCommands).toHaveLength(1);
+      expect(mockExecutor.executedCommands[0].options.cwd).toBe(subDir);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects cwd traversal outside workspace root with PATH_OUT_OF_BOUNDS", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "fecode-cwd-test-"));
+    try {
+      const res = await tool.execute(
+        { command: "npm test", cwd: "../../outside" },
+        { cwd: tmpDir, signal: controller.signal }
+      );
+
+      expect(res.success).toBe(false);
+      expect(res.error?.code).toBe("PATH_OUT_OF_BOUNDS");
+      expect(mockExecutor.executedCommands).toHaveLength(0);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects non-existent cwd directory with NOT_FOUND", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "fecode-cwd-test-"));
+    try {
+      const res = await tool.execute(
+        { command: "npm test", cwd: "nonexistent_dir" },
+        { cwd: tmpDir, signal: controller.signal }
+      );
+
+      expect(res.success).toBe(false);
+      expect(res.error?.code).toBe("NOT_FOUND");
+      expect(res.error?.message).toContain("does not exist");
+      expect(mockExecutor.executedCommands).toHaveLength(0);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects cwd that points to a file with NOT_A_DIRECTORY", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "fecode-cwd-test-"));
+    try {
+      const filePath = path.join(tmpDir, "file.txt");
+      await fs.writeFile(filePath, "sample content");
+
+      const res = await tool.execute(
+        { command: "npm test", cwd: "file.txt" },
+        { cwd: tmpDir, signal: controller.signal }
+      );
+
+      expect(res.success).toBe(false);
+      expect(res.error?.code).toBe("NOT_A_DIRECTORY");
+      expect(res.error?.message).toContain("not a directory");
+      expect(mockExecutor.executedCommands).toHaveLength(0);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
 });

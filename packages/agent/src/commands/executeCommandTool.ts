@@ -1,3 +1,5 @@
+import * as fs from "fs/promises";
+import { resolveSafePath } from "../tools/pathUtils.js";
 import type { Tool, ToolContext, ToolResult } from "@fecode/models";
 import type { CommandExecutor, CommandResult } from "./types.js";
 import { NodeCommandExecutor } from "./nodeExecutor.js";
@@ -7,6 +9,7 @@ import { detectMaskedCommandFailure } from "./failureDetector.js";
 
 export interface ExecuteCommandInput {
   command: string;
+  cwd?: string;
   isDaemon?: boolean;
   ignoreMaskedFailures?: boolean;
 }
@@ -24,6 +27,11 @@ export class ExecuteCommandTool
         type: "string",
         description:
           "The command to execute (e.g. 'npm test', 'npx tsc --noEmit', 'git status'). Only permitted development tools are allowed."
+      },
+      cwd: {
+        type: "string",
+        description:
+          "Optional working directory relative to the project workspace root in which to execute the command."
       },
       isDaemon: {
         type: "boolean",
@@ -64,10 +72,42 @@ export class ExecuteCommandTool
       };
     }
 
+    let effectiveCwd = context.cwd;
+    if (input.cwd && typeof input.cwd === "string" && input.cwd.trim()) {
+      const pathRes = resolveSafePath(context.cwd, input.cwd);
+      if ("error" in pathRes) {
+        return {
+          success: false,
+          error: pathRes.error
+        };
+      }
+      try {
+        const stats = await fs.stat(pathRes.targetPath);
+        if (!stats.isDirectory()) {
+          return {
+            success: false,
+            error: {
+              message: `The specified cwd is not a directory: ${input.cwd}`,
+              code: "NOT_A_DIRECTORY"
+            }
+          };
+        }
+      } catch (err: unknown) {
+        return {
+          success: false,
+          error: {
+            message: `The specified cwd directory does not exist: ${input.cwd}`,
+            code: "NOT_FOUND"
+          }
+        };
+      }
+      effectiveCwd = pathRes.targetPath;
+    }
+
     if (input.isDaemon) {
       try {
         const task = await this.taskManager.spawn(input.command, {
-          cwd: context.cwd,
+          cwd: effectiveCwd,
           signal: context.signal
         });
 
@@ -122,7 +162,7 @@ export class ExecuteCommandTool
     }
 
     let result = await this.executor.execute(input.command, {
-      cwd: context.cwd,
+      cwd: effectiveCwd,
       signal: context.signal
     });
 
@@ -131,13 +171,13 @@ export class ExecuteCommandTool
         result.stderr.includes("index.lock") ||
         (result.error && result.error.includes("index.lock"))
       ) {
-        const lockStatus = await checkGitLockStatus(context.cwd, 5000);
+        const lockStatus = await checkGitLockStatus(effectiveCwd, 5000);
         if (lockStatus?.hasLock && lockStatus.isStale) {
-          const cleaned = await cleanStaleGitLock(context.cwd, false, 5000);
+          const cleaned = await cleanStaleGitLock(effectiveCwd, false, 5000);
           if (cleaned.removed) {
             // Auto-recovery retry!
             const retryResult = await this.executor.execute(input.command, {
-              cwd: context.cwd,
+              cwd: effectiveCwd,
               signal: context.signal
             });
             if (
