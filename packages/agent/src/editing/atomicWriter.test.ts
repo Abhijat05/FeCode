@@ -124,4 +124,81 @@ describe("writeAtomic", () => {
     const restoredContent = await fs.readFile(targetFile, "utf-8");
     expect(restoredContent).toBe(originalContent);
   });
+
+  it("preserves shared inode and sibling content when editing hard-linked files (nlink > 1)", async () => {
+    const originalFile = path.join(tmpDir, "original.txt");
+    const linkedFile = path.join(tmpDir, "linked.txt");
+
+    await fs.writeFile(originalFile, "Initial Hardlink Data", "utf-8");
+
+    let linkSupported = false;
+    try {
+      await fs.link(originalFile, linkedFile);
+      linkSupported = true;
+    } catch {
+      linkSupported = false;
+    }
+
+    if (linkSupported) {
+      const statBeforeOrig = await fs.stat(originalFile);
+      const statBeforeLink = await fs.stat(linkedFile);
+      expect(statBeforeOrig.nlink).toBeGreaterThan(1);
+      expect(statBeforeOrig.ino).toBe(statBeforeLink.ino);
+
+      // Perform atomic write
+      await writeAtomic(originalFile, "Mutated Hardlink Content");
+
+      // Verify that the sibling hardlink reflects the mutated content immediately
+      const siblingContent = await fs.readFile(linkedFile, "utf-8");
+      expect(siblingContent).toBe("Mutated Hardlink Content");
+
+      // Verify inode was PRESERVED (not severed)
+      const statAfterOrig = await fs.stat(originalFile);
+      const statAfterLink = await fs.stat(linkedFile);
+      expect(statAfterOrig.ino).toBe(statBeforeOrig.ino);
+      expect(statAfterLink.ino).toBe(statBeforeLink.ino);
+      expect(statAfterOrig.nlink).toBe(statBeforeOrig.nlink);
+    }
+  });
+
+  it("restores original content from backup when in-place write fails on a hard-linked file", async () => {
+    const originalFile = path.join(tmpDir, "orig_fail.txt");
+    const linkedFile = path.join(tmpDir, "link_fail.txt");
+    const initialText = "Do not lose this hardlink data";
+
+    await fs.writeFile(originalFile, initialText, "utf-8");
+
+    let linkSupported = false;
+    try {
+      await fs.link(originalFile, linkedFile);
+      linkSupported = true;
+    } catch {
+      linkSupported = false;
+    }
+
+    if (linkSupported) {
+      const fakeWrite = async () => {
+        const err = new Error("ENOSPC: write failed mid-stream") as NodeJS.ErrnoException;
+        err.code = "ENOSPC";
+        throw err;
+      };
+
+      await expect(
+        writeAtomic(originalFile, "Should fail to write", {
+          writeFn: fakeWrite
+        })
+      ).rejects.toThrow("ENOSPC");
+
+      // Invariant: original content is restored on both hard links
+      const origText = await fs.readFile(originalFile, "utf-8");
+      const linkText = await fs.readFile(linkedFile, "utf-8");
+      expect(origText).toBe(initialText);
+      expect(linkText).toBe(initialText);
+
+      // Invariant: inode link remains intact
+      const statOrig = await fs.stat(originalFile);
+      const statLink = await fs.stat(linkedFile);
+      expect(statOrig.ino).toBe(statLink.ino);
+    }
+  });
 });

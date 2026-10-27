@@ -1,4 +1,5 @@
 import * as fs from "fs/promises";
+import type { Stats } from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
 import { FileLockManager } from "./fileLock.js";
@@ -9,6 +10,8 @@ export interface WriteAtomicOptions {
   renameFn?: (oldPath: string, newPath: string) => Promise<void>;
   /** Custom copy function for testing / dependency injection */
   copyFn?: (src: string, dest: string) => Promise<void>;
+  /** Custom write function for testing / dependency injection */
+  writeFn?: (filePath: string, data: string, encoding: BufferEncoding) => Promise<void>;
 }
 
 export async function writeAtomic(
@@ -25,6 +28,7 @@ export async function writeAtomic(
     const signal = options.signal;
     const renameFn = options.renameFn ?? fs.rename;
     const copyFn = options.copyFn ?? fs.copyFile;
+    const writeFn = options.writeFn ?? fs.writeFile;
 
     if (signal?.aborted) {
       throw new Error("CANCELLED");
@@ -52,7 +56,39 @@ export async function writeAtomic(
       throw new Error("CANCELLED");
     }
 
-    await fs.writeFile(tempPath, content, "utf-8");
+    // Detect hard-linked files (nlink > 1). Renaming a temporary file over a hard-linked
+    // destination severs the inode link, leaving sibling paths out of sync.
+    // To preserve the shared inode, back up the original and write directly in-place.
+    let existingStat: Stats | null = null;
+    try {
+      existingStat = await fs.stat(targetPath);
+    } catch {
+      existingStat = null;
+    }
+
+    if (existingStat && existingStat.nlink > 1) {
+      await copyFn(targetPath, backupPath);
+      backupCreated = true;
+
+      if (signal?.aborted) {
+        throw new Error("CANCELLED");
+      }
+
+      try {
+        await writeFn(targetPath, content, "utf-8");
+      } catch (writeErr: unknown) {
+        try {
+          await copyFn(backupPath, targetPath);
+        } catch {
+          // Best effort restore
+        }
+        throw writeErr;
+      }
+
+      return;
+    }
+
+    await writeFn(tempPath, content, "utf-8");
     tempCreated = true;
 
     if (signal?.aborted) {
