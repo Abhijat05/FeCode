@@ -24,6 +24,7 @@ export interface EditFileOutput {
   reason?: string;
   diff?: string;
   contentHash?: string;
+  warning?: string;
 }
 
 export interface EditFileToolOptions {
@@ -31,6 +32,8 @@ export interface EditFileToolOptions {
   onPreWrite?: () => Promise<void>;
   statFn?: (path: string) => Promise<fsSync.Stats>;
 }
+
+const BIDI_OVERRIDE_REGEX = /[\u200E\u200F\u202A-\u202E\u2066-\u2069]/;
 
 function countOccurrences(str: string, searchStr: string): number {
   if (!searchStr) return 0;
@@ -232,6 +235,27 @@ export class EditFileTool
         }
       }
 
+      let contentToMatch = originalContent;
+      if (matchCount === 0) {
+        const nfcOriginal = originalContent.normalize("NFC");
+        let nfcOld = input.oldText.normalize("NFC");
+        let nfcNew = input.newText.normalize("NFC");
+        if (nfcOriginal.includes("\r\n") && !nfcOld.includes("\r\n") && nfcOld.includes("\n")) {
+          nfcOld = nfcOld.replace(/\r?\n/g, "\r\n");
+          nfcNew = nfcNew.replace(/\r?\n/g, "\r\n");
+        } else if (!nfcOriginal.includes("\r\n") && nfcOld.includes("\r\n")) {
+          nfcOld = nfcOld.replace(/\r\n/g, "\n");
+          nfcNew = nfcNew.replace(/\r\n/g, "\n");
+        }
+        const nfcCount = countOccurrences(nfcOriginal, nfcOld);
+        if (nfcCount > 0) {
+          contentToMatch = nfcOriginal;
+          effectiveOldText = nfcOld;
+          effectiveNewText = nfcNew;
+          matchCount = nfcCount;
+        }
+      }
+
       if (matchCount === 0) {
         return {
           success: false,
@@ -252,7 +276,7 @@ export class EditFileTool
         };
       }
 
-      const proposedContent = originalContent.replace(effectiveOldText, () => effectiveNewText);
+      const proposedContent = contentToMatch.replace(effectiveOldText, () => effectiveNewText);
       const bytesWritten = Buffer.byteLength(proposedContent, "utf-8");
 
       if (bytesWritten > this.maxBytes) {
@@ -265,7 +289,7 @@ export class EditFileTool
         };
       }
 
-      const diff = createUnifiedDiff(displayPath, originalContent, proposedContent);
+      const diff = createUnifiedDiff(displayPath, contentToMatch, proposedContent);
 
       if (this.onPreWrite) {
         await this.onPreWrite();
@@ -284,7 +308,9 @@ export class EditFileTool
         };
       }
 
-      const freshMatchCount = countOccurrences(freshContent, effectiveOldText);
+      const freshToMatch =
+        contentToMatch === originalContent ? freshContent : freshContent.normalize("NFC");
+      const freshMatchCount = countOccurrences(freshToMatch, effectiveOldText);
       if (freshMatchCount !== 1) {
         return {
           success: false,
@@ -293,6 +319,12 @@ export class EditFileTool
             code: "EDIT_CONFLICT"
           }
         };
+      }
+
+      let warning: string | undefined;
+      if (BIDI_OVERRIDE_REGEX.test(input.newText)) {
+        warning =
+          "Detected Unicode bidirectional (Bidi) override characters in proposed edit. Verify code carefully for Trojan Source visual spoofing.";
       }
 
       await writeAtomic(targetPath, proposedContent, context.signal);
@@ -305,7 +337,8 @@ export class EditFileTool
           bytesWritten,
           changed: true,
           diff,
-          contentHash: createContentHash(proposedContent)
+          contentHash: createContentHash(proposedContent),
+          ...(warning ? { warning } : {})
         }
       };
     } catch (err: unknown) {

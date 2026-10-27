@@ -318,5 +318,50 @@ describe("EditFileTool", () => {
     // Clean up permission so afterEach can delete tmpDir
     await fs.chmod(roPath, 0o666);
   });
-});
 
+  it("matches and replaces text across Unicode NFC vs NFD normalization discrepancies", async () => {
+    // Disk content uses decomposed Unicode (NFD, e.g. macOS APFS): 'e' + '\u0301'
+    const decomposedText = "const re\u0301sume\u0301 = true;\n";
+    const filePath = path.join(tmpDir, "unicode.ts");
+    await fs.writeFile(filePath, decomposedText, "utf-8");
+
+    // Agent provides precomposed Unicode (NFC, standard LLM output): '\u00E9'
+    const precomposedOld = "const r\u00E9sum\u00E9 = true;";
+    const precomposedNew = "const r\u00E9sum\u00E9 = false;";
+
+    const result = await tool.execute(
+      {
+        path: "unicode.ts",
+        oldText: precomposedOld,
+        newText: precomposedNew
+      },
+      context
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.output?.changed).toBe(true);
+    const updated = await fs.readFile(filePath, "utf-8");
+    expect(updated.normalize("NFC")).toContain("const r\u00E9sum\u00E9 = false;");
+  });
+
+  it("detects and warns on Unicode bidirectional (Bidi) override characters in newText", async () => {
+    const filePath = path.join(tmpDir, "bidi.ts");
+    await fs.writeFile(filePath, 'const access = "user";\n', "utf-8");
+
+    // Payload containing Trojan Source Bidi control character (e.g. \u202E Right-to-Left Override)
+    const dangerousNewText = 'const access = "user\u202Eadmin";';
+
+    const result = await tool.execute(
+      {
+        path: "bidi.ts",
+        oldText: 'const access = "user";',
+        newText: dangerousNewText
+      },
+      context
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.output?.warning).toBeDefined();
+    expect(result.output?.warning).toContain("bidirectional (Bidi) override characters");
+  });
+});
