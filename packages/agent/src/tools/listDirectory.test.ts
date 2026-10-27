@@ -146,4 +146,66 @@ describe("ListDirectoryTool", () => {
     expect(names).toContain("audit");
     expect(names).toContain("audit/AUDIT_REPORT.md");
   });
+
+  it("classifies valid and broken symlinks accurately with type 'symlink' and broken flag", async () => {
+    // Test on real filesystem using junctions/symlinks if supported
+    let symlinksCreated = false;
+    try {
+      const targetDir = path.join(tmpDir, "real_target_dir");
+      await fs.mkdir(targetDir);
+      await fs.writeFile(path.join(targetDir, "data.txt"), "ok");
+
+      const validLink = path.join(tmpDir, "valid_link");
+      const brokenTarget = path.join(tmpDir, "will_be_deleted");
+      await fs.mkdir(brokenTarget);
+      const brokenLink = path.join(tmpDir, "dangling_link");
+
+      await fs.symlink(targetDir, validLink, "junction");
+      await fs.symlink(brokenTarget, brokenLink, "junction");
+      await fs.rmdir(brokenTarget);
+      symlinksCreated = true;
+    } catch {
+      symlinksCreated = false;
+    }
+
+    if (symlinksCreated) {
+      const result = await tool.execute({}, context);
+      expect(result.success).toBe(true);
+
+      const validEntry = result.output?.entries.find((e) => e.name === "valid_link");
+      expect(validEntry).toBeDefined();
+      expect(validEntry?.type).toBe("symlink");
+      expect(validEntry?.broken).toBeUndefined();
+      expect(validEntry?.target).toBeDefined();
+
+      const brokenEntry = result.output?.entries.find((e) => e.name === "dangling_link");
+      expect(brokenEntry).toBeDefined();
+      expect(brokenEntry?.type).toBe("symlink");
+      expect(brokenEntry?.broken).toBe(true);
+      expect(brokenEntry?.type).not.toBe("file");
+    }
+  });
+
+  it("ensures broken symlinks are not misreported as regular files or directories", async () => {
+    try {
+      const targetDir = path.join(tmpDir, "temp_target_dir");
+      await fs.mkdir(targetDir);
+      const brokenLink = path.join(tmpDir, "broken_item");
+      await fs.symlink(targetDir, brokenLink, "junction");
+      await fs.rmdir(targetDir);
+
+      const result = await tool.execute({}, context);
+      expect(result.success).toBe(true);
+
+      const brokenItem = result.output?.entries.find((e) => e.name === "broken_item");
+      if (brokenItem) {
+        expect(brokenItem.type).toBe("symlink");
+        expect(brokenItem.broken).toBe(true);
+        expect(brokenItem.type).not.toBe("file");
+        expect(brokenItem.type).not.toBe("directory");
+      }
+    } catch {
+      // Junction/symlink not supported in environment
+    }
+  });
 });

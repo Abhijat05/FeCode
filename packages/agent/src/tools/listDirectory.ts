@@ -11,7 +11,9 @@ export interface ListDirectoryInput {
 
 export interface DirectoryEntry {
   name: string;
-  type: "file" | "directory";
+  type: "file" | "directory" | "symlink";
+  broken?: boolean;
+  target?: string;
 }
 
 export interface ListDirectoryOutput {
@@ -116,18 +118,46 @@ export class ListDirectoryTool
         for (const d of dirents) {
           if (context.signal?.aborted) return;
           const entryName = prefix ? `${prefix}/${d.name}` : d.name;
-          const isDir = d.isDirectory();
+          const fullEntryPath = path.join(dirPath, d.name);
 
-          allEntries.push({
-            name: entryName,
-            type: isDir ? "directory" : "file"
-          });
-
-          // Recurse into subdirectories if depth allows
-          if (isDir && currentDepth < requestedDepth) {
-            if (!isIgnoredDirectory(d.name)) {
-              await collect(path.join(dirPath, d.name), entryName, currentDepth + 1);
+          if (d.isSymbolicLink()) {
+            let linkTarget: string | undefined;
+            try {
+              linkTarget = await fs.readlink(fullEntryPath);
+            } catch {
+              // Target unreadable
             }
+
+            let isBroken = false;
+            try {
+              await fs.stat(fullEntryPath);
+            } catch {
+              isBroken = true;
+            }
+
+            allEntries.push({
+              name: entryName,
+              type: "symlink",
+              ...(linkTarget ? { target: linkTarget } : {}),
+              ...(isBroken ? { broken: true } : {})
+            });
+          } else if (d.isDirectory()) {
+            allEntries.push({
+              name: entryName,
+              type: "directory"
+            });
+
+            // Recurse into subdirectories if depth allows
+            if (currentDepth < requestedDepth) {
+              if (!isIgnoredDirectory(d.name)) {
+                await collect(fullEntryPath, entryName, currentDepth + 1);
+              }
+            }
+          } else {
+            allEntries.push({
+              name: entryName,
+              type: "file"
+            });
           }
         }
       };
