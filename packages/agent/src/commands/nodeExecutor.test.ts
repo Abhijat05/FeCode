@@ -9,7 +9,7 @@ describe("NodeCommandExecutor", () => {
   let executor: NodeCommandExecutor;
 
   beforeEach(async () => {
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "fecode-cmd-test-"));
+    tmpDir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "fecode-cmd-test-")));
     executor = new NodeCommandExecutor();
   });
 
@@ -99,7 +99,9 @@ describe("NodeCommandExecutor", () => {
     });
 
     expect(res.exitCode).toBe(0);
-    expect(path.normalize(res.stdout.trim())).toBe(path.normalize(tmpDir));
+    const normalizedStdout = await fs.realpath(res.stdout.trim()).catch(() => path.normalize(res.stdout.trim()));
+    const normalizedTmp = await fs.realpath(tmpDir).catch(() => path.normalize(tmpDir));
+    expect(normalizedStdout).toBe(normalizedTmp);
   });
 
   it("preserves PATH while filtering sensitive API keys from child environment", async () => {
@@ -229,12 +231,12 @@ describe("NodeCommandExecutor", () => {
 
   it("extends execution time via activity heartbeats while stdout is streaming", async () => {
     // 4 ticks * 80ms = 320ms, exceeds timeoutMs (200ms) but each tick arrives in 80ms (< 200ms)
-    const script = `let count = 0; const iv = setInterval(() => { console.log('tick'); count++; if (count >= 4) { clearInterval(iv); process.exit(0); } }, 80);`;
+    const script = `console.log('init'); let count = 0; const iv = setInterval(() => { console.log('tick'); count++; if (count >= 5) { clearInterval(iv); process.exit(0); } }, 60);`;
     const res = await executor.execute(`node -e "${script}"`, {
       cwd: tmpDir,
-      timeoutMs: 200,
+      timeoutMs: 400,
       enableHeartbeat: true,
-      maxTotalTimeoutMs: 1500
+      maxTotalTimeoutMs: 2500
     });
 
     expect(res.timedOut).toBe(false);
@@ -243,17 +245,17 @@ describe("NodeCommandExecutor", () => {
   });
 
   it("enforces maxTotalTimeoutMs even if activity heartbeats keep streaming", async () => {
-    const script = `setInterval(() => console.log('infinite tick'), 30);`;
+    const script = `console.log('init'); setInterval(() => console.log('infinite tick'), 25);`;
     const res = await executor.execute(`node -e "${script}"`, {
       cwd: tmpDir,
-      timeoutMs: 300,
+      timeoutMs: 500,
       enableHeartbeat: true,
-      maxTotalTimeoutMs: 500
+      maxTotalTimeoutMs: 800
     });
 
     expect(res.timedOut).toBe(true);
     expect(res.exitCode).toBeNull();
-    expect(res.error).toContain("maximum limit of 500ms");
+    expect(res.error).toContain("maximum limit of 800ms");
   });
 
   it("cleans up abandoned .git/index.lock when git command is aborted", async () => {

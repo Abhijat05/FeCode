@@ -238,8 +238,9 @@ export class NodeCommandExecutor implements CommandExecutor {
         }
 
         const currentTimeout = Math.min(timeoutMs, remainingTotal);
+        const isMaxTotal = currentTimeout === remainingTotal;
         timer = setTimeout(() => {
-          if (Date.now() - startTime >= maxTotalTimeoutMs) {
+          if (isMaxTotal || Date.now() - startTime >= maxTotalTimeoutMs - 50) {
             timedOutDueToMaxLimit = true;
           }
           triggerTimeout();
