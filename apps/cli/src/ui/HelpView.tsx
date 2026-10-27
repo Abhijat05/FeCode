@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
+import { truncateText } from "./AppShell.js";
 
 export interface HelpViewProps {
   terminalRows?: number;
@@ -37,7 +38,7 @@ export const HelpView: React.FC<HelpViewProps> = ({
     { key: "Ctrl+C", desc: "Cancel active generation / approval or exit" },
     { key: "[p]", desc: "Toggle Plan View (in view navigation)" },
     { key: "[r]", desc: "Toggle Run History View (in view navigation)" },
-    { key: "[d]", desc: "Toggle Diagnostics View (in view navigation)" },
+    { key: "[d] ", desc: "Toggle Diagnostics View (in view navigation)" },
     { key: "[?]", desc: "Toggle Help View (or '?' on empty prompt)" },
     { key: "Esc", desc: "Return to Main Execution View / dismiss modal" }
   ];
@@ -54,13 +55,28 @@ export const HelpView: React.FC<HelpViewProps> = ({
       ? process.stdout.columns
       : 80);
 
-  const isNarrow = cols < 70;
+  // Column mode: 2 columns if width >= 75 cols, otherwise 1 column
+  const isNarrow = cols < 75;
+
+  // Decide if pagination is needed:
+  // When stdoutRows < 24 OR isNarrow, paginate commands so height stays strictly <= 13 lines!
+  const needsPagination = stdoutRows < 24 || isNarrow;
+
+  // In 2-column mode: pageSize is 10 commands (5 rows of 2).
+  // In 1-column mode: pageSize is 5-6 commands (5-6 rows of 1).
+  const pageSize = isNarrow
+    ? Math.max(4, Math.min(6, Math.floor(stdoutRows - 12)))
+    : 10;
+
+  const totalPages = needsPagination
+    ? Math.max(1, Math.ceil(commands.length / pageSize))
+    : 1;
+
   const [page, setPage] = useState(1);
-  const pageSize = Math.max(5, Math.min(10, Math.floor(stdoutRows - 12)));
-  const totalPages = Math.ceil(commands.length / pageSize);
+  const currentPage = Math.min(page, totalPages);
 
   useInput((input, key) => {
-    if (isNarrow) {
+    if (totalPages > 1) {
       if (
         key.upArrow ||
         key.leftArrow ||
@@ -81,9 +97,25 @@ export const HelpView: React.FC<HelpViewProps> = ({
     }
   });
 
-  const half = Math.ceil(commands.length / 2);
-  const col1 = commands.slice(0, half);
-  const col2 = commands.slice(half);
+  const pagedCommands = needsPagination
+    ? commands.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+    : commands;
+
+  // Column widths for 2-column mode:
+  const colWidth = Math.floor((cols - 4) / 2);
+  const maxCmdDescLen = isNarrow
+    ? Math.max(15, cols - 20)
+    : Math.max(12, colWidth - 15);
+  const maxScDescLen = isNarrow
+    ? Math.max(15, cols - 16)
+    : Math.max(10, colWidth - 11);
+
+  const half = Math.ceil(pagedCommands.length / 2);
+  const col1 = pagedCommands.slice(0, half);
+  const col2 = pagedCommands.slice(half);
+
+  // For very compact viewports (stdoutRows < 18), show shortcuts in a single-line footer
+  const compactShortcuts = stdoutRows < 18;
 
   return (
     <Box
@@ -91,53 +123,51 @@ export const HelpView: React.FC<HelpViewProps> = ({
       borderStyle="round"
       borderColor="cyan"
       paddingX={1}
-      marginY={1}
+      marginY={0}
     >
-      <Box marginBottom={1} justifyContent="space-between">
+      <Box marginBottom={0} justifyContent="space-between">
         <Text bold color="cyan">Available Commands:</Text>
-        {isNarrow && (
+        {totalPages > 1 && (
           <Text color="yellow">
-            (Page {page} of {totalPages}) [↑ / ↓ or ← / →]
+            (Page {currentPage} of {totalPages}) [↑ / ↓ or ← / →]
           </Text>
         )}
       </Box>
 
       {isNarrow ? (
-        // Narrow viewport: Paginated single column
+        // Narrow viewport: 1 column paginated
         <Box flexDirection="column">
-          {commands
-            .slice((page - 1) * pageSize, page * pageSize)
-            .map((c, i) => (
-              <Box key={`cmd-narrow-${i}`}>
-                <Box width={16}>
-                  <Text bold color="white">{c.cmd}</Text>
-                </Box>
-                <Text color="gray">{c.desc}</Text>
+          {pagedCommands.map((c, i) => (
+            <Box key={`cmd-narrow-${i}`}>
+              <Box width={14} flexShrink={0}>
+                <Text bold color="white">{c.cmd}</Text>
               </Box>
-            ))}
+              <Text color="gray">{truncateText(c.desc, maxCmdDescLen)}</Text>
+            </Box>
+          ))}
         </Box>
       ) : (
-        // Standard viewport: 2-column balanced grid
+        // 2-column balanced grid
         <Box flexDirection="column">
           {col1.map((c, i) => {
             const c2 = col2[i];
             return (
               <Box key={`cmd-row-${i}`} justifyContent="space-between">
-                <Box width="48%">
-                  <Box width={15}>
+                <Box width="49%">
+                  <Box width={14} flexShrink={0}>
                     <Text bold color="white">{c.cmd}</Text>
                   </Box>
-                  <Text color="gray">{c.desc}</Text>
+                  <Text color="gray">{truncateText(c.desc, maxCmdDescLen)}</Text>
                 </Box>
                 {c2 ? (
-                  <Box width="48%">
-                    <Box width={15}>
+                  <Box width="49%">
+                    <Box width={14} flexShrink={0}>
                       <Text bold color="white">{c2.cmd}</Text>
                     </Box>
-                    <Text color="gray">{c2.desc}</Text>
+                    <Text color="gray">{truncateText(c2.desc, maxCmdDescLen)}</Text>
                   </Box>
                 ) : (
-                  <Box width="48%" />
+                  <Box width="49%" />
                 )}
               </Box>
             );
@@ -145,16 +175,27 @@ export const HelpView: React.FC<HelpViewProps> = ({
         </Box>
       )}
 
-      <Box marginTop={1} marginBottom={0}>
+      <Box marginTop={0} marginBottom={0}>
         <Text bold color="yellow">Keyboard Shortcuts:</Text>
       </Box>
-      {isNarrow ? (
-        shortcuts.map((s, i) => (
+      {compactShortcuts ? (
+        <Box>
+          <Text color="gray">
+            <Text bold color="yellow">Ctrl+C</Text> exit ·{" "}
+            <Text bold color="yellow">[p]</Text> plan ·{" "}
+            <Text bold color="yellow">[r]</Text> runs ·{" "}
+            <Text bold color="yellow">[d] </Text> debug ·{" "}
+            <Text bold color="yellow">[?]</Text> help ·{" "}
+            <Text bold color="yellow">Esc</Text> main
+          </Text>
+        </Box>
+      ) : isNarrow ? (
+        shortcuts.slice(0, 3).map((s, i) => (
           <Box key={`sc-narrow-${i}`}>
-            <Box width={16}>
+            <Box width={10} flexShrink={0}>
               <Text bold color="yellow">{s.key}</Text>
             </Box>
-            <Text color="gray">{s.desc}</Text>
+            <Text color="gray">{truncateText(s.desc, maxScDescLen)}</Text>
           </Box>
         ))
       ) : (
@@ -164,23 +205,23 @@ export const HelpView: React.FC<HelpViewProps> = ({
             const s2 = shortcuts[rowIdx + 3];
             return (
               <Box key={`sc-row-${rowIdx}`} justifyContent="space-between">
-                {s1 && (
-                  <Box width="48%">
-                    <Box width={15}>
+                {s1 ? (
+                  <Box width="49%">
+                    <Box width={10} flexShrink={0}>
                       <Text bold color="yellow">{s1.key}</Text>
                     </Box>
-                    <Text color="gray">{s1.desc}</Text>
+                    <Text color="gray">{truncateText(s1.desc, maxScDescLen)}</Text>
                   </Box>
-                )}
+                ) : null}
                 {s2 ? (
-                  <Box width="48%">
-                    <Box width={15}>
+                  <Box width="49%">
+                    <Box width={10} flexShrink={0}>
                       <Text bold color="yellow">{s2.key}</Text>
                     </Box>
-                    <Text color="gray">{s2.desc}</Text>
+                    <Text color="gray">{truncateText(s2.desc, maxScDescLen)}</Text>
                   </Box>
                 ) : (
-                  <Box width="48%" />
+                  <Box width="49%" />
                 )}
               </Box>
             );

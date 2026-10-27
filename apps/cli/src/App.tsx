@@ -394,7 +394,7 @@ export const App: React.FC<AppProps> = ({
   const terminalRows = process.stdout?.rows || 24;
 
   const commandSuggestions: CommandDef[] =
-    !isGenerating && !hasModal && query.startsWith("/") && !query.includes(" ")
+    activeView === "main" && !isGenerating && !hasModal && query.startsWith("/") && !query.includes(" ")
       ? filterCommands(query)
       : [];
 
@@ -3575,7 +3575,12 @@ export const App: React.FC<AppProps> = ({
       )}
 
       {/* Content Area */}
-      {activeView === "help" && <HelpView />}
+      {activeView === "help" && (
+        <HelpView
+          terminalRows={terminalRows}
+          terminalColumns={process.stdout?.columns || 80}
+        />
+      )}
 
       {activeView === "git" && (
         <WorkspaceStatus
@@ -3596,6 +3601,7 @@ export const App: React.FC<AppProps> = ({
         <RunHistoryView
           projectId={currentProjectId}
           isAll={runsIsAll}
+          terminalRows={terminalRows}
           runs={
             historicalRuns.length > 0
               ? historicalRuns
