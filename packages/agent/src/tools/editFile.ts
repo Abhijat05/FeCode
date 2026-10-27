@@ -31,6 +31,7 @@ export interface EditFileToolOptions {
   maxBytes?: number;
   onPreWrite?: () => Promise<void>;
   statFn?: (path: string) => Promise<fsSync.Stats>;
+  writeAtomicFn?: (targetPath: string, content: string, signal?: AbortSignal) => Promise<void>;
 }
 
 const BIDI_OVERRIDE_REGEX = /[\u200E\u200F\u202A-\u202E\u2066-\u2069]/;
@@ -74,11 +75,13 @@ export class EditFileTool
   private readonly maxBytes: number;
   private readonly onPreWrite?: () => Promise<void>;
   private readonly statFn: (path: string) => Promise<fsSync.Stats>;
+  private readonly writeAtomicFn: (targetPath: string, content: string, signal?: AbortSignal) => Promise<void>;
 
   constructor(options: EditFileToolOptions = {}) {
     this.maxBytes = options.maxBytes ?? 10 * 1024 * 1024; // 10 MB default
     this.onPreWrite = options.onPreWrite;
     this.statFn = options.statFn ?? fs.stat;
+    this.writeAtomicFn = options.writeAtomicFn ?? writeAtomic;
   }
 
   async execute(
@@ -327,7 +330,7 @@ export class EditFileTool
           "Detected Unicode bidirectional (Bidi) override characters in proposed edit. Verify code carefully for Trojan Source visual spoofing.";
       }
 
-      await writeAtomic(targetPath, proposedContent, context.signal);
+      await this.writeAtomicFn(targetPath, proposedContent, context.signal);
 
       return {
         success: true,
@@ -350,6 +353,16 @@ export class EditFileTool
           error: {
             message: `File does not exist: ${input.path}`,
             code: "NOT_FOUND"
+          }
+        };
+      }
+
+      if (error.code === "EROFS") {
+        return {
+          success: false,
+          error: {
+            message: `Cannot edit file: filesystem is mounted read-only (${displayPath}).`,
+            code: "READ_ONLY_FILESYSTEM"
           }
         };
       }

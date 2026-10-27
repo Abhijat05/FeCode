@@ -21,6 +21,7 @@ export interface WriteFileOutput {
 export interface WriteFileToolOptions {
   maxBytes?: number;
   statFn?: (path: string) => Promise<fsSync.Stats>;
+  writeAtomicFn?: (targetPath: string, content: string, signal?: AbortSignal) => Promise<void>;
 }
 
 export class WriteFileTool
@@ -47,10 +48,12 @@ export class WriteFileTool
 
   private readonly maxBytes: number;
   private readonly statFn: (path: string) => Promise<fsSync.Stats>;
+  private readonly writeAtomicFn: (targetPath: string, content: string, signal?: AbortSignal) => Promise<void>;
 
   constructor(options: WriteFileToolOptions = {}) {
     this.maxBytes = options.maxBytes ?? 10 * 1024 * 1024; // 10 MB default
     this.statFn = options.statFn ?? fs.stat;
+    this.writeAtomicFn = options.writeAtomicFn ?? writeAtomic;
   }
 
   async execute(
@@ -140,7 +143,7 @@ export class WriteFileTool
         }
       }
 
-      await writeAtomic(targetPath, input.content, context.signal);
+      await this.writeAtomicFn(targetPath, input.content, context.signal);
 
       return {
         success: true,
@@ -153,6 +156,16 @@ export class WriteFileTool
       };
     } catch (err: unknown) {
       const error = err as NodeJS.ErrnoException;
+
+      if (error.code === "EROFS") {
+        return {
+          success: false,
+          error: {
+            message: `Cannot write file: filesystem is mounted read-only (${displayPath}).`,
+            code: "READ_ONLY_FILESYSTEM"
+          }
+        };
+      }
 
       if (error.code === "EACCES" || error.code === "EPERM") {
         const diagnostic = await getWritePermissionDiagnostic(targetPath, displayPath);

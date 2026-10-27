@@ -153,5 +153,23 @@ describe("WriteFileTool", () => {
 
     await fs.chmod(roPath, 0o666);
   });
+
+  it("returns structured READ_ONLY_FILESYSTEM error when filesystem throws EROFS", async () => {
+    const fakeWriteAtomic = async () => {
+      const err = new Error("EROFS: read-only file system, open 'target'") as NodeJS.ErrnoException;
+      err.code = "EROFS";
+      throw err;
+    };
+
+    const roTool = new WriteFileTool({ writeAtomicFn: fakeWriteAtomic });
+    const result = await roTool.execute(
+      { path: "ro_file.txt", content: "data" },
+      context
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe("READ_ONLY_FILESYSTEM");
+    expect(result.error?.message).toMatch(/filesystem is mounted read-only/i);
+  });
 });
 
