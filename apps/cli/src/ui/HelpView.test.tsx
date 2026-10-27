@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { render } from "ink-testing-library";
-import React from "react";
 import { HelpView } from "./HelpView.js";
 
 describe("HelpView", () => {

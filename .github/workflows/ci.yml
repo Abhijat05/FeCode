@@ -8,10 +8,15 @@ on:
     paths-ignore:
       - 'docs/**'
       - '**/*.md'
+      - '.vscode/**'
   pull_request:
     branches:
       - main
       - master
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '.vscode/**'
   workflow_dispatch:
 
 concurrency:
@@ -20,89 +25,142 @@ concurrency:
 
 permissions:
   contents: read
-  actions: read
-  security-events: write
 
 jobs:
-  pr-validation:
-    if: github.event_name == 'pull_request'
-    name: PR Validation
+  lint-and-typecheck:
+    name: Lint & Typecheck
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: package-lock.json
-          check-latest: true
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Run lint
-        run: npm run lint
-
       - name: Run typecheck
         run: npm run typecheck
 
-      - name: Run tests (Node 20 and 22)
+      - name: Run lint
+        run: npm run lint
+
+  test:
+    name: Test (${{ matrix.os }}, Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            node: 20
+            coverage: false
+          - os: ubuntu-latest
+            node: 22
+            coverage: true
+          - os: windows-latest
+            node: 22
+            coverage: false
+          - os: macos-latest
+            node: 22
+            coverage: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests with coverage (Ubuntu Node 22)
+        if: matrix.coverage == true
         run: npm run coverage
 
-      - name: Run build
+      - name: Upload coverage report
+        if: matrix.coverage == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitest-coverage-report
+          path: coverage/
+          retention-days: 14
+
+      - name: Run tests
+        if: matrix.coverage == false
+        run: npm run test
+
+  package-smoke-test:
+    name: Package Smoke Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build monorepo packages
         run: npm run build
 
-      - name: Run production audit
-        run: npm audit --omit=dev --audit-level=high
+      - name: Run CLI package smoke test
+        run: node scripts/ci/smoke-test-package.mjs
+
+  security:
+    name: Security & CodeQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
           languages: javascript-typescript
 
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
-
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
 
-  branch-validation:
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
-    name: Branch Validation
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: package-lock.json
-          check-latest: true
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run lint
-        run: npm run lint
-
-      - name: Run typecheck
-        run: npm run typecheck
-
-      - name: Run smoke tests
-        run: npm run test
-
-      - name: Run build
-        run: npm run build
-
-      - name: Run lightweight security check
-        run: npm audit --audit-level=moderate
+      - name: Run production vulnerability audit
+        run: npm audit --omit=dev --audit-level=high

@@ -16,7 +16,7 @@
     "precoverage": "npm run build",
     "coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
-    "lint": "tsc --noEmit && eslint ."
+    "lint": "eslint ."
   },
   "devDependencies": {
     "@eslint/js": "^9.16.0",

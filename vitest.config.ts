@@ -8,6 +8,11 @@ export default defineConfig({
     exclude: ["**/node_modules/**", "**/dist/**"],
     env: {
       FECODE_HISTORY_DIR: path.join(os.tmpdir(), "fecode-test-history")
+    },
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "json-summary", "lcov"],
+      reportsDirectory: "./coverage"
     }
   }
 });

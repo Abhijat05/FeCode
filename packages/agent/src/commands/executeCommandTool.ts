@@ -92,7 +92,7 @@ export class ExecuteCommandTool
             }
           };
         }
-      } catch (err: unknown) {
+      } catch {
         return {
           success: false,
           error: {
