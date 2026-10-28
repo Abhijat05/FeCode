@@ -149,7 +149,7 @@ describe("NodeCommandExecutor", () => {
     `;
 
     const res = await executor.execute(
-      `node -e "${nestedScript.replace(/\n/g, " ").replace(/"/g, '\\"')}"`,
+      `node -e "${nestedScript.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, " ")}"`,
       {
         cwd: tmpDir,
         timeoutMs: 250
@@ -216,7 +216,7 @@ describe("NodeCommandExecutor", () => {
       process.stdout.write('AAAA 🚀🚀🚀🚀🚀 BBBB');
     `;
     const res = await executor.execute(
-      `node -e "${script.replace(/\n/g, " ").replace(/"/g, '\\"')}"`,
+      `node -e "${script.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, " ")}"`,
       {
         cwd: tmpDir,
         maxOutputBytes: 11

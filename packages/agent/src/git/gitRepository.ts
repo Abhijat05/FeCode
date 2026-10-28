@@ -38,10 +38,24 @@ export class DefaultGitRepository implements GitRepository {
         });
       }
 
+      // Guard against second-order git option injection (e.g. --upload-pack, --receive-pack, -c)
+      const DANGEROUS_GIT_ARG = /^--?(?:upload-pack|receive-pack|exec|output|config|c\b)/i;
+      const safeArgs: string[] = [];
+      for (const arg of args) {
+        if (typeof arg !== "string" || DANGEROUS_GIT_ARG.test(arg.trim())) {
+          return resolve({
+            stdout: "",
+            stderr: `Blocked potentially unsafe git argument: ${arg}`,
+            exitCode: 1
+          });
+        }
+        safeArgs.push(arg);
+      }
+
       const env = prepareChildEnvironment();
       let child: ReturnType<typeof spawn>;
       try {
-        child = spawn("git", args, {
+        child = spawn("git", safeArgs, {
           cwd,
           env,
           shell: false

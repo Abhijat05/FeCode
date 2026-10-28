@@ -397,7 +397,7 @@ export class AgentRuntime implements Agent {
     this.state = {
       sessionId:
         options.sessionId ||
-        `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+        `session-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`,
       status: "idle",
       messages: [],
       verificationAttempts: 0

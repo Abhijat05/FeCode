@@ -289,7 +289,7 @@ export const App: React.FC<AppProps> = ({
     () =>
       sessionIdProp ||
       initialSessionData?.sessionId ||
-      `session-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
+      `session-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
   );
   const [taskCount, setTaskCount] = useState<number>(
     () => initialSessionData?.taskCount || 0

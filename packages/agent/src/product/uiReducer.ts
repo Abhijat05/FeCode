@@ -20,7 +20,7 @@ export function createInitialUIState(options?: Partial<UIState>): UIState {
     lifecycleState: options?.lifecycleState || "idle",
     sessionId:
       options?.sessionId ||
-      `session-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      `session-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`,
     cwd: options?.cwd || process.cwd(),
     timeline: options?.timeline ? [...options.timeline] : [],
     messages: options?.messages ? [...options.messages] : [],

@@ -106,7 +106,8 @@ export function optimizeModelMessages(
     // Strip thinking tags from assistant messages
     if (m.role === "assistant" && m.content) {
       const sanitized = m.content
-        .replace(/<(?:think|thinking)>[\s\S]*?<\/(?:think|thinking)>/g, "")
+        .replace(/<think>[\s\S]*?<\/think>/gi, "")
+        .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
         .trim();
       return {
         ...m,

@@ -12,7 +12,7 @@ const OSC_REGEX = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\|$)/g;
 // CSI (Control Sequence Introducer) non-SGR sequences.
 // SGR sequences end in 'm' (styling/colors). All other CSI sequences (clearing screen J/K,
 // cursor movement A-H, alternate screen buffers ?1049h, private modes) end in [@-ln-~] (excluding 'm').
-const CSI_NON_SGR_REGEX = /\x1b\[[\d;?]*([@-ln-~])/g;
+const CSI_NON_SGR_REGEX = /\x1b\[[\d;?]*([@A-Z[\\\]^_`a-ln-z{|}~])/g;
 
 // Other two-character or mode terminal escape codes (e.g., ESC c reset, ESC 7/8 cursor save/restore)
 const MISC_ESC_REGEX = /\x1b[=><#%()][0-9A-Za-z]?|\x1b[78cDEMHNOPVWXZ]/g;

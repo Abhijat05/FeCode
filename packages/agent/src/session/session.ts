@@ -18,7 +18,7 @@ export class AgentSession {
   }) {
     this.sessionId =
       options.sessionId ||
-      `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      `session-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
     this.workingDirectory = options.workingDirectory;
     this.provider = options.provider;
     this.model = options.model;
