@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { prepareModelMessages, optimizeModelMessages } from "./messageOptimizer.js";
+import { prepareModelMessages, optimizeModelMessages, stripThinkingTags } from "./messageOptimizer.js";
 import type { ModelMessage } from "@fecode/models";
 
 describe("prepareModelMessages", () => {
@@ -19,6 +19,18 @@ describe("prepareModelMessages", () => {
     const prepared = prepareModelMessages(messages, 4000);
     expect(prepared[1].content).toBe("The answer is 4.");
     expect(prepared[1].content).not.toContain("<think>");
+  });
+
+  it("safely strips thinking tags in O(N) linear time without ReDoS vulnerabilities", () => {
+    expect(stripThinkingTags("<think>abc</think>Hello <thinking>def</thinking>World")).toBe("Hello World");
+    expect(stripThinkingTags("<THINK>thought</THINK>Answer")).toBe("Answer");
+    expect(stripThinkingTags("<think>unclosed thoughts")).toBe("");
+    const maliciousInput = "<think>".repeat(500) + "Final content";
+    const start = Date.now();
+    const result = stripThinkingTags(maliciousInput);
+    const duration = Date.now() - start;
+    expect(result).toBe("");
+    expect(duration).toBeLessThan(50);
   });
 
   it("truncates excessively large tool results retaining head and tail", () => {

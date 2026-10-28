@@ -86,6 +86,39 @@ export function extractCompactedHistorySummary(
  * Bounds and compacts message history before sending to the model provider, returning
  * optimization metadata (compacted, droppedTurnsCount, savedTokens).
  */
+/**
+ * Strips <think>...</think> and <thinking>...</thinking> blocks in strictly linear O(N) time
+ * using index slicing without regular expressions, eliminating polynomial ReDoS vulnerabilities.
+ */
+export function stripThinkingTags(content: string): string {
+  if (!content) return content;
+  const tags = [
+    { open: "<think>", close: "</think>" },
+    { open: "<thinking>", close: "</thinking>" }
+  ];
+
+  let result = content;
+  for (const { open, close } of tags) {
+    const lowerOpen = open.toLowerCase();
+    const lowerClose = close.toLowerCase();
+    while (true) {
+      const lower = result.toLowerCase();
+      const startIdx = lower.indexOf(lowerOpen);
+      if (startIdx === -1) break;
+
+      const endIdx = lower.indexOf(lowerClose, startIdx + lowerOpen.length);
+      if (endIdx === -1) {
+        // Tag is unclosed; strip from startIdx to end of string
+        result = result.slice(0, startIdx);
+        break;
+      }
+
+      result = result.slice(0, startIdx) + result.slice(endIdx + lowerClose.length);
+    }
+  }
+  return result;
+}
+
 export function optimizeModelMessages(
   messages: ModelMessage[],
   maxBudgetTokens: number = 16384,
@@ -105,10 +138,7 @@ export function optimizeModelMessages(
   const cleanedMessages: ModelMessage[] = messages.map((m) => {
     // Strip thinking tags from assistant messages
     if (m.role === "assistant" && m.content) {
-      const sanitized = m.content
-        .replace(/<think>[\s\S]*?<\/think>/gi, "")
-        .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
-        .trim();
+      const sanitized = stripThinkingTags(m.content).trim();
       return {
         ...m,
         content: sanitized || (m.toolCalls?.length ? undefined : "")
