@@ -56,6 +56,14 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   const spinner = isAnimating && spinnerGlyph ? `${spinnerGlyph} ` : isAnimating ? "⠋ " : "";
 
   const renderStatusText = () => {
+    if (exitPending) {
+      return (
+        <Text color="yellow" bold>
+          ⚠ Exit requested
+        </Text>
+      );
+    }
+
     if (customMessage) {
       return (
         <Text color="yellow">

@@ -503,6 +503,15 @@ describe("Phase 5AD: Modular UI Components", () => {
     expect(frame).toMatch(/Executing task\.\.\./);
   });
 
+  it("renders exit requested status and Press Ctrl+C again to exit shortcut when exitPending is true", () => {
+    const { lastFrame } = render(
+      <StatusBar status="idle" isGenerating={false} exitPending={true} columns={80} />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("⚠ Exit requested");
+    expect(frame).toContain("Press Ctrl+C again to exit");
+  });
+
   it("renders StatusBar with step progress during executing state", () => {
     const { lastFrame } = render(
       <StatusBar

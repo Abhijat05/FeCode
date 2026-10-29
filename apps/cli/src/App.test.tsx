@@ -3215,6 +3215,55 @@ describe("CLI App Component", () => {
       expect(exited).toBe(true);
     });
 
+    it("clears typed query and arms exitPending on first Ctrl+C", async () => {
+      let exited = false;
+      const mockAgent = new MockAgent();
+      const { lastFrame, stdin } = render(
+        <App agent={mockAgent} cwd="/test" onExit={() => (exited = true)} />
+      );
+      await delay(50);
+
+      // Type some characters into the query
+      stdin.write("some draft query");
+      await delay(50);
+      let frame = lastFrame() ?? "";
+      expect(frame).toContain("some draft query");
+
+      // Press Ctrl+C
+      stdin.write("\x03");
+      await delay(100);
+
+      expect(exited).toBe(false);
+      frame = lastFrame() ?? "";
+      expect(frame).not.toContain("some draft query");
+      expect(frame).toContain("Press Ctrl+C again to exit");
+      expect(frame).toContain("⚠ Exit requested");
+    });
+
+    it("disarms exitPending when any other key is typed after first Ctrl+C", async () => {
+      let exited = false;
+      const mockAgent = new MockAgent();
+      const { lastFrame, stdin } = render(
+        <App agent={mockAgent} cwd="/test" onExit={() => (exited = true)} />
+      );
+      await delay(50);
+
+      // First Ctrl+C arms the trap
+      stdin.write("\x03");
+      await delay(100);
+      let frame = lastFrame() ?? "";
+      expect(frame).toContain("Press Ctrl+C again to exit");
+
+      // Press another key (e.g. 'a')
+      stdin.write("a");
+      await delay(100);
+
+      frame = lastFrame() ?? "";
+      expect(frame).not.toContain("Press Ctrl+C again to exit");
+      expect(frame).not.toContain("⚠ Exit requested");
+      expect(exited).toBe(false);
+    });
+
     it("renders context compaction notice when context_compacted event is emitted", async () => {
       const mockAgent = new MockAgent();
       mockAgent.runFn = async function* () {

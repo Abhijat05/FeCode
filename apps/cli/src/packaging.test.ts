@@ -23,6 +23,12 @@ describe("FeCode Packaging & Distribution Verification (Phase 5AH)", () => {
     expect(pkg.bin.fecode).toBe("./dist/index.js");
   });
 
+  it("Ink configuration: CLI entrypoint sets exitOnCtrlC to false for two-tier exit trap", () => {
+    const indexPath = path.resolve(cliDir, "src/index.tsx");
+    const content = fs.readFileSync(indexPath, "utf-8");
+    expect(content).toMatch(/render\([\s\S]*exitOnCtrlC:\s*false[\s\S]*\)/);
+  });
+
   it("Version flag: --version prints version and exits 0 cleanly", () => {
     const pkg = JSON.parse(fs.readFileSync(path.resolve(cliDir, "package.json"), "utf-8"));
     const output = execSync(`node "${cliDist}" --version`, {

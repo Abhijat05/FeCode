@@ -660,7 +660,8 @@ export const App: React.FC<AppProps> = ({
   // Keyboard navigation & shortcuts
   useInput(
     (input, key) => {
-      if (exitPending && !(key.ctrl && input === "c")) {
+      const isCtrlC = (key.ctrl && (input === "c" || input === "C")) || input === "\x03";
+      if (exitPending && !isCtrlC) {
         setExitPending(false);
         lastCtrlCTimeRef.current = 0;
         if (exitTimerRef.current) {
@@ -938,7 +939,8 @@ export const App: React.FC<AppProps> = ({
       };
 
       // Ctrl+C cancellation
-      if (key.ctrl && input === "c") {
+      const isCtrlCEvent = (key.ctrl && (input === "c" || input === "C")) || input === "\x03";
+      if (isCtrlCEvent) {
         if (pendingQuery) {
           setPendingQuery(null);
           return;
@@ -991,6 +993,10 @@ export const App: React.FC<AppProps> = ({
           } else {
             lastCtrlCTimeRef.current = now;
             setExitPending(true);
+            if (query) {
+              setQuery("");
+              setSelectedSuggestion(0);
+            }
             if (exitTimerRef.current) {
               clearTimeout(exitTimerRef.current);
             }

@@ -258,7 +258,7 @@ Interactive Commands (inside TUI):
 
   process.once("exit", restoreTerminal);
 
-  render(
+  const app = render(
     <App
       agent={agent}
       productRuntime={productRuntime}
@@ -270,8 +270,12 @@ Interactive Commands (inside TUI):
       projectContext={projectContext}
       sessionStore={sessionStore}
       initialSessionData={initialSessionData}
-    />
+    />,
+    { exitOnCtrlC: false }
   );
+
+  await app.waitUntilExit();
+  process.exit(0);
 }
 
 main().catch((err) => {
