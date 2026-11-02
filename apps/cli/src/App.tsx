@@ -29,7 +29,8 @@ import {
   type CheckpointManager,
   type RecoveryManager,
   type ExecutionPolicy,
-  type RunHistoryStore
+  type RunHistoryStore,
+  type McpRegistrationResult
 } from "@fecode/agent";
 import type { ApprovalRequest, ModelMessage } from "@fecode/models";
 import { InteractiveApprovalResolver } from "./approvalResolver.js";
@@ -92,6 +93,7 @@ export interface AppProps {
   historyStore?: RunHistoryStore;
   clampResponses?: boolean;
   version?: string;
+  mcpStatus?: McpRegistrationResult;
 }
 
 export const App: React.FC<AppProps> = ({
@@ -112,7 +114,8 @@ export const App: React.FC<AppProps> = ({
   recoveryManager: recoveryManagerProp,
   executionPolicy: executionPolicyProp,
   clampResponses,
-  version = CLI_VERSION_DISPLAY
+  version = CLI_VERSION_DISPLAY,
+  mcpStatus
 }) => {
   const gitRepo = useMemo(
     () => gitRepoProp || new DefaultGitRepository(),
@@ -1946,6 +1949,34 @@ export const App: React.FC<AppProps> = ({
         return;
       }
 
+      if (cmd === "/mcp") {
+        const connected = mcpStatus?.connected ?? [];
+        const failed = mcpStatus?.failed ?? [];
+        let mcpText: string;
+        if (connected.length === 0 && failed.length === 0) {
+          mcpText =
+            "MCP Servers\n\nNo MCP servers configured.\nAdd a .fecode/mcp.json file to connect external tool servers.\n";
+        } else {
+          const connectedLines = connected
+            .map((name) => `  ✓ ${name} (${mcpStatus?.toolCounts[name] ?? 0} tool(s))`)
+            .join("\n");
+          const failedLines = failed
+            .map((f) => `  ✗ ${f.name}: ${f.error}`)
+            .join("\n");
+          mcpText = `MCP Servers\n\n${connectedLines}${connectedLines && failedLines ? "\n" : ""}${failedLines}\n`;
+        }
+        setTurns((prev) => [
+          ...prev,
+          {
+            id: `cmd-${Date.now()}`,
+            prompt: trimmed,
+            response: mcpText,
+            status: "done"
+          }
+        ]);
+        return;
+      }
+
       if (cmd === "/clear") {
         setTurns([]);
         setTurns([
@@ -3577,6 +3608,27 @@ export const App: React.FC<AppProps> = ({
           <Text color="gray">
             Please check your environment variables (.env) or configuration file.
           </Text>
+        </Box>
+      )}
+
+      {/* MCP Connection Warning Banner */}
+      {mcpStatus && mcpStatus.failed.length > 0 && (
+        <Box
+          flexDirection="column"
+          borderStyle="single"
+          borderColor="yellow"
+          paddingX={1}
+          marginY={1}
+        >
+          <Text bold color="yellow">
+            ⚠ MCP Server Connection Issue
+          </Text>
+          {mcpStatus.failed.map((f) => (
+            <Text key={f.name} color="white">
+              {f.name}: {f.error}
+            </Text>
+          ))}
+          <Text color="gray">Run /mcp for details. Other tools remain available.</Text>
         </Box>
       )}
 

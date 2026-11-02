@@ -249,6 +249,32 @@ CLI Flags  ──▶  Environment Variables  ──▶  Workspace .env  ──�
 
 ---
 
+## MCP Servers
+
+FeCode can connect to external [Model Context Protocol](https://modelcontextprotocol.io) servers and expose their tools to the model alongside its built-in tools. This is file-based configuration — create a `.fecode/mcp.json` in your project (FeCode walks upward from the working directory to find it):
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/allow"]
+    },
+    "remote-example": {
+      "url": "https://example.com/mcp",
+      "headers": { "Authorization": "Bearer <token>" }
+    }
+  }
+}
+```
+
+- `command`/`args`/`env`/`cwd` configure a locally-launched stdio server; `url`/`headers` configure a remote HTTP server.
+- Every MCP tool call requires approval by default, the same as `execute_command` — MCP servers are external processes/services, so FeCode treats their tools as untrusted by default.
+- Run `/mcp` inside the TUI to see which configured servers connected and how many tools each exposed.
+- Browse the [official MCP servers list](https://github.com/modelcontextprotocol/servers) for ready-made servers to try.
+
+---
+
 ## Supported Providers
 
 FeCode abstracts model providers behind a unified streaming interface in `@fecode/models`:
@@ -294,6 +320,7 @@ Inside the active FeCode terminal session, type `/` to access built-in commands 
 | `/diagnostics` | Display complete telemetry and diagnostic trace |
 | `/history` | View completed tasks and outputs in the current session |
 | `/git` | Inspect Git repository status, active branch, and modified files |
+| `/mcp` | List configured MCP servers and their connection status |
 | `/checkpoints` | List available rollback checkpoints |
 | `/checkpoint` | Create a new manual workspace checkpoint |
 | `/recover` | Inspect or initiate rollback recovery |
