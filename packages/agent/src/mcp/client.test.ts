@@ -79,9 +79,14 @@ describe("connectMcpServer", () => {
     mockCallTool.mockResolvedValue({ content: [{ type: "text", text: "3" }], isError: false });
 
     const { tools } = await connectMcpServer("calc", { command: "calc-server" });
-    const result = await tools[0].execute({ a: 1, b: 2 }, { cwd: "/tmp", signal: new AbortController().signal });
+    const signal = new AbortController().signal;
+    const result = await tools[0].execute({ a: 1, b: 2 }, { cwd: "/tmp", signal });
 
-    expect(mockCallTool).toHaveBeenCalledWith({ name: "add", arguments: { a: 1, b: 2 } });
+    expect(mockCallTool).toHaveBeenCalledWith(
+      { name: "add", arguments: { a: 1, b: 2 } },
+      undefined,
+      { signal }
+    );
     expect(result.success).toBe(true);
     expect(result.output).toBe("3");
   });
@@ -112,6 +117,18 @@ describe("connectMcpServer", () => {
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe("MCP_CALL_FAILED");
     expect(result.error?.message).toContain("connection lost");
+  });
+
+  it("rejects with a timeout error if the server never responds to connect()", async () => {
+    vi.useFakeTimers();
+    mockConnect.mockReset().mockReturnValue(new Promise(() => {}));
+
+    const pending = connectMcpServer("slow", { command: "slow-server" });
+    const assertion = expect(pending).rejects.toThrow(/timed out/i);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await assertion;
+
+    vi.useRealTimers();
   });
 });
 

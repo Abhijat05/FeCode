@@ -5,10 +5,27 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { Tool, ToolContext, ToolRegistry, ToolResult } from "@fecode/models";
 import { isMcpHttpServerConfig, type McpServerConfig } from "./types.js";
 
-const FECODE_CLIENT_VERSION = "1.1.2";
+const FECODE_CLIENT_VERSION = "1.1.3";
+const MCP_CONNECT_TIMEOUT_MS = 10_000;
 
 function sanitizeNamePart(name: string): string {
   return name.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
 }
 
 function buildTransport(config: McpServerConfig): Transport {
@@ -73,7 +90,11 @@ export async function connectMcpServer(
 ): Promise<ConnectedMcpServer> {
   const client = new Client({ name: "fecode", version: FECODE_CLIENT_VERSION });
   const transport = buildTransport(config);
-  await client.connect(transport);
+  await withTimeout(
+    client.connect(transport),
+    MCP_CONNECT_TIMEOUT_MS,
+    `Connection to MCP server '${serverName}' timed out after ${MCP_CONNECT_TIMEOUT_MS}ms`
+  );
 
   const { tools: mcpTools } = await client.listTools();
   const safeServerName = sanitizeNamePart(serverName);
@@ -83,12 +104,16 @@ export async function connectMcpServer(
     description: `[MCP:${serverName}] ${mcpTool.description || mcpTool.name}`,
     inputSchema: mcpTool.inputSchema,
     permissionCategory: "network",
-    async execute(input: unknown, _context: ToolContext): Promise<ToolResult> {
+    async execute(input: unknown, context: ToolContext): Promise<ToolResult> {
       try {
-        const result = await client.callTool({
-          name: mcpTool.name,
-          arguments: (input as Record<string, unknown>) ?? {}
-        });
+        const result = await client.callTool(
+          {
+            name: mcpTool.name,
+            arguments: (input as Record<string, unknown>) ?? {}
+          },
+          undefined,
+          { signal: context.signal }
+        );
         return toToolResult(result);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
