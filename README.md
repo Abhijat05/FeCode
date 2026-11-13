@@ -166,9 +166,35 @@ npm link --workspace=apps/cli
 
 ## Quick Start
 
-### 1. Configure Provider Credentials
+### 1. In-App Setup (First-Run Onboarding)
 
-Set your provider and credentials using environment variables or a `.env` file in your workspace:
+When launching FeCode for the first time without environment variables, FeCode displays an interactive first-run setup wizard directly in your terminal:
+
+```text
+╭──────────────────────────────────────────╮
+│              Welcome to FeCode           │
+│                                          │
+│       Configure your AI provider         │
+│                                          │
+│  Select a provider:                      │
+│                                          │
+│  > Google Gemini                         │
+│    OpenAI                                │
+│    Ollama                                │
+│    OpenAI-compatible                     │
+│                                          │
+│  Enter to continue                       │
+╰──────────────────────────────────────────╯
+```
+
+1. Select your preferred provider using `↑`/`↓` and press `Enter`.
+2. Enter your API key (masked with `*`) and model ID.
+3. FeCode tests authentication and model availability before saving.
+4. Your API key is encrypted and stored in your **Operating System Credential Vault** (Windows Credential Manager, macOS Keychain, or Linux Secret Service). Plaintext keys are never written to disk.
+
+### 2. Alternative: Environment Variable Configuration
+
+Existing deployments, CI/CD pipelines, and terminal setups can continue exporting environment variables or using a workspace `.env` file:
 
 ```bash
 # Option 1: Google Gemini (Recommended Default)
@@ -186,7 +212,7 @@ export FE_PROVIDER="ollama"
 export FE_MODEL="qwen2.5-coder"
 export OLLAMA_BASE_URL="http://localhost:11434/v1"
 
-# Option 4: Generic OpenAI-Compatible / NVIDIA (e.g. DeepSeek on NVIDIA NIM)
+# Option 4: NVIDIA NIM / OpenAI-Compatible (e.g. DeepSeek on NVIDIA)
 export FE_PROVIDER="openai-compatible"
 export FE_MODEL="deepseek-ai/deepseek-v4.1-flash"
 export OPENAI_API_KEY="your-nvidia-api-key"
@@ -226,12 +252,28 @@ FeCode will:
 
 ## Configuration
 
-FeCode supports layered configuration with deterministic precedence:
+### Resolution & Precedence Model
+
+FeCode resolves AI provider configuration using a strict 3-tier precedence hierarchy:
 
 ```text
-CLI Flags  ──▶  Environment Variables  ──▶  Workspace .env  ──▶  Built-in Defaults
-(Highest)                                                               (Lowest)
+1. Explicit Environment Variables (.env / export)   ──▶ (Highest precedence; preserves existing CI & scripts)
+2. Active Saved Provider Profile (OS Credential Vault)──▶ (In-app /provider profiles)
+3. First-Run Interactive Onboarding (TUI)             ──▶ (Triggered when no provider is configured)
 ```
+
+- **Environment Variable Compatibility**: Environment variables continue to work exactly as before. Existing CI pipelines and deployments will not break.
+- **Fail-Fast Explicit Errors**: An invalid explicit environment configuration produces a clear error immediately, rather than silently switching to a saved profile.
+- **Safe Turn Boundaries**: Profile activation takes effect cleanly at turn boundaries; providers are never mutated mid-generation or during tool execution.
+
+### Secure OS Credential Storage
+
+FeCode never persists API keys in plaintext files (`.env`, `config.json`, or history). Credentials are stored exclusively in native operating system vaults:
+- **Windows**: Windows Credential Manager
+- **macOS**: Apple Keychain
+- **Linux**: Secret Service API (`gnome-keyring`, `KWallet`, `KeePassXC`) / Linux Kernel Keyutils
+
+Metadata is kept in `~/.fecode/providers.json` with opaque references (`fecode:profile:<id>`). If OS secure storage is unavailable, FeCode raises an explicit error and will **never silently fall back to plaintext**.
 
 ### Environment Variables
 
@@ -244,8 +286,6 @@ CLI Flags  ──▶  Environment Variables  ──▶  Workspace .env  ──�
 | `ANTHROPIC_API_KEY` | API key for Anthropic Claude provider | None (Required for Anthropic) |
 | `OPENAI_BASE_URL` | Base API endpoint for OpenAI or OpenAI-compatible services | Standard OpenAI API (`https://api.openai.com/v1`) |
 | `OLLAMA_BASE_URL` | Base API endpoint for local Ollama daemon | `http://localhost:11434/v1` |
-
-*Refer to [Configuration Documentation](docs/v1/configuration.md) for full configuration specs.*
 
 ---
 
@@ -260,6 +300,15 @@ FeCode abstracts model providers behind a unified streaming interface in `@fecod
 | **Anthropic Claude** | `claude-sonnet-5-5`, `claude-opus-5-5` | Yes | Yes | Cloud |
 | **Generic OpenAI-Compatible** | `deepseek-ai/deepseek-v4.1-flash`, NVIDIA NIM, vLLM, etc. | Yes | Yes | Cloud / Self-Hosted |
 | **Ollama** | `qwen2.5-coder`, `deepseek-coder` | Yes | Yes | **Local (100% Offline)** |
+
+#### NVIDIA NIM Example (via Generic OpenAI-Compatible Provider)
+
+To configure NVIDIA NIM:
+- **Provider**: `openai-compatible`
+- **Provider Display Name**: `NVIDIA NIM`
+- **Base URL**: `https://integrate.api.nvidia.com/v1`
+- **API Key**: `nvapi-your-key-here`
+- **Model**: `deepseek-ai/deepseek-v4.1-flash`
 
 ---
 
@@ -284,6 +333,14 @@ Inside the active FeCode terminal session, type `/` to access built-in commands 
 | Slash Command | Description |
 | :--- | :--- |
 | `/help` | Display list of commands and keyboard shortcuts |
+| `/provider` | Open interactive AI provider & credential manager |
+| `/provider list` | List all saved provider profiles |
+| `/provider add` | Add a new provider profile |
+| `/provider edit [id]` | Edit an existing provider profile |
+| `/provider delete <id>` | Delete a provider profile and its OS vault credential |
+| `/provider use <id>` | Activate a provider profile |
+| `/provider test [id]` | Test provider connection and model availability |
+| `/provider show [id]` | Display safe profile configuration (credentials redacted) |
 | `/status` | View active session, selected model, and project context |
 | `/plan [runId]` | Display active task plan or inspect the plan of a previous run |
 | `/replan` | Request plan adaptation or re-evaluation for current task |

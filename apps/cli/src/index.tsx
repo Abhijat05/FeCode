@@ -14,7 +14,10 @@ import {
   DefaultSessionStore,
   DefaultRunHistoryStore,
   DefaultProductRuntime,
-  type PersistedSessionData
+  type PersistedSessionData,
+  resolveActiveConfiguration,
+  createDefaultCredentialStore,
+  ProviderProfileStore
 } from "@fecode/agent";
 import type { ProjectContext } from "@fecode/agent";
 import { App } from "./App.js";
@@ -140,30 +143,37 @@ Interactive Commands (inside TUI):
     // Ignore detection errors, continue without context
   }
 
-  const config = loadConfig();
-  // Precedence: explicit env vars > persisted session config > defaults
+  const config = loadConfig({ cwd });
+  const credentialStore = createDefaultCredentialStore();
+  const profileStore = new ProviderProfileStore(undefined, credentialStore);
+
+  const resolved = await resolveActiveConfiguration({
+    cwd,
+    profileStore,
+    credentialStore
+  });
+
+  const needsOnboarding = resolved.needsOnboarding;
+  if (resolved.explicitEnvError) {
+    configError = resolved.explicitEnvError;
+  }
+
+  // Precedence: explicit env vars > persisted session config > resolved config > defaults
   const providerName =
     process.env.FE_PROVIDER ||
     initialSessionData?.provider ||
-    config.provider ||
+    resolved.provider ||
     "gemini";
   const modelName =
     process.env.FE_MODEL ||
     initialSessionData?.model ||
-    (providerName === "openai"
-      ? "gpt-4o"
-      : providerName === "anthropic"
-        ? "claude-sonnet-5-5"
-        : providerName === "ollama"
-          ? "qwen2.5-coder"
-          : providerName === "openai-compatible"
-            ? (process.env.FE_MODEL || "")
-            : "gemini-2.5-flash");
+    resolved.model ||
+    "gemini-2.5-flash";
 
   const approvalResolver = new InteractiveApprovalResolver();
 
   try {
-    const apiKey =
+    const apiKey = resolved.apiKey || (
       providerName === "gemini"
         ? config.geminiApiKey
         : providerName === "openai"
@@ -172,35 +182,43 @@ Interactive Commands (inside TUI):
             ? config.openaiCompatibleApiKey
             : providerName === "anthropic"
               ? config.anthropicApiKey
-              : undefined;
+              : undefined
+    );
 
-    const baseUrl =
+    const baseUrl = resolved.baseUrl || (
       providerName === "ollama"
         ? config.ollamaBaseUrl
         : providerName === "openai-compatible"
           ? config.openaiBaseUrl
-          : undefined;
+          : undefined
+    );
 
-    const modelProvider = config.fallback?.enabled
-      ? createConfiguredFallbackChain({
-          primaryProvider: providerName,
-          primaryModel: modelName,
-          fallbackProviders: config.fallback.providers,
-          geminiApiKey: config.geminiApiKey,
-          openaiApiKey: config.openaiApiKey,
-          openaiCompatibleApiKey: config.openaiCompatibleApiKey,
-          anthropicApiKey: config.anthropicApiKey,
-          ollamaBaseUrl: config.ollamaBaseUrl,
-          openaiBaseUrl: config.openaiBaseUrl,
-          maxRetriesPerProvider: config.fallback.maxRetriesPerProvider,
-          maxTotalFallbackSwitches: config.fallback.maxTotalFallbackSwitches
+    const modelProvider = needsOnboarding
+      ? createModelProvider({
+          provider: "ollama",
+          model: "qwen2.5-coder",
+          baseUrl: "http://localhost:11434/v1"
         })
-      : createModelProvider({
-          provider: providerName,
-          model: modelName,
-          apiKey,
-          baseUrl
-        });
+      : config.fallback?.enabled
+        ? createConfiguredFallbackChain({
+            primaryProvider: providerName,
+            primaryModel: modelName,
+            fallbackProviders: config.fallback.providers,
+            geminiApiKey: apiKey || config.geminiApiKey,
+            openaiApiKey: apiKey || config.openaiApiKey,
+            openaiCompatibleApiKey: apiKey || config.openaiCompatibleApiKey,
+            anthropicApiKey: apiKey || config.anthropicApiKey,
+            ollamaBaseUrl: baseUrl || config.ollamaBaseUrl,
+            openaiBaseUrl: baseUrl || config.openaiBaseUrl,
+            maxRetriesPerProvider: config.fallback.maxRetriesPerProvider,
+            maxTotalFallbackSwitches: config.fallback.maxTotalFallbackSwitches
+          })
+        : createModelProvider({
+            provider: providerName,
+            model: modelName,
+            apiKey,
+            baseUrl
+          });
 
     const registry = createDefaultToolRegistry();
     const skillLoader = new SkillLoader();
@@ -227,7 +245,9 @@ Interactive Commands (inside TUI):
       agent.restoreSession(initialSessionData);
     }
   } catch (err: unknown) {
-    configError = err instanceof Error ? err.message : String(err);
+    if (!needsOnboarding) {
+      configError = err instanceof Error ? err.message : String(err);
+    }
   }
 
   const productRuntime = agent
@@ -270,6 +290,9 @@ Interactive Commands (inside TUI):
       projectContext={projectContext}
       sessionStore={sessionStore}
       initialSessionData={initialSessionData}
+      profileStore={profileStore}
+      credentialStore={credentialStore}
+      needsOnboarding={needsOnboarding}
     />,
     { exitOnCtrlC: false }
   );

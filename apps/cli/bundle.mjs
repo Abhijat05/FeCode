@@ -47,6 +47,7 @@ await build({
         "ink",
         "ink-text-input",
         "@google/genai",
+        "@napi-rs/keyring",
         "openai",
         "dotenv",
         /^node:/,

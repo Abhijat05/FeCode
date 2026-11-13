@@ -25,7 +25,8 @@
   },
   "dependencies": {
     "@fecode/models": "*",
-    "@fecode/shared": "*"
+    "@fecode/shared": "*",
+    "@napi-rs/keyring": "^2.1.2"
   },
   "devDependencies": {
     "typescript": "^5.7.2"

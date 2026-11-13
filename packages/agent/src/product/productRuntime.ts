@@ -531,6 +531,10 @@ export class DefaultProductRuntime implements ProductRuntime {
     return this.agentRuntime.getPlanAdaptationAssessment();
   }
 
+  public getAgentRuntime(): AgentRuntime {
+    return this.agentRuntime;
+  }
+
   public subscribe(
     listener: (state: UIState, event?: ProductEvent) => void
   ): () => void {

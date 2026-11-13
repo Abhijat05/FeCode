@@ -29,9 +29,14 @@ import {
   type CheckpointManager,
   type RecoveryManager,
   type ExecutionPolicy,
-  type RunHistoryStore
+  type RunHistoryStore,
+  ProviderProfileStore,
+  createDefaultCredentialStore,
+  testProviderConnection,
+  type StoredProviderProfile,
+  type CredentialStore
 } from "@fecode/agent";
-import type { ApprovalRequest, ModelMessage } from "@fecode/models";
+import { createModelProvider, type ApprovalRequest, type ModelMessage } from "@fecode/models";
 import { InteractiveApprovalResolver } from "./approvalResolver.js";
 import { filterCommands, type CommandDef } from "./commands.js";
 import { processPastedInput, expandPastedTokens } from "./pasteUtils.js";
@@ -58,7 +63,8 @@ import {
   DiagnosticsView,
   RunHistoryView,
   HelpView,
-  WelcomeView
+  WelcomeView,
+  ProviderManagementView
 } from "./ui/index.js";
 
 export interface Turn {
@@ -92,6 +98,9 @@ export interface AppProps {
   historyStore?: RunHistoryStore;
   clampResponses?: boolean;
   version?: string;
+  profileStore?: ProviderProfileStore;
+  credentialStore?: CredentialStore;
+  needsOnboarding?: boolean;
 }
 
 export const App: React.FC<AppProps> = ({
@@ -112,7 +121,10 @@ export const App: React.FC<AppProps> = ({
   recoveryManager: recoveryManagerProp,
   executionPolicy: executionPolicyProp,
   clampResponses,
-  version = CLI_VERSION_DISPLAY
+  version = CLI_VERSION_DISPLAY,
+  profileStore: profileStoreProp,
+  credentialStore: credentialStoreProp,
+  needsOnboarding = false
 }) => {
   const gitRepo = useMemo(
     () => gitRepoProp || new DefaultGitRepository(),
@@ -160,8 +172,61 @@ export const App: React.FC<AppProps> = ({
   const { exit } = useApp();
   const [query, setQuery] = useState("");
   const [activeView, setActiveView] = useState<
-    "main" | "plan" | "runs" | "diagnostics" | "help" | "git"
-  >("main");
+    "main" | "plan" | "runs" | "diagnostics" | "help" | "git" | "provider" | "provider-onboarding"
+  >(needsOnboarding ? "provider-onboarding" : "main");
+  const [providerViewMode, setProviderViewMode] = useState<
+    "onboarding" | "list" | "add" | "edit" | "show" | "test" | "confirm-delete"
+  >(needsOnboarding ? "onboarding" : "list");
+  const [selectedProviderProfileId, setSelectedProviderProfileId] = useState<string | undefined>();
+  const [currentProviderName, setCurrentProviderName] = useState<string | undefined>(providerName);
+  const [currentModelName, setCurrentModelName] = useState<string | undefined>(modelName);
+  const [activeConfigError, setActiveConfigError] = useState<string | undefined>(configError);
+
+  const credentialStoreRef = useRef<CredentialStore>(
+    credentialStoreProp || createDefaultCredentialStore()
+  );
+  const profileStoreRef = useRef<ProviderProfileStore>(
+    profileStoreProp || new ProviderProfileStore(undefined, credentialStoreRef.current)
+  );
+
+  const handleActivateProfile = async (profile: StoredProviderProfile) => {
+    try {
+      const resolved = await profileStoreRef.current.getResolvedProfile(profile.id);
+      const newModelProvider = createModelProvider({
+        provider: profile.providerId,
+        model: profile.model,
+        apiKey: resolved?.apiKey,
+        baseUrl: profile.baseUrl
+      });
+
+      if (
+        agent &&
+        "setModelProvider" in agent &&
+        typeof (agent as Record<string, unknown>).setModelProvider === "function"
+      ) {
+        (agent as unknown as { setModelProvider: (p: typeof newModelProvider) => void }).setModelProvider(
+          newModelProvider
+        );
+      }
+
+      setCurrentProviderName(profile.providerId);
+      setCurrentModelName(profile.model);
+      setActiveConfigError(undefined);
+      setActiveView("main");
+      setTurns((prev) => [
+        ...prev,
+        {
+          id: `sys-${Date.now()}`,
+          prompt: `/provider use ${profile.id}`,
+          response: `✓ Activated AI provider profile "${profile.displayName}" (${profile.providerId}:${profile.model})\n`,
+          status: "done"
+        }
+      ]);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setActiveConfigError(msg);
+    }
+  };
   const [historicalRuns, setHistoricalRuns] = useState<
     import("./ui/RunHistoryView.js").HistoricalRunItem[]
   >([]);
@@ -1939,8 +2004,208 @@ export const App: React.FC<AppProps> = ({
           {
             id: `cmd-${Date.now()}`,
             prompt: trimmed,
-            response: `FeCode\n\nProvider:          ${providerName || "unknown"}\nModel:             ${modelName || "unknown"}\nWorking directory: ${cwd}\nSession:           ${sessionId}\n`,
+            response: `FeCode\n\nProvider:          ${currentProviderName || providerName || "unknown"}\nModel:             ${currentModelName || modelName || "unknown"}\nWorking directory: ${cwd}\nSession:           ${sessionId}\n`,
             status: "done"
+          }
+        ]);
+        return;
+      }
+
+      if (cmd === "/provider") {
+        const sub = rawArgs[0]?.toLowerCase();
+        const targetId = rawArgs.slice(1).join(" ").trim();
+
+        if (!sub) {
+          setProviderViewMode("list");
+          setActiveView("provider");
+          return;
+        }
+
+        if (sub === "list") {
+          const allProfiles = await profileStoreRef.current.getProfiles();
+          const activeProf = await profileStoreRef.current.getActiveProfile();
+          if (allProfiles.length === 0) {
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: "No saved provider profiles.\nUse '/provider add' or '/provider' to configure a provider.\n",
+                status: "done"
+              }
+            ]);
+            return;
+          }
+          const lines = allProfiles.map((p) => {
+            const isActive = p.id === activeProf?.id;
+            const activeTag = isActive ? " * [ACTIVE]" : "";
+            return `  ${p.displayName.padEnd(20)} ${p.model.padEnd(30)} [ID: ${p.id}]${activeTag}`;
+          });
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: `Saved Provider Profiles:\n\n${lines.join("\n")}\n\nUse '/provider use <id>' to switch, or '/provider' to open interactive manager.\n`,
+              status: "done"
+            }
+          ]);
+          return;
+        }
+
+        if (sub === "add") {
+          setProviderViewMode("onboarding");
+          setActiveView("provider");
+          return;
+        }
+
+        if (sub === "edit") {
+          if (targetId) {
+            setSelectedProviderProfileId(targetId);
+            setProviderViewMode("edit");
+          } else {
+            setProviderViewMode("list");
+          }
+          setActiveView("provider");
+          return;
+        }
+
+        if (sub === "delete") {
+          if (!targetId) {
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: "Usage: /provider delete <profile-id>\nOr use '/provider' to manage interactively.\n",
+                status: "done"
+              }
+            ]);
+            return;
+          }
+          setSelectedProviderProfileId(targetId);
+          setProviderViewMode("confirm-delete");
+          setActiveView("provider");
+          return;
+        }
+
+        if (sub === "use") {
+          if (!targetId) {
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: "Usage: /provider use <profile-id>\nRun '/provider list' to view available IDs.\n",
+                status: "done"
+              }
+            ]);
+            return;
+          }
+          const target = await profileStoreRef.current.getProfile(targetId);
+          if (!target) {
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: `✗ Profile with ID "${targetId}" not found.\n`,
+                status: "error"
+              }
+            ]);
+            return;
+          }
+          await profileStoreRef.current.setActiveProfile(target.id);
+          await handleActivateProfile(target);
+          return;
+        }
+
+        if (sub === "test") {
+          const testTarget = targetId
+            ? await profileStoreRef.current.getProfile(targetId)
+            : await profileStoreRef.current.getActiveProfile();
+          if (!testTarget) {
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: "No profile available to test. Specify an ID or save a profile first.\n",
+                status: "error"
+              }
+            ]);
+            return;
+          }
+          const resolved = await profileStoreRef.current.getResolvedProfile(testTarget.id);
+          const result = await testProviderConnection({
+            providerId: testTarget.providerId,
+            model: testTarget.model,
+            apiKey: resolved?.apiKey,
+            baseUrl: testTarget.baseUrl
+          });
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: result.success
+                ? `✓ Connection test passed for ${testTarget.displayName} (${testTarget.model})\nLatency: ${result.durationMs}ms\n`
+                : `✗ Connection test failed for ${testTarget.displayName} (${testTarget.model})\nReason: ${result.message}\n`,
+              status: result.success ? "done" : "error"
+            }
+          ]);
+          return;
+        }
+
+        if (sub === "show") {
+          const showTarget = targetId
+            ? await profileStoreRef.current.getProfile(targetId)
+            : await profileStoreRef.current.getActiveProfile();
+          if (!showTarget) {
+            setTurns((prev) => [
+              ...prev,
+              {
+                id: `cmd-${Date.now()}`,
+                prompt: trimmed,
+                response: "No profile to display.\n",
+                status: "error"
+              }
+            ]);
+            return;
+          }
+          const activeProf = await profileStoreRef.current.getActiveProfile();
+          const info = [
+            `Profile ID:           ${showTarget.id}`,
+            `Display Name:         ${showTarget.displayName}`,
+            `Provider:             ${showTarget.providerId}`,
+            `Model:                ${showTarget.model}`,
+            showTarget.baseUrl ? `Base URL:             ${showTarget.baseUrl}` : null,
+            `Credential Reference: ${showTarget.credentialReference || "[None required]"}`,
+            `Credential Storage:   OS Credential Manager (Encrypted)`,
+            `Active:               ${showTarget.id === activeProf?.id ? "Yes" : "No"}`,
+            `Created:              ${showTarget.createdAt}`,
+            `Updated:              ${showTarget.updatedAt}`
+          ].filter(Boolean).join("\n");
+
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: `cmd-${Date.now()}`,
+              prompt: trimmed,
+              response: `Provider Profile Details:\n\n${info}\n`,
+              status: "done"
+            }
+          ]);
+          return;
+        }
+
+        setTurns((prev) => [
+          ...prev,
+          {
+            id: `cmd-${Date.now()}`,
+            prompt: trimmed,
+            response: `Unknown /provider subcommand: "${sub}".\nAvailable subcommands: list, add, edit, delete, use, test, show.\n`,
+            status: "error"
           }
         ]);
         return;
@@ -3432,8 +3697,8 @@ export const App: React.FC<AppProps> = ({
       header={
         <Header
           projectName="fecode"
-          providerName={providerName}
-          modelName={modelName}
+          providerName={currentProviderName || providerName}
+          modelName={currentModelName || modelName}
           cwd={cwd}
           status={uiState?.status || lastTaskStatus}
           gitBranch={uiState?.workspace?.gitBranch}
@@ -3562,7 +3827,7 @@ export const App: React.FC<AppProps> = ({
       }
     >
       {/* Configuration Error Banner */}
-      {configError && (
+      {activeConfigError && activeView !== "provider" && activeView !== "provider-onboarding" && (
         <Box
           flexDirection="column"
           borderStyle="single"
@@ -3573,11 +3838,25 @@ export const App: React.FC<AppProps> = ({
           <Text bold color="red">
             ⚠ Configuration Error
           </Text>
-          <Text color="white">{configError}</Text>
+          <Text color="white">{activeConfigError}</Text>
           <Text color="gray">
-            Please check your environment variables (.env) or configuration file.
+            Please check your environment variables (.env), or configure an AI provider using /provider.
           </Text>
         </Box>
+      )}
+
+      {/* Provider Management / First-Run Onboarding View */}
+      {(activeView === "provider" || activeView === "provider-onboarding") && (
+        <ProviderManagementView
+          initialMode={providerViewMode}
+          selectedProfileId={selectedProviderProfileId}
+          profileStore={profileStoreRef.current}
+          credentialStore={credentialStoreRef.current}
+          onActivateProfile={handleActivateProfile}
+          onClose={() => setActiveView("main")}
+          terminalColumns={process.stdout?.columns || 80}
+          terminalRows={terminalRows}
+        />
       )}
 
       {/* Content Area */}
@@ -3709,13 +3988,13 @@ export const App: React.FC<AppProps> = ({
                     </Text>
                   </Box>
                 )}
-                {turns.length === 0 && !isGenerating && (
+                {turns.length === 0 && !isGenerating && activeView === "main" && (
                   <WelcomeView
                     version={version}
                     cwd={cwd}
                     projectName={uiState?.workspace?.gitBranch ? undefined : cwd ? cwd.split(/[\\/]/).pop() : undefined}
-                    modelName={modelName}
-                    providerName={providerName}
+                    modelName={currentModelName || modelName}
+                    providerName={currentProviderName || providerName}
                     gitBranch={uiState?.workspace?.gitBranch}
                     compact={Boolean(commandSuggestions.length > 0 || terminalRows <= 22)}
                     terminalRows={terminalRows}
@@ -3753,7 +4032,7 @@ export const App: React.FC<AppProps> = ({
         )}
 
         {/* Task Input Prompt */}
-        {!hasModal && (
+        {!hasModal && activeView !== "provider" && activeView !== "provider-onboarding" && (
           <TaskInput
             value={query}
             onChange={handleQueryChange}

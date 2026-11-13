@@ -20,6 +20,7 @@ export const COMMANDS: CommandDef[] = [
   { command: "/tasks",          category: "Task & Plan",        description: "List session task summaries (/tasks [page])" },
   { command: "/task",           category: "Task & Plan",        description: "View task details by index (/task <index>)" },
   { command: "/git",            category: "Navigation",         description: "Inspect git repository status and branch" },
+  { command: "/provider",       category: "System",             description: "Manage AI providers and credentials (/provider [list|add|edit|delete|use|test|show])" },
   { command: "/checkpoints",    category: "History & Recovery", description: "List available rollback checkpoints" },
   { command: "/checkpoint",     category: "History & Recovery", description: "Create a new manual checkpoint" },
   { command: "/recover",        category: "History & Recovery", description: "Inspect or initiate checkpoint recovery" },

@@ -203,7 +203,7 @@ export interface AgentRuntimeOptions {
 }
 
 export class AgentRuntime implements Agent {
-  private readonly modelProvider: ModelProvider;
+  private modelProvider: ModelProvider;
   private readonly systemPrompt: string;
   private readonly registry: ToolRegistry;
   private readonly executor: ToolExecutor;
@@ -406,6 +406,17 @@ export class AgentRuntime implements Agent {
 
   public getRegistry(): ToolRegistry {
     return this.registry;
+  }
+
+  public getModelProvider(): ModelProvider {
+    return this.modelProvider;
+  }
+
+  public setModelProvider(modelProvider: ModelProvider): void {
+    if (this.state.status === "running") {
+      throw new Error("Cannot reconfigure model provider while an agent turn is executing.");
+    }
+    this.modelProvider = modelProvider;
   }
 
   public getCompletionSummary(): TaskCompletionSummary {

@@ -60,3 +60,14 @@ export function safeJsonClone<T = Record<string, unknown>>(value: unknown): T {
     return {} as T;
   }
 }
+
+/**
+ * Safely parses a JSON string, returning undefined or fallback if invalid.
+ */
+export function safeJsonParse<T>(value: string, fallback?: T): T | undefined {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
