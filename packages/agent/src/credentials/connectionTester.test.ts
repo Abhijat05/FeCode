@@ -10,7 +10,7 @@ describe("ConnectionTester", () => {
       providerId: "openai",
       model: "gpt-4o",
       apiKey: rawApiKey,
-      baseUrl: "https://invalid-nonexistent-endpoint-domain-1234.local/v1"
+      baseUrl: "http://127.0.0.1:59999/v1"
     });
 
     expect(result.success).toBe(false);

@@ -58,7 +58,7 @@ describe("Phase 5AJ Security Invariants — Strict Credential Protection", () =>
     const result = await testProviderConnection({
       providerId: "openai-compatible",
       model: "deepseek-ai/deepseek-v4.1-flash",
-      baseUrl: "https://invalid-host-404.local/v1",
+      baseUrl: "http://127.0.0.1:59999/v1",
       apiKey: TEST_NVIDIA_KEY
     });
 

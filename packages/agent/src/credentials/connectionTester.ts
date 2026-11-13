@@ -6,6 +6,7 @@ export interface TestConnectionOptions {
   model: string;
   apiKey?: string;
   baseUrl?: string;
+  timeoutMs?: number;
   signal?: AbortSignal;
 }
 
@@ -30,13 +31,40 @@ export async function testProviderConnection(
   const model = options.model.trim();
   const apiKey = options.apiKey?.trim();
   const baseUrl = options.baseUrl?.trim();
-  const signal = options.signal;
+  const timeoutMs = options.timeoutMs ?? 3000;
+
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(() => {
+    timeoutController.abort(new Error(`Connection test timed out after ${timeoutMs}ms.`));
+  }, timeoutMs);
+
+  const userSignal = options.signal;
+  if (userSignal?.aborted) {
+    clearTimeout(timeoutId);
+    return {
+      success: false,
+      providerId,
+      model,
+      steps: { authentication: "failed", modelAvailable: "skipped" },
+      durationMs: 0,
+      message: "Connection test cancelled by user.",
+      error: {
+        category: "cancelled",
+        reason: "Connection test cancelled by user."
+      }
+    };
+  }
+
+  const onUserAbort = () => {
+    timeoutController.abort(new Error("Connection test cancelled by user."));
+  };
+  if (userSignal) {
+    userSignal.addEventListener("abort", onUserAbort, { once: true });
+  }
+
+  const signal = timeoutController.signal;
 
   try {
-    if (signal?.aborted) {
-      throw new Error("Connection test cancelled by user.");
-    }
-
     switch (providerId) {
       case "gemini": {
         if (!apiKey) {
@@ -86,7 +114,8 @@ export async function testProviderConnection(
         const client = new OpenAI({
           apiKey,
           baseURL: baseUrl || undefined,
-          maxRetries: 0
+          maxRetries: 0,
+          timeout: timeoutMs
         });
 
         // Test authentication and model availability
@@ -111,7 +140,8 @@ export async function testProviderConnection(
         const client = new OpenAI({
           baseURL: resolvedBaseUrl,
           apiKey: apiKey || "ollama",
-          maxRetries: 0
+          maxRetries: 0,
+          timeout: timeoutMs
         });
 
         await client.models.list({ signal });
@@ -127,7 +157,8 @@ export async function testProviderConnection(
         const client = new OpenAI({
           baseURL: baseUrl,
           apiKey: apiKey || "dummy-key",
-          maxRetries: 0
+          maxRetries: 0,
+          timeout: timeoutMs
         });
 
         try {
@@ -148,7 +179,8 @@ export async function testProviderConnection(
         const client = new Anthropic({
           apiKey,
           baseURL: baseUrl || undefined,
-          maxRetries: 0
+          maxRetries: 0,
+          timeout: timeoutMs
         });
         // Count tokens or minimal ping
         const anthropicClient = client as unknown as {
@@ -213,10 +245,19 @@ export async function testProviderConnection(
           ? `Model "${model}" was not found or is unsupported by this provider.`
           : sanitizedReason,
       error: {
-        category: classification.category,
+        category: userSignal?.aborted || rawReason.includes("cancelled")
+          ? "cancelled"
+          : rawReason.includes("timed out")
+            ? "network_error"
+            : classification.category,
         reason: sanitizedReason,
         statusCode: classification.statusCode
       }
     };
+  } finally {
+    clearTimeout(timeoutId);
+    if (userSignal) {
+      userSignal.removeEventListener("abort", onUserAbort);
+    }
   }
 }
