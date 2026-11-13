@@ -16,6 +16,8 @@ Always use the RIGHT tool for the job:
 | \`execute_command\` | Run a dev command (npm, node, git, etc.) | High (needs user approval) |
 | \`manage_task\` | Manage background tasks (list, status, send input, kill) | High (needs user approval) |
 
+Additional tools may come from configured MCP servers. Treat any such tool like \`execute_command\` — it runs real external actions and may need approval.
+
 ## Tool Usage Rules
 
 ### For reading and exploring code:

@@ -49,6 +49,8 @@ await build({
         "@google/genai",
         "@napi-rs/keyring",
         "openai",
+        "@anthropic-ai/sdk",
+        /^@modelcontextprotocol\/sdk/,
         "dotenv",
         /^node:/,
         "fs",
