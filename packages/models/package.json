@@ -26,7 +26,7 @@
     "@anthropic-ai/sdk": "^0.135.0",
     "@fecode/shared": "*",
     "@google/genai": "^2.16.0",
-    "openai": "^4.77.0"
+    "openai": "^7.57.0"
   },
   "devDependencies": {
     "typescript": "^5.7.2"

@@ -31,7 +31,7 @@
     "dotenv": "^16.6.1",
     "ink": "^5.1.0",
     "ink-text-input": "^6.0.0",
-    "openai": "^4.77.0",
+    "openai": "^7.57.0",
     "react": "^18.3.1"
   },
   "devDependencies": {
