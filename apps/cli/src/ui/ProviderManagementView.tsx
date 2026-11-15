@@ -4,9 +4,14 @@ import type {
   StoredProviderProfile,
   ProviderProfileStore,
   CredentialStore,
-  ConnectionTestResult
+  ConnectionTestResult,
+  DiscoveredModel
 } from "@fecode/agent";
-import { testProviderConnection } from "@fecode/agent";
+import {
+  testProviderConnection,
+  discoverAvailableModels,
+  getCuratedDefaultModels
+} from "@fecode/agent";
 import { EnhancedTextInput } from "./EnhancedTextInput.js";
 
 export interface ProviderManagementViewProps {
@@ -69,10 +74,29 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
   const [formFieldIndex, setFormFieldIndex] = useState(0);
   const [formError, setFormError] = useState<string | null>(null);
 
+  // Model discovery states
+  const [discoveredModels, setDiscoveredModels] = useState<DiscoveredModel[]>(() =>
+    getCuratedDefaultModels("gemini")
+  );
+  const [isDiscovering, setIsDiscovering] = useState(false);
+  const [modelSelectIndex, setModelSelectIndex] = useState(0);
+  const [isCustomModel, setIsCustomModel] = useState(false);
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null);
+  const discoveryAbortRef = useRef<AbortController | null>(null);
+
   // Connection test states
   const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
   const [isTesting, setIsTesting] = useState(false);
   const testAbortControllerRef = useRef<AbortController | null>(null);
+
+  // Abort in-flight discovery on unmount
+  useEffect(() => {
+    return () => {
+      if (discoveryAbortRef.current) {
+        discoveryAbortRef.current.abort();
+      }
+    };
+  }, []);
 
   // Load profiles on mount and mode change
   const reloadProfiles = useCallback(async () => {
@@ -107,18 +131,34 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
     setFormError(null);
     setFormFieldIndex(0);
 
+    const curated = getCuratedDefaultModels(providerId);
+    setDiscoveredModels(curated);
+    setIsDiscovering(false);
+    setDiscoveryError(null);
+
     if (profileToEdit) {
       setEditingProfileId(profileToEdit.id);
       setFormDisplayName(profileToEdit.displayName);
       setFormModel(profileToEdit.model);
       setFormBaseUrl(profileToEdit.baseUrl || opt.defaultBaseUrl || "");
       setFormApiKey(""); // Do not show existing secret
+      const matchIdx = curated.findIndex((m) => m.id === profileToEdit.model);
+      if (matchIdx >= 0) {
+        setModelSelectIndex(matchIdx);
+        setIsCustomModel(false);
+      } else {
+        setModelSelectIndex(curated.length);
+        setIsCustomModel(true);
+      }
     } else {
       setEditingProfileId(undefined);
       setFormDisplayName(opt.name === "OpenAI-compatible" ? "NVIDIA NIM" : opt.name);
       setFormModel(opt.defaultModel);
       setFormBaseUrl(opt.defaultBaseUrl || "");
       setFormApiKey("");
+      const matchIdx = curated.findIndex((m) => m.id === opt.defaultModel);
+      setModelSelectIndex(matchIdx >= 0 ? matchIdx : 0);
+      setIsCustomModel(false);
     }
     setMode("form");
   };
@@ -197,6 +237,182 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
     }
   };
 
+  // Calculate field list for form mode
+  const getFormFields = useCallback(() => {
+    switch (formProviderId) {
+      case "gemini":
+        return [
+          { id: "apiKey", label: "API Key", value: formApiKey, setValue: setFormApiKey, mask: "*" },
+          { id: "model", label: "Model ID", value: formModel, setValue: setFormModel }
+        ];
+      case "openai":
+        return [
+          { id: "apiKey", label: "API Key", value: formApiKey, setValue: setFormApiKey, mask: "*" },
+          { id: "model", label: "Model ID", value: formModel, setValue: setFormModel },
+          { id: "baseUrl", label: "Base URL (optional)", value: formBaseUrl, setValue: setFormBaseUrl }
+        ];
+      case "ollama":
+        return [
+          { id: "baseUrl", label: "Base URL", value: formBaseUrl, setValue: setFormBaseUrl },
+          { id: "model", label: "Model ID", value: formModel, setValue: setFormModel }
+        ];
+      case "openai-compatible":
+        return [
+          { id: "displayName", label: "Provider Name", value: formDisplayName, setValue: setFormDisplayName },
+          { id: "baseUrl", label: "Base URL", value: formBaseUrl, setValue: setFormBaseUrl },
+          { id: "apiKey", label: "API Key", value: formApiKey, setValue: setFormApiKey, mask: "*" },
+          { id: "model", label: "Model ID", value: formModel, setValue: setFormModel }
+        ];
+      default:
+        return [
+          { id: "apiKey", label: "API Key", value: formApiKey, setValue: setFormApiKey, mask: "*" },
+          { id: "model", label: "Model ID", value: formModel, setValue: setFormModel }
+        ];
+    }
+  }, [formProviderId, formApiKey, formModel, formBaseUrl, formDisplayName]);
+
+  const formFields = getFormFields();
+
+  // Run model discovery
+  const triggerDiscovery = useCallback(
+    async (apiKeyOverride?: string, baseUrlOverride?: string) => {
+      if (discoveryAbortRef.current) {
+        discoveryAbortRef.current.abort();
+      }
+      const abortController = new AbortController();
+      discoveryAbortRef.current = abortController;
+
+      setIsDiscovering(true);
+      setDiscoveryError(null);
+
+      let keyToUse = (apiKeyOverride ?? formApiKey).trim() || undefined;
+      const urlToUse = (baseUrlOverride ?? formBaseUrl).trim() || undefined;
+
+      if (!keyToUse && editingProfileId) {
+        try {
+          const resolved = await profileStore.getResolvedProfile(editingProfileId);
+          if (resolved?.apiKey) {
+            keyToUse = resolved.apiKey;
+          }
+        } catch {
+          // Ignore
+        }
+      }
+
+      try {
+        const result = await discoverAvailableModels({
+          providerId: formProviderId,
+          apiKey: keyToUse,
+          baseUrl: urlToUse,
+          signal: abortController.signal
+        });
+
+        if (abortController.signal.aborted) {
+          return;
+        }
+
+        setIsDiscovering(false);
+
+        if (result.models && result.models.length > 0) {
+          setDiscoveredModels(result.models);
+          setModelSelectIndex(0);
+          setFormModel(result.models[0].id);
+        }
+
+        if (!result.success) {
+          setDiscoveryError(result.error || "Model discovery failed.");
+        } else {
+          setDiscoveryError(null);
+        }
+      } catch (err: unknown) {
+        if (abortController.signal.aborted) {
+          return;
+        }
+        setIsDiscovering(false);
+        const msg = err instanceof Error ? err.message : String(err);
+        setDiscoveryError(msg);
+      }
+    },
+    [formProviderId, formApiKey, formBaseUrl, editingProfileId, profileStore]
+  );
+
+  const handleFieldSubmit = useCallback(
+    (submittedValue?: string) => {
+      const currentField = formFields[formFieldIndex];
+
+      if (currentField?.id === "model" && submittedValue !== undefined) {
+        setFormModel(submittedValue);
+      }
+
+      if (formFieldIndex < formFields.length - 1) {
+        const nextIdx = formFieldIndex + 1;
+        setFormFieldIndex(nextIdx);
+
+        // Transitioning into model field: automatically discover models
+        if (formFields[nextIdx]?.id === "model") {
+          const effectiveApiKey =
+            currentField?.id === "apiKey"
+              ? (submittedValue ?? formApiKey)
+              : formApiKey;
+          const effectiveBaseUrl =
+            currentField?.id === "baseUrl"
+              ? (submittedValue ?? formBaseUrl)
+              : formBaseUrl;
+
+          triggerDiscovery(effectiveApiKey, effectiveBaseUrl);
+        }
+      } else {
+        // Validate
+        const effectiveApiKey =
+          currentField?.id === "apiKey" && submittedValue !== undefined
+            ? submittedValue
+            : formApiKey;
+        const effectiveModel =
+          currentField?.id === "model" && submittedValue !== undefined
+            ? submittedValue
+            : formModel;
+        const effectiveBaseUrl =
+          currentField?.id === "baseUrl" && submittedValue !== undefined
+            ? submittedValue
+            : formBaseUrl;
+
+        if (formProviderId !== "ollama" && !effectiveApiKey.trim() && !editingProfileId) {
+          setFormError("API key is required.");
+          return;
+        }
+        if (!effectiveModel.trim()) {
+          setFormError("Model ID is required.");
+          return;
+        }
+        if (
+          (formProviderId === "ollama" || formProviderId === "openai-compatible") &&
+          !effectiveBaseUrl.trim()
+        ) {
+          setFormError("Base URL is required.");
+          return;
+        }
+
+        // Test connection
+        startConnectionTest({
+          providerId: formProviderId,
+          model: effectiveModel.trim(),
+          apiKey: effectiveApiKey.trim() || undefined,
+          baseUrl: effectiveBaseUrl.trim() || undefined
+        });
+      }
+    },
+    [
+      formFields,
+      formFieldIndex,
+      formApiKey,
+      formModel,
+      formBaseUrl,
+      formProviderId,
+      editingProfileId,
+      triggerDiscovery
+    ]
+  );
+
   // Keyboard navigation
   useInput((input, key) => {
     // Escape behavior
@@ -209,6 +425,22 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
         return;
       }
       if (mode === "form") {
+        if (formFields[formFieldIndex]?.id === "model" && isCustomModel) {
+          setIsCustomModel(false);
+          if (modelSelectIndex >= discoveredModels.length) {
+            setModelSelectIndex(0);
+            if (discoveredModels[0]) {
+              setFormModel(discoveredModels[0].id);
+            }
+          } else if (discoveredModels[modelSelectIndex]) {
+            setFormModel(discoveredModels[modelSelectIndex].id);
+          }
+          return;
+        }
+        if (discoveryAbortRef.current) {
+          discoveryAbortRef.current.abort();
+        }
+        setIsDiscovering(false);
         setFormApiKey("");
         setMode(profiles.length > 0 ? "list" : "onboarding-select");
         return;
@@ -226,6 +458,62 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
         return;
       }
       return;
+    }
+
+    // Mode: form (keyboard handling when on model field)
+    if (mode === "form") {
+      const currentField = formFields[formFieldIndex];
+      if (currentField?.id === "model" && !isCustomModel) {
+        if (isDiscovering) {
+          return;
+        }
+
+        const totalOptions = discoveredModels.length + 1;
+
+        if (key.upArrow) {
+          const prev = (modelSelectIndex - 1 + totalOptions) % totalOptions;
+          setModelSelectIndex(prev);
+          if (prev < discoveredModels.length) {
+            setFormModel(discoveredModels[prev].id);
+          } else {
+            setFormModel("");
+          }
+          return;
+        }
+
+        if (key.downArrow) {
+          const next = (modelSelectIndex + 1) % totalOptions;
+          setModelSelectIndex(next);
+          if (next < discoveredModels.length) {
+            setFormModel(discoveredModels[next].id);
+          } else {
+            setFormModel("");
+          }
+          return;
+        }
+
+        if (input && input.toLowerCase() === "r") {
+          triggerDiscovery();
+          return;
+        }
+
+        if (input && input.toLowerCase() === "m") {
+          setIsCustomModel(true);
+          return;
+        }
+
+        if (key.return) {
+          if (modelSelectIndex === discoveredModels.length) {
+            setIsCustomModel(true);
+          } else {
+            const chosen = discoveredModels[modelSelectIndex];
+            const chosenModelId = chosen ? chosen.id : formModel;
+            setFormModel(chosenModelId);
+            handleFieldSubmit(chosenModelId);
+          }
+          return;
+        }
+      }
     }
 
     // 1. Mode: onboarding-select
@@ -361,42 +649,6 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
     }
   });
 
-  // Calculate field list for form mode
-  const getFormFields = () => {
-    switch (formProviderId) {
-      case "gemini":
-        return [
-          { id: "apiKey", label: "API Key", value: formApiKey, setValue: setFormApiKey, mask: "*" },
-          { id: "model", label: "Model ID", value: formModel, setValue: setFormModel }
-        ];
-      case "openai":
-        return [
-          { id: "apiKey", label: "API Key", value: formApiKey, setValue: setFormApiKey, mask: "*" },
-          { id: "model", label: "Model ID", value: formModel, setValue: setFormModel },
-          { id: "baseUrl", label: "Base URL (optional)", value: formBaseUrl, setValue: setFormBaseUrl }
-        ];
-      case "ollama":
-        return [
-          { id: "baseUrl", label: "Base URL", value: formBaseUrl, setValue: setFormBaseUrl },
-          { id: "model", label: "Model ID", value: formModel, setValue: setFormModel }
-        ];
-      case "openai-compatible":
-        return [
-          { id: "displayName", label: "Provider Name", value: formDisplayName, setValue: setFormDisplayName },
-          { id: "baseUrl", label: "Base URL", value: formBaseUrl, setValue: setFormBaseUrl },
-          { id: "apiKey", label: "API Key", value: formApiKey, setValue: setFormApiKey, mask: "*" },
-          { id: "model", label: "Model ID", value: formModel, setValue: setFormModel }
-        ];
-      default:
-        return [
-          { id: "apiKey", label: "API Key", value: formApiKey, setValue: setFormApiKey, mask: "*" },
-          { id: "model", label: "Model ID", value: formModel, setValue: setFormModel }
-        ];
-    }
-  };
-
-  const formFields = getFormFields();
-
   // -------------------------------------------------------------
   // RENDER: 1. Onboarding / Provider Selection
   // -------------------------------------------------------------
@@ -444,34 +696,6 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
   // RENDER: 2. Provider Configuration Form
   // -------------------------------------------------------------
   if (mode === "form") {
-    const handleFieldSubmit = () => {
-      if (formFieldIndex < formFields.length - 1) {
-        setFormFieldIndex((prev) => prev + 1);
-      } else {
-        // Validate
-        if (formProviderId !== "ollama" && !formApiKey.trim() && !editingProfileId) {
-          setFormError("API key is required.");
-          return;
-        }
-        if (!formModel.trim()) {
-          setFormError("Model ID is required.");
-          return;
-        }
-        if ((formProviderId === "ollama" || formProviderId === "openai-compatible") && !formBaseUrl.trim()) {
-          setFormError("Base URL is required.");
-          return;
-        }
-
-        // Test connection
-        startConnectionTest({
-          providerId: formProviderId,
-          model: formModel.trim(),
-          apiKey: formApiKey.trim() || undefined,
-          baseUrl: formBaseUrl.trim() || undefined
-        });
-      }
-    };
-
     return (
       <Box
         flexDirection="column"
@@ -496,29 +720,120 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
 
         {formFields.map((field, idx) => {
           const isFocused = idx === formFieldIndex;
+          const isModelField = field.id === "model";
+
           return (
             <Box key={field.id} flexDirection="column" marginY={0}>
               <Box>
                 <Text color={isFocused ? "cyan" : "gray"} bold={isFocused}>
                   {field.label}:{" "}
                 </Text>
-                {isFocused ? (
-                  <EnhancedTextInput
-                    value={field.value}
-                    onChange={(val) => {
-                      field.setValue(val);
-                      if (formError) setFormError(null);
-                    }}
-                    onSubmit={handleFieldSubmit}
-                    mask={field.mask}
-                    focus={true}
-                  />
+                {!isModelField ? (
+                  isFocused ? (
+                    <EnhancedTextInput
+                      value={field.value}
+                      onChange={(val) => {
+                        field.setValue(val);
+                        if (formError) setFormError(null);
+                      }}
+                      onSubmit={(val) => handleFieldSubmit(val)}
+                      mask={field.mask}
+                      focus={true}
+                    />
+                  ) : (
+                    <Text color="white">
+                      {field.mask
+                        ? field.value
+                          ? "*".repeat(field.value.length)
+                          : editingProfileId
+                            ? "[Unchanged]"
+                            : "[Empty]"
+                        : field.value || "[Empty]"}
+                    </Text>
+                  )
                 ) : (
-                  <Text color="white">
-                    {field.mask ? (field.value ? "*".repeat(field.value.length) : (editingProfileId ? "[Unchanged]" : "[Empty]")) : field.value || "[Empty]"}
-                  </Text>
+                  // Model field rendering
+                  !isFocused ? (
+                    <Text color="white">{field.value || "[Empty]"}</Text>
+                  ) : isDiscovering ? (
+                    <Text color="cyan">
+                      ⟳ Detecting available models for this provider...
+                    </Text>
+                  ) : isCustomModel ? (
+                    <EnhancedTextInput
+                      value={field.value}
+                      onChange={(val) => {
+                        field.setValue(val);
+                        if (formError) setFormError(null);
+                      }}
+                      onSubmit={(val) => handleFieldSubmit(val)}
+                      focus={true}
+                    />
+                  ) : null
                 )}
               </Box>
+
+              {isModelField && isFocused && !isDiscovering && !isCustomModel && (
+                <Box flexDirection="column" marginLeft={2}>
+                  {discoveredModels.map((m, mIdx) => {
+                    const isSelected = mIdx === modelSelectIndex;
+                    return (
+                      <Box key={m.id}>
+                        <Text color={isSelected ? "cyan" : "gray"} bold={isSelected}>
+                          {isSelected ? "> " : "  "}
+                        </Text>
+                        <Text color={isSelected ? "white" : "gray"} bold={isSelected}>
+                          {m.displayName || m.id}
+                        </Text>
+                        {m.displayName && m.displayName !== m.id && (
+                          <Text color="gray"> ({m.id})</Text>
+                        )}
+                        {m.isRecommended && (
+                          <Text color="green" bold>
+                            {" "}(Recommended)
+                          </Text>
+                        )}
+                      </Box>
+                    );
+                  })}
+                  <Box key="custom-model-option">
+                    <Text
+                      color={modelSelectIndex === discoveredModels.length ? "cyan" : "gray"}
+                      bold={modelSelectIndex === discoveredModels.length}
+                    >
+                      {modelSelectIndex === discoveredModels.length ? "> " : "  "}
+                    </Text>
+                    <Text
+                      color={modelSelectIndex === discoveredModels.length ? "white" : "gray"}
+                      bold={modelSelectIndex === discoveredModels.length}
+                    >
+                      [ Custom Model ID... ]
+                    </Text>
+                  </Box>
+
+                  {discoveryError && (
+                    <Box marginTop={0}>
+                      <Text color="yellow">
+                        ⚠ Fallback models in use: {discoveryError}
+                      </Text>
+                    </Box>
+                  )}
+
+                  <Box marginTop={0}>
+                    <Text color="gray">
+                      [↑/↓] Select   [Enter] Confirm   [m] Custom ID   [r] Refresh
+                    </Text>
+                  </Box>
+                </Box>
+              )}
+
+              {isModelField && isFocused && isCustomModel && (
+                <Box marginLeft={2}>
+                  <Text color="gray" dimColor>
+                    [Esc] Back to discovered models list
+                  </Text>
+                </Box>
+              )}
             </Box>
           );
         })}

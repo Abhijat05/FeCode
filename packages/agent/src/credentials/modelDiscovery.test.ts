@@ -9,7 +9,7 @@ import {
 const mockGeminiList = vi.fn();
 vi.mock("@google/genai", () => {
   return {
-    GoogleGenAI: vi.fn().mockImplementation(function (this: any) {
+    GoogleGenAI: vi.fn().mockImplementation(function (this: Record<string, unknown>) {
       this.models = {
         list: mockGeminiList
       };
@@ -21,7 +21,7 @@ vi.mock("@google/genai", () => {
 const mockOpenAIList = vi.fn();
 vi.mock("openai", () => {
   return {
-    default: vi.fn().mockImplementation(function (this: any, config: any) {
+    default: vi.fn().mockImplementation(function (this: Record<string, unknown>, config?: { baseURL?: string; apiKey?: string }) {
       if (config?.baseURL?.includes("127.0.0.1:59999")) {
         this.models = {
           list: vi.fn().mockRejectedValue(new Error(`connect ECONNREFUSED 127.0.0.1:59999 (key: ${config?.apiKey})`))
@@ -39,7 +39,7 @@ vi.mock("openai", () => {
 const mockAnthropicList = vi.fn();
 vi.mock("@anthropic-ai/sdk", () => {
   return {
-    default: vi.fn().mockImplementation(function (this: any, config: any) {
+    default: vi.fn().mockImplementation(function (this: Record<string, unknown>, config?: { baseURL?: string; apiKey?: string }) {
       if (config?.baseURL?.includes("127.0.0.1:59999")) {
         this.models = {
           list: vi.fn().mockRejectedValue(new Error(`connect ECONNREFUSED 127.0.0.1:59999 (key: ${config?.apiKey})`))

@@ -73,28 +73,59 @@ export function getCuratedDefaultModels(providerId: string): DiscoveredModel[] {
   }
 }
 
+interface RawDiscoveredModelItem {
+  id?: string;
+  name?: string;
+  displayName?: string;
+  display_name?: string;
+  description?: string;
+  supportedGenerationMethods?: string[];
+  supportedActions?: string[];
+  [key: string]: unknown;
+}
+
 /**
  * Helper to collect items from array, page, data, or async/sync iterables.
  */
-async function extractRawList(response: unknown): Promise<any[]> {
-  const items: any[] = [];
+async function extractRawList(response: unknown): Promise<RawDiscoveredModelItem[]> {
+  const items: RawDiscoveredModelItem[] = [];
   if (Array.isArray(response)) {
-    items.push(...response);
+    for (const item of response) {
+      if (item && typeof item === "object") {
+        items.push(item as RawDiscoveredModelItem);
+      }
+    }
   } else if (response && typeof response === "object") {
     const obj = response as Record<string, unknown>;
     if (Array.isArray(obj.data)) {
-      items.push(...obj.data);
+      for (const item of obj.data) {
+        if (item && typeof item === "object") {
+          items.push(item as RawDiscoveredModelItem);
+        }
+      }
     } else if (Array.isArray(obj.page)) {
-      items.push(...obj.page);
+      for (const item of obj.page) {
+        if (item && typeof item === "object") {
+          items.push(item as RawDiscoveredModelItem);
+        }
+      }
     } else if (Array.isArray(obj.models)) {
-      items.push(...obj.models);
+      for (const item of obj.models) {
+        if (item && typeof item === "object") {
+          items.push(item as RawDiscoveredModelItem);
+        }
+      }
     } else if (typeof obj[Symbol.asyncIterator as unknown as string] === "function" || Symbol.asyncIterator in obj) {
       for await (const item of (obj as unknown as AsyncIterable<unknown>)) {
-        items.push(item);
+        if (item && typeof item === "object") {
+          items.push(item as RawDiscoveredModelItem);
+        }
       }
     } else if (typeof obj[Symbol.iterator as unknown as string] === "function" || Symbol.iterator in obj) {
       for (const item of (obj as unknown as Iterable<unknown>)) {
-        items.push(item);
+        if (item && typeof item === "object") {
+          items.push(item as RawDiscoveredModelItem);
+        }
       }
     }
   }
