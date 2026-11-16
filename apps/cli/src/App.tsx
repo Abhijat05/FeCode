@@ -546,7 +546,14 @@ export const App: React.FC<AppProps> = ({
       setSelectedSuggestion(0);
       return;
     }
-    if (!hasModal && !isGenerating && activeView !== "main" && !val.startsWith("/") && val.length === 1) {
+    const isInfoView =
+      activeView === "plan" ||
+      activeView === "runs" ||
+      activeView === "diagnostics" ||
+      activeView === "help" ||
+      activeView === "git";
+
+    if (!hasModal && !isGenerating && isInfoView && !val.startsWith("/") && val.length === 1) {
       const char = val.toLowerCase();
       if (char === "p") {
         setActiveView(activeView === "plan" ? "main" : "plan");
@@ -735,6 +742,13 @@ export const App: React.FC<AppProps> = ({
         if (exitTimerRef.current) {
           clearTimeout(exitTimerRef.current);
           exitTimerRef.current = null;
+        }
+      }
+
+      // Delegate all input to ProviderManagementView when in provider views, except Ctrl+C exit handler
+      if (activeView === "provider" || activeView === "provider-onboarding") {
+        if (!isCtrlC) {
+          return;
         }
       }
 
@@ -1077,8 +1091,15 @@ export const App: React.FC<AppProps> = ({
         return;
       }
 
-      // Non-main view navigation shortcuts: p, r, d, ?, Esc (only when not typing a slash command)
-      if (!hasModal && !isGenerating && activeView !== "main" && !query.startsWith("/")) {
+      // Non-main view navigation shortcuts: p, r, d, ?, Esc (only when on info views: plan, runs, diagnostics, help, git)
+      const isInfoView =
+        activeView === "plan" ||
+        activeView === "runs" ||
+        activeView === "diagnostics" ||
+        activeView === "help" ||
+        activeView === "git";
+
+      if (!hasModal && !isGenerating && isInfoView && !query.startsWith("/")) {
         if (input === "p" || input === "P") {
           setActiveView(activeView === "plan" ? "main" : "plan");
           setQuery("");

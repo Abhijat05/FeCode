@@ -183,4 +183,60 @@ describe("/provider Slash Commands in App", () => {
     const frame = lastFrame() || "";
     expect(frame).toContain("Saved Provider Profiles");
   });
+
+  it("handles pressing 'd' in provider view to trigger delete confirmation instead of opening diagnostics", async () => {
+    const saved = await profileStore.saveProfile({
+      providerId: "gemini",
+      displayName: "Gemini Work",
+      model: "gemini-2.5-flash",
+      apiKey: "test-api-key-12345"
+    });
+
+    const mockAgent = new MockAgent();
+
+    const { lastFrame, stdin } = render(
+      <App
+        agent={mockAgent}
+        cwd={tmpDir}
+        providerName="gemini"
+        modelName="gemini-2.5-flash"
+        profileStore={profileStore}
+        credentialStore={credentialStore}
+        clampResponses={false}
+      />
+    );
+
+    await delay(100);
+    await typeAndSubmit(stdin, "/provider");
+
+    let frame = lastFrame() || "";
+    expect(frame).toContain("Saved Provider Profiles");
+    expect(frame).toContain("Gemini Work");
+
+    // Press 'd' to delete selected profile
+    stdin.write("d");
+    await delay(100);
+
+    frame = lastFrame() || "";
+    // MUST trigger delete confirmation, MUST NOT open diagnostics view
+    expect(frame).toContain("Delete Provider Profile?");
+    expect(frame).toContain("Gemini Work");
+    expect(frame).not.toContain("Diagnostics");
+
+    // Press 'n' to cancel deletion
+    stdin.write("n");
+    await delay(100);
+
+    frame = lastFrame() || "";
+    expect(frame).toContain("Saved Provider Profiles");
+
+    // Press 'd' again and confirm with 'y'
+    stdin.write("d");
+    await delay(100);
+    stdin.write("y");
+    await delay(150);
+
+    const remaining = await profileStore.getProfiles();
+    expect(remaining.find((p) => p.id === saved.id)).toBeUndefined();
+  });
 });
