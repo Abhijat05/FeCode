@@ -219,8 +219,14 @@ export async function testProviderConnection(
   } catch (err: unknown) {
     const durationMs = Date.now() - startTime;
     const classification = classifyProviderError(err);
+    const errObj = err as Record<string, unknown> | undefined;
+    const causeObj = errObj?.cause as Record<string, unknown> | undefined;
+    const causeMessage = typeof causeObj?.message === "string" ? causeObj.message : "";
     const rawReason = err instanceof Error ? err.message : String(err);
-    const sanitizedReason = scrubSensitiveKey(rawReason, apiKey);
+    const combinedReason = causeMessage && !rawReason.includes(causeMessage)
+      ? `${rawReason} (${causeMessage})`
+      : rawReason;
+    const sanitizedReason = scrubSensitiveKey(combinedReason, apiKey);
 
     let authStep: "success" | "failed" | "skipped" = "failed";
     let modelStep: "success" | "failed" | "skipped" = "skipped";
@@ -228,6 +234,29 @@ export async function testProviderConnection(
     if (classification.category === "unsupported_model") {
       authStep = "success";
       modelStep = "failed";
+    }
+
+    let displayMessage: string;
+    if (classification.category === "authentication") {
+      displayMessage = "Authentication failed. Check your API key and try again.";
+    } else if (classification.category === "unsupported_model") {
+      displayMessage = `Model "${model}" was not found or is unsupported by this provider.`;
+    } else if (
+      classification.category === "transient_network" ||
+      sanitizedReason.includes("fetch failed") ||
+      sanitizedReason.includes("ECONNREFUSED") ||
+      sanitizedReason.includes("ENOTFOUND")
+    ) {
+      if (
+        sanitizedReason.includes("ECONNREFUSED") ||
+        (baseUrl && (baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1")))
+      ) {
+        displayMessage = `Connection refused (${sanitizedReason}). Ensure your local provider endpoint is running and reachable.`;
+      } else {
+        displayMessage = `Network connection failed (${sanitizedReason}). Check your internet connection, endpoint URL, or proxy.`;
+      }
+    } else {
+      displayMessage = sanitizedReason;
     }
 
     return {
@@ -239,11 +268,7 @@ export async function testProviderConnection(
         modelAvailable: modelStep
       },
       durationMs,
-      message: classification.category === "authentication"
-        ? "Authentication failed. Check your API key and try again."
-        : classification.category === "unsupported_model"
-          ? `Model "${model}" was not found or is unsupported by this provider.`
-          : sanitizedReason,
+      message: displayMessage,
       error: {
         category: userSignal?.aborted || rawReason.includes("cancelled")
           ? "cancelled"
