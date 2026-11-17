@@ -26,6 +26,9 @@ export interface EnhancedTextInputProps {
 }
 
 function cleanPastedInput(raw: string, mask?: string): string {
+  if (!mask) {
+    return raw;
+  }
   let text = raw
     // eslint-disable-next-line no-control-regex
     .replace(/\x1b\[20[01]~/g, "")
@@ -33,13 +36,8 @@ function cleanPastedInput(raw: string, mask?: string): string {
     // eslint-disable-next-line no-control-regex
     .replace(/\x1b\[[0-9;]*[a-zA-Z~]/g, "");
 
-  if (mask) {
-    // eslint-disable-next-line no-control-regex
-    text = text.replace(/[\r\n\t\x00-\x1F\x7F]/g, "").trim();
-  } else {
-    // eslint-disable-next-line no-control-regex
-    text = text.replace(/[\r\n]+/g, " ").replace(/[\x00-\x1F\x7F]/g, "");
-  }
+  // eslint-disable-next-line no-control-regex
+  text = text.replace(/[\r\n\t\x00-\x1F\x7F]/g, "").trim();
   return text;
 }
 

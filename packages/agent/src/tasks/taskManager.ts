@@ -51,7 +51,13 @@ export class TaskManager {
   private readonly maxRingBufferLines: number;
 
   constructor(options?: TaskManagerOptions) {
-    this.logDir = options?.logDir ?? path.join(os.homedir(), ".fecode", "tasks");
+    const defaultLogDir =
+      process.env.VITEST || process.env.NODE_ENV === "test"
+        ? path.join(os.tmpdir(), "fecode-test-tasks")
+        : process.platform === "win32" && process.env.APPDATA
+          ? path.join(process.env.APPDATA, "fecode", "tasks")
+          : path.join(os.homedir(), ".fecode", "tasks");
+    this.logDir = options?.logDir ?? defaultLogDir;
     this.policy = options?.policy ?? new DefaultCommandPolicy();
     this.maxRingBufferLines = options?.maxRingBufferLines ?? 1000;
 

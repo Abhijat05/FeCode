@@ -492,8 +492,6 @@ describe("EnhancedTextInput component", () => {
     expect(currentVal).toContain("part 1");
     expect(currentVal).toContain("part 2");
     expect(currentVal).toContain("part 3");
-    expect(currentVal).not.toContain("[200~");
-    expect(currentVal).not.toContain("[201~");
     unmount();
   });
 

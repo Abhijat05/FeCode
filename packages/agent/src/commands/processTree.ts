@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "child_process";
+import { spawnSync, type ChildProcess } from "child_process";
 
 /**
  * Terminate a process and all of its spawned descendant child processes across platforms.
@@ -6,7 +6,7 @@ import { spawn, type ChildProcess } from "child_process";
  * On Windows:
  * Standard `child.kill()` only invokes `TerminateProcess` on the root process (e.g. `cmd.exe`),
  * leaving all subprocesses (node, vitest, webpack, compilers, etc.) running as orphaned background processes.
- * `killProcessTree` uses `taskkill /pid <pid> /T /F` on Win32 to terminate the full tree.
+ * `killProcessTree` uses `taskkill.exe /pid <pid> /T /F` on Win32 to terminate the full tree synchronously.
  *
  * On POSIX (Linux / macOS):
  * Attempts process group termination (`process.kill(-pid, signal)`), falling back to direct process kill.
@@ -28,27 +28,19 @@ export function killProcessTree(
 
   if (process.platform === "win32") {
     try {
-      const killer = spawn("taskkill", ["/pid", pid.toString(), "/T", "/F"], {
+      spawnSync("taskkill.exe", ["/pid", pid.toString(), "/T", "/F"], {
         windowsHide: true,
         stdio: "ignore"
       });
-      killer.on("error", () => {
-        // Fallback to normal child.kill if taskkill is unavailable
-        if (typeof childOrPid !== "number" && typeof childOrPid.kill === "function") {
-          try {
-            childOrPid.kill(signal);
-          } catch {
-            // Ignore
-          }
-        }
-      });
     } catch {
-      if (typeof childOrPid !== "number" && typeof childOrPid.kill === "function") {
-        try {
-          childOrPid.kill(signal);
-        } catch {
-          // Ignore
-        }
+      // Ignore taskkill failure and fallback to child.kill
+    }
+
+    if (typeof childOrPid !== "number" && typeof childOrPid.kill === "function") {
+      try {
+        childOrPid.kill(signal);
+      } catch {
+        // Ignore
       }
     }
   } else {
