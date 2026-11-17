@@ -12,3 +12,4 @@ export * from "./permissions/types.js";
 export * from "./permissions/policy.js";
 export * from "./errors/classification.js";
 export * from "./fallback/fallbackProvider.js";
+export * from "./sanitization.js";

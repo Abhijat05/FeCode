@@ -8,6 +8,7 @@ import type {
 } from "../../types.js";
 import type { ToolCall } from "../../tools/types.js";
 import { sanitizeReason, classifyProviderError } from "../../errors/classification.js";
+import { sanitizeApiKey, sanitizeBaseUrl } from "../../sanitization.js";
 
 export interface OpenAICompatibleProviderOptions {
   baseUrl?: string;
@@ -46,19 +47,20 @@ export class OpenAICompatibleModelProvider implements ModelProvider {
   public readonly capabilities: ModelCapabilities;
 
   constructor(options: OpenAICompatibleProviderOptions = {}) {
-    const rawBaseUrl =
+    const rawBaseUrl = sanitizeBaseUrl(
       options.baseUrl ||
       process.env.OPENAI_BASE_URL ||
-      process.env.FE_OPENAI_BASE_URL;
+      process.env.FE_OPENAI_BASE_URL
+    );
 
-    if (!rawBaseUrl || !rawBaseUrl.trim()) {
+    if (!rawBaseUrl) {
       throw new Error(
         "OpenAI-compatible provider requires a base URL. Please set OPENAI_BASE_URL."
       );
     }
 
     try {
-      const parsedUrl = new URL(rawBaseUrl.trim());
+      const parsedUrl = new URL(rawBaseUrl);
       if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
         throw new Error(
           `OpenAI-compatible provider received an invalid base URL: "${rawBaseUrl}". It must be an HTTP or HTTPS URL.`
@@ -72,21 +74,22 @@ export class OpenAICompatibleModelProvider implements ModelProvider {
         `OpenAI-compatible provider received an invalid base URL: "${rawBaseUrl}".`
       );
     }
-    this.baseUrl = rawBaseUrl.trim();
+    this.baseUrl = rawBaseUrl;
 
-    const apiKey =
+    const rawApiKey =
       options.apiKey ||
       process.env.OPENAI_COMPATIBLE_API_KEY ||
       process.env.FE_OPENAI_COMPATIBLE_API_KEY ||
       process.env.OPENAI_API_KEY ||
       process.env.FE_OPENAI_API_KEY;
+    const apiKey = sanitizeApiKey(rawApiKey);
 
-    if (!apiKey || !apiKey.trim()) {
+    if (!apiKey) {
       throw new Error(
         "OpenAI-compatible provider requires an API key. Please set OPENAI_API_KEY."
       );
     }
-    this.apiKey = apiKey.trim();
+    this.apiKey = apiKey;
 
     const model = options.model || process.env.FE_MODEL;
     if (!model || !model.trim()) {

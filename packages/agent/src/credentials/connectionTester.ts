@@ -1,4 +1,4 @@
-import { classifyProviderError, sanitizeReason } from "@fecode/models";
+import { classifyProviderError, sanitizeReason, sanitizeApiKey, sanitizeBaseUrl } from "@fecode/models";
 import type { ConnectionTestResult } from "./types.js";
 
 export interface TestConnectionOptions {
@@ -29,8 +29,8 @@ export async function testProviderConnection(
   const startTime = Date.now();
   const providerId = options.providerId.toLowerCase().trim();
   const model = options.model.trim();
-  const apiKey = options.apiKey?.trim();
-  const baseUrl = options.baseUrl?.trim();
+  const apiKey = sanitizeApiKey(options.apiKey);
+  const baseUrl = sanitizeBaseUrl(options.baseUrl);
   const timeoutMs = options.timeoutMs ?? 3000;
 
   const timeoutController = new AbortController();
@@ -238,7 +238,14 @@ export async function testProviderConnection(
 
     let displayMessage: string;
     if (classification.category === "authentication") {
-      displayMessage = "Authentication failed. Check your API key and try again.";
+      if (
+        sanitizedReason.includes("invalid") &&
+        (sanitizedReason.includes("header") || sanitizedReason.includes("bytestring") || sanitizedReason.includes("key"))
+      ) {
+        displayMessage = "Authentication failed: The provided API key contains invalid characters or formatting. Check your API key and try again.";
+      } else {
+        displayMessage = "Authentication failed. Check your API key and try again.";
+      }
     } else if (classification.category === "unsupported_model") {
       displayMessage = `Model "${model}" was not found or is unsupported by this provider.`;
     } else if (

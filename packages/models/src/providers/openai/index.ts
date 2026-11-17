@@ -8,6 +8,7 @@ import type {
 } from "../../types.js";
 import type { ToolCall } from "../../tools/types.js";
 import { sanitizeReason, classifyProviderError } from "../../errors/classification.js";
+import { sanitizeApiKey, sanitizeBaseUrl } from "../../sanitization.js";
 
 export interface OpenAIProviderOptions {
   apiKey?: string;
@@ -50,12 +51,13 @@ export class OpenAIModelProvider implements ModelProvider {
   };
 
   constructor(options: OpenAIProviderOptions = {}) {
-    const apiKey = options.apiKey || process.env.OPENAI_API_KEY;
+    const rawApiKey = options.apiKey || process.env.OPENAI_API_KEY;
+    const apiKey = sanitizeApiKey(rawApiKey);
     if (!apiKey) {
       throw new Error("OPENAI_API_KEY is not configured.");
     }
     this.apiKey = apiKey;
-    this.model = options.model || process.env.FE_MODEL || "gpt-4o";
+    this.model = (options.model || process.env.FE_MODEL || "gpt-4o").trim();
     this.extraBody = options.extraBody;
 
     const envTimeout = process.env.FE_REQUEST_TIMEOUT_MS || process.env.OPENAI_TIMEOUT_MS;
@@ -110,7 +112,7 @@ export class OpenAIModelProvider implements ModelProvider {
         ? options.retryDelayMs
         : (parsedRetryDelay ?? 500);
 
-    this.baseURL = options.baseURL || process.env.OPENAI_BASE_URL;
+    this.baseURL = sanitizeBaseUrl(options.baseURL || process.env.OPENAI_BASE_URL);
     this.customClient = options.client;
     this.clientFactory = options.clientFactory;
     this.client =

@@ -492,6 +492,39 @@ describe("EnhancedTextInput component", () => {
     expect(currentVal).toContain("part 1");
     expect(currentVal).toContain("part 2");
     expect(currentVal).toContain("part 3");
+    expect(currentVal).not.toContain("[200~");
+    expect(currentVal).not.toContain("[201~");
+    unmount();
+  });
+
+  it("strips bracketed paste markers and newlines when pasted into a masked secret field", async () => {
+    let currentVal = "";
+    const Wrapper = () => {
+      const [val, setVal] = useState("");
+      return (
+        <EnhancedTextInput
+          value={val}
+          mask="*"
+          onChange={(v) => {
+            setVal(v);
+            currentVal = v;
+          }}
+        />
+      );
+    };
+
+    const { stdin, unmount } = render(<Wrapper />);
+    await delay(20);
+
+    // Simulate terminal pasting an API key with bracketed paste and carriage return/newline
+    stdin.write("\x1b[200~AIzaSyTestApiKey123456\r\n\x1b[201~");
+    await delay(50);
+
+    expect(currentVal).toBe("AIzaSyTestApiKey123456");
+    expect(currentVal).not.toContain("\r");
+    expect(currentVal).not.toContain("\n");
+    expect(currentVal).not.toContain("[200~");
+    expect(currentVal).not.toContain("[201~");
     unmount();
   });
 });

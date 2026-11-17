@@ -67,4 +67,20 @@ describe("ConnectionTester", () => {
     expect(result.success).toBe(false);
     expect(result.error?.category).toBeDefined();
   });
+
+  it("sanitizes API keys containing newlines and surrounding quotes without invalid header errors", async () => {
+    const rawTaintedKey = '\r\n  "AIzaSyFakeKeyWithQuotesAndNewlines"\n  ';
+    // Test Gemini connection with tainted key (mocked or fast failing without local undici header rejection)
+    const result = await testProviderConnection({
+      providerId: "gemini",
+      model: "gemini-2.5-flash",
+      apiKey: rawTaintedKey,
+      timeoutMs: 500
+    });
+
+    // The key should have been sanitized, meaning it was NOT rejected locally by undici header parser
+    // for invalid header characters
+    expect(result.message).not.toContain("invalid x-goog-api-key header");
+    expect(result.message).not.toContain(rawTaintedKey);
+  });
 });

@@ -25,6 +25,24 @@ export interface EnhancedTextInputProps {
   showCursor?: boolean;
 }
 
+function cleanPastedInput(raw: string, mask?: string): string {
+  let text = raw
+    // eslint-disable-next-line no-control-regex
+    .replace(/\x1b\[20[01]~/g, "")
+    .replace(/\[20[01]~/g, "")
+    // eslint-disable-next-line no-control-regex
+    .replace(/\x1b\[[0-9;]*[a-zA-Z~]/g, "");
+
+  if (mask) {
+    // eslint-disable-next-line no-control-regex
+    text = text.replace(/[\r\n\t\x00-\x1F\x7F]/g, "").trim();
+  } else {
+    // eslint-disable-next-line no-control-regex
+    text = text.replace(/[\r\n]+/g, " ").replace(/[\x00-\x1F\x7F]/g, "");
+  }
+  return text;
+}
+
 export const EnhancedTextInput: React.FC<EnhancedTextInputProps> = ({
   value: originalValue,
   placeholder = "",
@@ -127,7 +145,7 @@ export const EnhancedTextInput: React.FC<EnhancedTextInputProps> = ({
         }
         pasteBufferRef.current += effectiveInput;
         if (pasteBufferRef.current.includes("[201~")) {
-          const completePaste = pasteBufferRef.current;
+          const completePaste = cleanPastedInput(pasteBufferRef.current, mask);
           pasteBufferRef.current = null;
           if (isAllSelectedRef.current) {
             setIsAllSelected(false);
@@ -147,7 +165,7 @@ export const EnhancedTextInput: React.FC<EnhancedTextInputProps> = ({
         } else {
           pasteTimerRef.current = setTimeout(() => {
             if (pasteBufferRef.current !== null) {
-              const flushed = pasteBufferRef.current;
+              const flushed = cleanPastedInput(pasteBufferRef.current, mask);
               pasteBufferRef.current = null;
               const res = insertText(
                 originalValueRef.current,
@@ -163,11 +181,31 @@ export const EnhancedTextInput: React.FC<EnhancedTextInputProps> = ({
         return;
       }
 
-      if (effectiveInput.includes("[200~") && !effectiveInput.includes("[201~")) {
+      if (effectiveInput.includes("[200~")) {
+        if (effectiveInput.includes("[201~")) {
+          const completePaste = cleanPastedInput(effectiveInput, mask);
+          if (isAllSelectedRef.current) {
+            setIsAllSelected(false);
+            setCursorOffset(completePaste.length);
+            setCursorWidth(completePaste.length > 1 ? completePaste.length : 0);
+            onChange(completePaste);
+          } else {
+            const res = insertText(
+              originalValueRef.current,
+              cursorOffsetRef.current,
+              completePaste
+            );
+            setCursorOffset(res.offset);
+            setCursorWidth(completePaste.length > 1 ? completePaste.length : 0);
+            onChange(res.text);
+          }
+          return;
+        }
+
         pasteBufferRef.current = effectiveInput;
         pasteTimerRef.current = setTimeout(() => {
           if (pasteBufferRef.current !== null) {
-            const flushed = pasteBufferRef.current;
+            const flushed = cleanPastedInput(pasteBufferRef.current, mask);
             pasteBufferRef.current = null;
             const res = insertText(
               originalValueRef.current,
@@ -340,7 +378,21 @@ export const EnhancedTextInput: React.FC<EnhancedTextInputProps> = ({
         }
 
         case "insert": {
-          const inserted = action.text || "";
+          let inserted = action.text || "";
+          if (
+            inserted.includes("[200~") ||
+            inserted.includes("[201~") ||
+            inserted.includes("\x1b")
+          ) {
+            inserted = cleanPastedInput(inserted, mask);
+          } else if (mask) {
+            // eslint-disable-next-line no-control-regex
+            inserted = inserted.replace(/[\r\n\t\x00-\x1F\x7F]/g, "");
+          }
+          if (inserted.length === 0) {
+            break;
+          }
+
           if (isAllSelected) {
             setIsAllSelected(false);
             setCursorOffset(inserted.length);

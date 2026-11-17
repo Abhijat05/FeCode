@@ -1,4 +1,5 @@
 import { loadConfig } from "@fecode/shared";
+import { sanitizeApiKey, sanitizeBaseUrl } from "@fecode/models";
 import type {
   CredentialStore,
   ResolvedConfiguration
@@ -136,8 +137,8 @@ export async function resolveActiveConfiguration(
       source: "environment",
       provider,
       model,
-      apiKey,
-      baseUrl,
+      apiKey: sanitizeApiKey(apiKey) || undefined,
+      baseUrl: sanitizeBaseUrl(baseUrl),
       needsOnboarding: false
     };
   }
@@ -185,8 +186,8 @@ export async function resolveActiveConfiguration(
       source: "profile",
       provider: activeProfile.providerId,
       model: activeProfile.model,
-      baseUrl: activeProfile.baseUrl,
-      apiKey: resolvedKey,
+      baseUrl: sanitizeBaseUrl(activeProfile.baseUrl),
+      apiKey: sanitizeApiKey(resolvedKey) || undefined,
       activeProfile,
       needsOnboarding: false
     };

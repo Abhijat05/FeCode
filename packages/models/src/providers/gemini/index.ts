@@ -1,4 +1,5 @@
 import { GoogleGenAI, type Content, type Tool as GeminiTool } from "@google/genai";
+import { sanitizeApiKey } from "../../sanitization.js";
 import type {
   ModelCapabilities,
   ModelEvent,
@@ -46,12 +47,13 @@ export class GeminiModelProvider implements ModelProvider {
   };
 
   constructor(options: GeminiProviderOptions = {}) {
-    const apiKey = options.apiKey || process.env.GEMINI_API_KEY;
+    const rawApiKey = options.apiKey || process.env.GEMINI_API_KEY;
+    const apiKey = sanitizeApiKey(rawApiKey);
     if (!apiKey) {
       throw new Error("GEMINI_API_KEY is not configured.");
     }
     this.apiKey = apiKey;
-    this.model = options.model || process.env.FE_MODEL || "gemini-2.5-flash";
+    this.model = (options.model || process.env.FE_MODEL || "gemini-2.5-flash").trim();
     this.client =
       options.client ||
       new GoogleGenAI({

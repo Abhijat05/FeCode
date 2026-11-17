@@ -8,6 +8,7 @@ import type {
 } from "../../types.js";
 import type { ToolCall } from "../../tools/types.js";
 import { sanitizeReason, classifyProviderError } from "../../errors/classification.js";
+import { sanitizeApiKey, sanitizeBaseUrl } from "../../sanitization.js";
 
 export interface AnthropicProviderOptions {
   apiKey?: string;
@@ -51,12 +52,13 @@ export class AnthropicModelProvider implements ModelProvider {
   };
 
   constructor(options: AnthropicProviderOptions = {}) {
-    const apiKey = options.apiKey || process.env.ANTHROPIC_API_KEY;
+    const rawApiKey = options.apiKey || process.env.ANTHROPIC_API_KEY;
+    const apiKey = sanitizeApiKey(rawApiKey);
     if (!apiKey) {
       throw new Error("ANTHROPIC_API_KEY is not configured.");
     }
     this.apiKey = apiKey;
-    this.model = options.model || process.env.FE_MODEL || "claude-sonnet-5-5";
+    this.model = (options.model || process.env.FE_MODEL || "claude-sonnet-5-5").trim();
 
     const envMaxTokens = process.env.FE_MAX_TOKENS;
     let parsedMaxTokens: number | undefined;
@@ -123,7 +125,7 @@ export class AnthropicModelProvider implements ModelProvider {
         ? options.retryDelayMs
         : (parsedRetryDelay ?? 500);
 
-    this.baseURL = options.baseURL || process.env.ANTHROPIC_BASE_URL;
+    this.baseURL = sanitizeBaseUrl(options.baseURL || process.env.ANTHROPIC_BASE_URL);
     this.customClient = options.client;
     this.clientFactory = options.clientFactory;
     this.client =

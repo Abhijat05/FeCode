@@ -1,4 +1,4 @@
-import { sanitizeReason } from "@fecode/models";
+import { sanitizeReason, sanitizeApiKey, sanitizeBaseUrl } from "@fecode/models";
 
 export interface DiscoveredModel {
   id: string;
@@ -184,8 +184,8 @@ export async function discoverAvailableModels(
   options: DiscoverModelsOptions
 ): Promise<DiscoverModelsResult> {
   const providerId = options.providerId.toLowerCase().trim();
-  const apiKey = options.apiKey?.trim();
-  const baseUrl = options.baseUrl?.trim();
+  const apiKey = sanitizeApiKey(options.apiKey);
+  const baseUrl = sanitizeBaseUrl(options.baseUrl);
   const timeoutMs = options.timeoutMs ?? 3000;
 
   const timeoutController = new AbortController();

@@ -2,6 +2,7 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import * as os from "os";
 import { safeJsonParse } from "@fecode/shared";
+import { sanitizeApiKey, sanitizeBaseUrl } from "@fecode/models";
 import type {
   StoredProviderProfile,
   ProviderProfilesData,
@@ -106,7 +107,8 @@ export class ProviderProfileStore {
     const providerId = input.providerId.trim().toLowerCase();
     const displayName = input.displayName.trim();
     const model = input.model.trim();
-    const baseUrl = input.baseUrl ? input.baseUrl.trim() : undefined;
+    const baseUrl = sanitizeBaseUrl(input.baseUrl);
+    const sanitizedApiKey = input.apiKey !== undefined ? sanitizeApiKey(input.apiKey) : undefined;
 
     if (!providerId) {
       throw new Error("Provider ID is required.");
@@ -135,8 +137,8 @@ export class ProviderProfileStore {
     const credentialRef = `fecode:profile:${profileId}`;
 
     // Store API key securely in OS Credential Store if provided
-    if (input.apiKey && input.apiKey.trim()) {
-      await this.credentialStore.set(credentialRef, input.apiKey.trim());
+    if (sanitizedApiKey) {
+      await this.credentialStore.set(credentialRef, sanitizedApiKey);
     }
 
     const storedProfile: StoredProviderProfile = {
@@ -145,7 +147,7 @@ export class ProviderProfileStore {
       displayName,
       model,
       baseUrl: baseUrl || undefined,
-      credentialReference: input.apiKey !== undefined ? credentialRef : (existingIndex >= 0 ? data.profiles[existingIndex].credentialReference : undefined),
+      credentialReference: sanitizedApiKey ? credentialRef : (existingIndex >= 0 ? data.profiles[existingIndex].credentialReference : undefined),
       createdAt: existingIndex >= 0 ? data.profiles[existingIndex].createdAt : now,
       updatedAt: now
     };

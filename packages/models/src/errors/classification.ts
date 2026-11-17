@@ -145,7 +145,10 @@ export function classifyProviderError(err: unknown): ProviderErrorClassification
     lowerMessage.includes("invalid api key") ||
     lowerMessage.includes("api_key_invalid") ||
     lowerMessage.includes("incorrect api key") ||
-    lowerMessage.includes("authentication")
+    lowerMessage.includes("authentication") ||
+    lowerMessage.includes("invalid x-goog-api-key") ||
+    (lowerMessage.includes("invalid") && lowerMessage.includes("header") && (lowerMessage.includes("key") || lowerMessage.includes("auth"))) ||
+    lowerMessage.includes("bytestring")
   ) {
     return {
       category: "authentication",

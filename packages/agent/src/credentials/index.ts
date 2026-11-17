@@ -4,3 +4,4 @@ export * from "./profileStore.js";
 export * from "./configResolver.js";
 export * from "./connectionTester.js";
 export * from "./modelDiscovery.js";
+export { sanitizeApiKey, sanitizeBaseUrl } from "@fecode/models";

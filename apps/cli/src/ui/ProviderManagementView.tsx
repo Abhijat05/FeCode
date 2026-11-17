@@ -10,7 +10,9 @@ import type {
 import {
   testProviderConnection,
   discoverAvailableModels,
-  getCuratedDefaultModels
+  getCuratedDefaultModels,
+  sanitizeApiKey,
+  sanitizeBaseUrl
 } from "@fecode/agent";
 import { EnhancedTextInput } from "./EnhancedTextInput.js";
 
@@ -180,11 +182,13 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
     testAbortControllerRef.current = abortController;
 
     try {
+      const cleanApiKey = sanitizeApiKey(options.apiKey);
+      const cleanBaseUrl = sanitizeBaseUrl(options.baseUrl);
       const result = await testProviderConnection({
         providerId: options.providerId,
         model: options.model,
-        apiKey: options.apiKey,
-        baseUrl: options.baseUrl,
+        apiKey: cleanApiKey || undefined,
+        baseUrl: cleanBaseUrl,
         signal: abortController.signal
       });
       setTestResult(result);
@@ -207,13 +211,15 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
   // Save profile and clean up sensitive buffers
   const handleSaveProfile = async () => {
     try {
+      const cleanApiKey = sanitizeApiKey(formApiKey);
+      const cleanBaseUrl = sanitizeBaseUrl(formBaseUrl);
       const saved = await profileStore.saveProfile({
         id: editingProfileId,
         providerId: formProviderId,
         displayName: formDisplayName.trim() || formProviderId,
         model: formModel.trim(),
-        baseUrl: formBaseUrl.trim() || undefined,
-        apiKey: formApiKey.trim() || undefined
+        baseUrl: cleanBaseUrl,
+        apiKey: cleanApiKey || undefined
       });
 
       // Clear memory buffer of secret
@@ -285,8 +291,8 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
       setIsDiscovering(true);
       setDiscoveryError(null);
 
-      let keyToUse = (apiKeyOverride ?? formApiKey).trim() || undefined;
-      const urlToUse = (baseUrlOverride ?? formBaseUrl).trim() || undefined;
+      let keyToUse = sanitizeApiKey(apiKeyOverride ?? formApiKey) || undefined;
+      const urlToUse = sanitizeBaseUrl(baseUrlOverride ?? formBaseUrl);
 
       if (!keyToUse && editingProfileId) {
         try {
@@ -343,6 +349,12 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
       if (currentField?.id === "model" && submittedValue !== undefined) {
         setFormModel(submittedValue);
       }
+      if (currentField?.id === "apiKey" && submittedValue !== undefined) {
+        setFormApiKey(sanitizeApiKey(submittedValue));
+      }
+      if (currentField?.id === "baseUrl" && submittedValue !== undefined) {
+        setFormBaseUrl(sanitizeBaseUrl(submittedValue) || "");
+      }
 
       if (formFieldIndex < formFields.length - 1) {
         const nextIdx = formFieldIndex + 1;
@@ -352,31 +364,33 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
         if (formFields[nextIdx]?.id === "model") {
           const effectiveApiKey =
             currentField?.id === "apiKey"
-              ? (submittedValue ?? formApiKey)
-              : formApiKey;
+              ? sanitizeApiKey(submittedValue ?? formApiKey)
+              : sanitizeApiKey(formApiKey);
           const effectiveBaseUrl =
             currentField?.id === "baseUrl"
-              ? (submittedValue ?? formBaseUrl)
-              : formBaseUrl;
+              ? sanitizeBaseUrl(submittedValue ?? formBaseUrl)
+              : sanitizeBaseUrl(formBaseUrl);
 
           triggerDiscovery(effectiveApiKey, effectiveBaseUrl);
         }
       } else {
         // Validate
-        const effectiveApiKey =
+        const effectiveApiKey = sanitizeApiKey(
           currentField?.id === "apiKey" && submittedValue !== undefined
             ? submittedValue
-            : formApiKey;
+            : formApiKey
+        );
         const effectiveModel =
           currentField?.id === "model" && submittedValue !== undefined
             ? submittedValue
             : formModel;
-        const effectiveBaseUrl =
+        const effectiveBaseUrl = sanitizeBaseUrl(
           currentField?.id === "baseUrl" && submittedValue !== undefined
             ? submittedValue
-            : formBaseUrl;
+            : formBaseUrl
+        ) || "";
 
-        if (formProviderId !== "ollama" && !effectiveApiKey.trim() && !editingProfileId) {
+        if (formProviderId !== "ollama" && !effectiveApiKey && !editingProfileId) {
           setFormError("API key is required.");
           return;
         }
@@ -386,7 +400,7 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
         }
         if (
           (formProviderId === "ollama" || formProviderId === "openai-compatible") &&
-          !effectiveBaseUrl.trim()
+          !effectiveBaseUrl
         ) {
           setFormError("Base URL is required.");
           return;
@@ -396,8 +410,8 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
         startConnectionTest({
           providerId: formProviderId,
           model: effectiveModel.trim(),
-          apiKey: effectiveApiKey.trim() || undefined,
-          baseUrl: effectiveBaseUrl.trim() || undefined
+          apiKey: effectiveApiKey || undefined,
+          baseUrl: effectiveBaseUrl || undefined
         });
       }
     },

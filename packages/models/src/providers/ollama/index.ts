@@ -6,6 +6,7 @@ import type {
   ModelRequest
 } from "../../types.js";
 import { OpenAIModelProvider } from "../openai/index.js";
+import { sanitizeBaseUrl } from "../../sanitization.js";
 
 export interface OllamaProviderOptions {
   baseUrl?: string;
@@ -24,10 +25,9 @@ export class OllamaModelProvider implements ModelProvider {
 
   constructor(options: OllamaProviderOptions = {}) {
     this.baseUrl =
-      options.baseUrl ||
-      process.env.OLLAMA_BASE_URL ||
+      sanitizeBaseUrl(options.baseUrl || process.env.OLLAMA_BASE_URL) ||
       "http://localhost:11434/v1";
-    this.model = options.model || process.env.FE_MODEL || "qwen2.5-coder";
+    this.model = (options.model || process.env.FE_MODEL || "qwen2.5-coder").trim();
 
     const envCtx = process.env.OLLAMA_NUM_CTX || process.env.FE_MAX_CONTEXT_TOKENS;
     let parsedEnvCtx: number | undefined;
