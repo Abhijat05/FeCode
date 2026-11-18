@@ -167,6 +167,14 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
 
   const currentProfile = profiles[selectedListIndex] || null;
 
+  const handleCancelOrBack = useCallback(() => {
+    if (profiles.length > 0 || initialMode === "list") {
+      setMode("list");
+    } else {
+      onClose();
+    }
+  }, [profiles.length, initialMode, onClose]);
+
   // Run connection test
   const startConnectionTest = async (options: {
     providerId: string;
@@ -430,7 +438,7 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
   // Keyboard navigation
   useInput((input, key) => {
     // Escape behavior
-    if (key.escape) {
+    if (key.escape || input === "\x1b") {
       if (mode === "testing") {
         if (testAbortControllerRef.current) {
           testAbortControllerRef.current.abort();
@@ -456,7 +464,11 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
         }
         setIsDiscovering(false);
         setFormApiKey("");
-        setMode(profiles.length > 0 ? "list" : "onboarding-select");
+        if (editingProfileId) {
+          setMode("list");
+        } else {
+          setMode("onboarding-select");
+        }
         return;
       }
       if (mode === "show" || mode === "confirm-delete") {
@@ -467,15 +479,24 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
         onClose();
         return;
       }
-      if (mode === "onboarding-select" && profiles.length > 0) {
-        setMode("list");
+      if (mode === "onboarding-select") {
+        handleCancelOrBack();
         return;
       }
       return;
     }
 
-    // Mode: form (keyboard handling when on model field)
+    // Mode: form
     if (mode === "form") {
+      if (key.tab) {
+        if (key.shift) {
+          setFormFieldIndex((prev) => Math.max(0, prev - 1));
+        } else {
+          setFormFieldIndex((prev) => Math.min(formFields.length - 1, prev + 1));
+        }
+        return;
+      }
+
       const currentField = formFields[formFieldIndex];
       if (currentField?.id === "model" && !isCustomModel) {
         if (isDiscovering) {
@@ -532,21 +553,28 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
 
     // 1. Mode: onboarding-select
     if (mode === "onboarding-select") {
+      const totalOptions = PROVIDER_OPTIONS.length + 1;
       if (key.upArrow) {
-        setSelectedProviderIndex((prev) => (prev > 0 ? prev - 1 : PROVIDER_OPTIONS.length - 1));
+        setSelectedProviderIndex((prev) => (prev > 0 ? prev - 1 : totalOptions - 1));
         return;
       }
       if (key.downArrow) {
-        setSelectedProviderIndex((prev) => (prev < PROVIDER_OPTIONS.length - 1 ? prev + 1 : 0));
+        setSelectedProviderIndex((prev) => (prev < totalOptions - 1 ? prev + 1 : 0));
         return;
       }
       if (key.return) {
+        if (selectedProviderIndex === PROVIDER_OPTIONS.length) {
+          handleCancelOrBack();
+          return;
+        }
         const chosen = PROVIDER_OPTIONS[selectedProviderIndex];
-        setupFormForProvider(chosen.id);
+        if (chosen) {
+          setupFormForProvider(chosen.id);
+        }
         return;
       }
-      if ((input === "q" || input === "b") && profiles.length > 0) {
-        setMode("list");
+      if (input === "q" || input === "b") {
+        handleCancelOrBack();
         return;
       }
     }
@@ -590,6 +618,7 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
         return;
       }
       if (input === "n") {
+        setSelectedProviderIndex(0);
         setMode("onboarding-select");
         return;
       }
@@ -667,6 +696,10 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
   // RENDER: 1. Onboarding / Provider Selection
   // -------------------------------------------------------------
   if (mode === "onboarding-select") {
+    const isFirstRun = profiles.length === 0 && initialMode === "onboarding";
+    const backOptionIndex = PROVIDER_OPTIONS.length;
+    const isBackSelected = selectedProviderIndex === backOptionIndex;
+
     return (
       <Box
         flexDirection="column"
@@ -677,10 +710,14 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
         marginY={1}
       >
         <Box justifyContent="center" marginBottom={1}>
-          <Text bold color="cyan">Welcome to FeCode</Text>
+          <Text bold color="cyan">
+            {isFirstRun ? "Welcome to FeCode" : "Add New Provider"}
+          </Text>
         </Box>
         <Box justifyContent="center" marginBottom={1}>
-          <Text color="white">Configure your AI provider</Text>
+          <Text color="white">
+            {isFirstRun ? "Configure your AI provider" : "Select a provider"}
+          </Text>
         </Box>
         <Box marginBottom={1}>
           <Text color="gray">Select a provider:</Text>
@@ -699,8 +736,20 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
             </Box>
           );
         })}
+        <Box key="back-option" marginLeft={1} marginTop={1}>
+          <Text color={isBackSelected ? "cyan" : "gray"} bold={isBackSelected}>
+            {isBackSelected ? "> " : "  "}
+          </Text>
+          <Text color={isBackSelected ? "white" : "gray"} bold={isBackSelected}>
+            {profiles.length > 0 || initialMode === "list"
+              ? "[ Back to Provider List ]"
+              : "[ Cancel / Exit to Main ]"}
+          </Text>
+        </Box>
         <Box marginTop={1}>
-          <Text color="gray">Use ↑/↓ arrows to navigate, Enter to continue{profiles.length > 0 ? ", Esc to cancel" : ""}</Text>
+          <Text color="gray">
+            Use ↑/↓ arrows to navigate, Enter to continue   [Esc / b / q] Back
+          </Text>
         </Box>
       </Box>
     );
@@ -1058,7 +1107,9 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
 
       <Box marginTop={1} flexDirection="column">
         <Text color="gray">
-          [Enter/a] Activate   [t] Test   [n] Add   [e] Edit   [d] Delete   [s] Show   [Esc] Close
+          {profiles.length === 0
+            ? "[n] Add   [Esc] Close"
+            : "[Enter/a] Activate   [t] Test   [n] Add   [e] Edit   [d] Delete   [s] Show   [Esc] Close"}
         </Text>
       </Box>
     </Box>

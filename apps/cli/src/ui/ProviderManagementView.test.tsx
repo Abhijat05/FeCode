@@ -541,4 +541,140 @@ describe("ProviderManagementView", () => {
     expect(frame).toContain("> Qwen 2.5 Coder");
     expect(frame).toContain("Llama 3.1");
   });
+
+  it("allows going back / cancelling from onboarding-select when no profiles exist", async () => {
+    let closed = false;
+    const { stdin } = render(
+      <ProviderManagementView
+        initialMode="onboarding"
+        profileStore={profileStore}
+        credentialStore={credentialStore}
+        onClose={() => {
+          closed = true;
+        }}
+      />
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+    // Press Esc
+    stdin.write("\u001B");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(closed).toBe(true);
+  });
+
+  it("allows selecting '[ Cancel / Exit to Main ]' option to close onboarding when no profiles exist", async () => {
+    let closed = false;
+    const { lastFrame, stdin } = render(
+      <ProviderManagementView
+        initialMode="onboarding"
+        profileStore={profileStore}
+        credentialStore={credentialStore}
+        onClose={() => {
+          closed = true;
+        }}
+      />
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+    let frame = lastFrame() || "";
+    expect(frame).toContain("[ Cancel / Exit to Main ]");
+
+    // Navigate to 4th down arrow (gemini -> openai -> ollama -> openai-compatible -> cancel option)
+    for (let i = 0; i < 4; i++) {
+      stdin.write("\u001B[B");
+      await new Promise((r) => setTimeout(r, 30));
+    }
+
+    frame = lastFrame() || "";
+    expect(frame).toContain("> [ Cancel / Exit to Main ]");
+
+    // Press Enter to confirm cancel
+    stdin.write("\r");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(closed).toBe(true);
+  });
+
+  it("navigates back to provider list when adding a provider and selecting '[ Back to Provider List ]' or pressing Esc", async () => {
+    await profileStore.saveProfile({
+      providerId: "gemini",
+      displayName: "Gemini Existing",
+      model: "gemini-2.5-flash",
+      apiKey: "key"
+    });
+
+    const { lastFrame, stdin } = render(
+      <ProviderManagementView
+        initialMode="list"
+        profileStore={profileStore}
+        credentialStore={credentialStore}
+        onClose={() => {}}
+      />
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+    let frame = lastFrame() || "";
+    expect(frame).toContain("Saved Provider Profiles");
+
+    // Press 'n' to add a new provider
+    stdin.write("n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    frame = lastFrame() || "";
+    expect(frame).toContain("Add New Provider");
+    expect(frame).toContain("[ Back to Provider List ]");
+
+    // Press Esc to go back to list
+    stdin.write("\u001B");
+    await new Promise((r) => setTimeout(r, 50));
+
+    frame = lastFrame() || "";
+    expect(frame).toContain("Saved Provider Profiles");
+    expect(frame).toContain("Gemini Existing");
+
+    // Press 'n' again and navigate down to '[ Back to Provider List ]'
+    stdin.write("n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    for (let i = 0; i < 4; i++) {
+      stdin.write("\u001B[B");
+      await new Promise((r) => setTimeout(r, 30));
+    }
+
+    frame = lastFrame() || "";
+    expect(frame).toContain("> [ Back to Provider List ]");
+
+    stdin.write("\r");
+    await new Promise((r) => setTimeout(r, 50));
+
+    frame = lastFrame() || "";
+    expect(frame).toContain("Saved Provider Profiles");
+  });
+
+  it("pressing Esc in form mode when adding a new provider returns to provider selection", async () => {
+    const { lastFrame, stdin } = render(
+      <ProviderManagementView
+        initialMode="onboarding"
+        profileStore={profileStore}
+        credentialStore={credentialStore}
+        onClose={() => {}}
+      />
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+    // Select Gemini
+    stdin.write("\r");
+    await new Promise((r) => setTimeout(r, 50));
+
+    let frame = lastFrame() || "";
+    expect(frame).toContain("Configure AI Provider");
+    expect(frame).toContain("API Key:");
+
+    // Press Esc to go back to provider selection
+    stdin.write("\u001B");
+    await new Promise((r) => setTimeout(r, 50));
+
+    frame = lastFrame() || "";
+    expect(frame).toContain("Select a provider:");
+    expect(frame).toContain("Google Gemini");
+  });
 });

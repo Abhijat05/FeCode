@@ -156,12 +156,13 @@ describe("FeCode Packaging & Distribution Verification (Phase 5AH)", () => {
     const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
     const packages = ["packages/agent", "packages/models", "packages/shared", "apps/cli"];
     const generatedTarballs: string[] = [];
+    const tmpCacheDir = path.join(os.tmpdir(), "fecode-test-npm-cache");
 
     try {
       for (const workspace of packages) {
         const output = execSync(
-          `${npmCommand} pack --workspace=${workspace} --pack-destination="${repoRoot}" --json`,
-          { cwd: repoRoot, encoding: "utf-8" }
+          `${npmCommand} pack --workspace=${workspace} --pack-destination="${repoRoot}" --cache="${tmpCacheDir}" --json`,
+          { cwd: repoRoot, encoding: "utf-8", env: { ...process.env, npm_config_cache: tmpCacheDir } }
         );
         const [result] = JSON.parse(output) as Array<{ filename: string }>;
         generatedTarballs.push(result.filename);

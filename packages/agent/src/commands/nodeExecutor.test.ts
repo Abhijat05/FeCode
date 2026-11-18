@@ -14,7 +14,7 @@ describe("NodeCommandExecutor", () => {
   });
 
   afterEach(async () => {
-    await fs.rm(tmpDir, { recursive: true, force: true });
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
   });
 
   it("executes valid allowed command and captures stdout and exit code", async () => {

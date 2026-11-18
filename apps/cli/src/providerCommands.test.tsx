@@ -239,4 +239,33 @@ describe("/provider Slash Commands in App", () => {
     const remaining = await profileStore.getProfiles();
     expect(remaining.find((p) => p.id === saved.id)).toBeUndefined();
   });
+
+  it("allows pressing Esc from /provider add to cleanly return to main view without restarting", async () => {
+    const mockAgent = new MockAgent();
+
+    const { lastFrame, stdin } = render(
+      <App
+        agent={mockAgent}
+        cwd={tmpDir}
+        providerName="gemini"
+        modelName="gemini-2.5-flash"
+        profileStore={profileStore}
+        credentialStore={credentialStore}
+        clampResponses={false}
+      />
+    );
+
+    await delay(100);
+    await typeAndSubmit(stdin, "/provider add");
+
+    let frame = lastFrame() || "";
+    expect(frame).toContain("Select a provider:");
+
+    // Press Esc to exit back to main view
+    stdin.write("\u001B");
+    await delay(100);
+
+    frame = lastFrame() || "";
+    expect(frame).not.toContain("Select a provider:");
+  });
 });
