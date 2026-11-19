@@ -567,6 +567,21 @@ describe("Phase 5AD: Modular UI Components", () => {
     expect(frame).toContain("! Blocked at Step 3/3: Deploy");
   });
 
+  it("renders StatusBar with token telemetry pill when provided", () => {
+    const { lastFrame } = render(
+      <StatusBar
+        status="idle"
+        columns={100}
+        tokenTelemetry={{
+          currentTokens: 14200,
+          contextLimit: 128000
+        }}
+      />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("14.2k/128k tokens (11%)");
+  });
+
   it("renders AppShell containing header, body, and footer slots", () => {
     const { lastFrame } = render(
       <AppShell

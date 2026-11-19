@@ -35,7 +35,8 @@ import {
   testProviderConnection,
   type StoredProviderProfile,
   type CredentialStore,
-  type McpRegistrationResult
+  type McpRegistrationResult,
+  estimateTokens
 } from "@fecode/agent";
 import { createModelProvider, type ApprovalRequest, type ModelMessage } from "@fecode/models";
 import { InteractiveApprovalResolver } from "./approvalResolver.js";
@@ -65,7 +66,9 @@ import {
   RunHistoryView,
   HelpView,
   WelcomeView,
-  ProviderManagementView
+  ProviderManagementView,
+  getModelContextLimit,
+  type ToolCallRecord
 } from "./ui/index.js";
 
 export interface Turn {
@@ -77,6 +80,7 @@ export interface Turn {
   thinkingMs?: number;
   thinkingTokens?: number;
   thinkingSummary?: string;
+  toolCalls?: ToolCallRecord[];
 }
 
 export interface AppProps {
@@ -639,6 +643,22 @@ export const App: React.FC<AppProps> = ({
   }, []);
 
   const [activeTokenCount, setActiveTokenCount] = useState<number | undefined>(undefined);
+
+  const contextWindowLimit = useMemo(
+    () => getModelContextLimit(currentModelName || modelName, currentProviderName || providerName),
+    [currentModelName, modelName, currentProviderName, providerName]
+  );
+
+  const estimatedSessionTokens = useMemo(() => {
+    let total = turns.reduce(
+      (acc, t) => acc + estimateTokens(t.prompt || "") + estimateTokens(t.response || ""),
+      0
+    );
+    if (isGenerating && activeTokenCount) {
+      total += activeTokenCount;
+    }
+    return total;
+  }, [turns, isGenerating, activeTokenCount]);
 
   // Track active execution elapsed time for Header
   useEffect(() => {
@@ -3049,6 +3069,7 @@ export const App: React.FC<AppProps> = ({
 
       let accumulatedRawText = "";
       const toolCallMap = new Map<string, string>();
+      const activeToolCalls = new Map<string, { id: string; name: string; target?: string; startedAt: number }>();
       let pendingTextChunk = "";
       let lastRenderMs = 0;
       const THROTTLE_MS = isTestEnv ? 0 : 50;
@@ -3274,14 +3295,49 @@ export const App: React.FC<AppProps> = ({
           notifyApprovalRequired("checkpoint");
         } else if (event.type === "tool_call") {
           toolCallMap.set(event.call.id, event.call.name);
+          const args = (typeof event.call.arguments === "object" && event.call.arguments !== null
+            ? event.call.arguments
+            : {}) as Record<string, unknown>;
+          const target = (args.path || args.filePath || args.target || args.command || args.query || args.file || undefined) as string | undefined;
+          activeToolCalls.set(event.call.id, {
+            id: event.call.id,
+            name: event.call.name,
+            target,
+            startedAt: Date.now()
+          });
+          setUiState((prev) => prev ? {
+            ...prev,
+            activeTool: {
+              callId: event.call.id,
+              toolName: event.call.name,
+              target,
+              startedAt: Date.now()
+            }
+          } : prev);
         } else if (event.type === "tool_result") {
-          const toolName = toolCallMap.get(event.callId) || "tool";
-          if (event.result.success) {
+          const callInfo = activeToolCalls.get(event.callId);
+          const toolName = callInfo?.name || toolCallMap.get(event.callId) || "tool";
+          const durationMs = callInfo ? Math.max(1, Date.now() - callInfo.startedAt) : undefined;
+          const isSuccess = Boolean(event.result.success);
+          const errorMsg = event.result.error?.message;
+          const target = callInfo?.target;
+
+          const toolRecord: ToolCallRecord = {
+            id: event.callId,
+            name: toolName,
+            target,
+            status: isSuccess ? "success" : "error",
+            durationMs,
+            error: errorMsg
+          };
+
+          if (isSuccess) {
             setTurns((prev) =>
               prev.map((t) =>
                 t.id === turnId
                   ? {
                       ...t,
+                      toolCalls: [...(t.toolCalls || []), toolRecord],
                       response: t.response.includes(`✓ ${toolName}`)
                         ? t.response
                         : t.response + `✓ ${toolName} executed\n`
@@ -3303,16 +3359,19 @@ export const App: React.FC<AppProps> = ({
             } else {
               recoveryMsg = `✗ ${toolName}: ${event.result.error.message || "Execution error"}\n`;
             }
-            if (recoveryMsg) {
-              setTurns((prev) =>
-                prev.map((t) =>
-                  t.id === turnId
-                    ? { ...t, response: t.response + recoveryMsg }
-                    : t
-                )
-              );
-            }
+            setTurns((prev) =>
+              prev.map((t) =>
+                t.id === turnId
+                  ? {
+                      ...t,
+                      toolCalls: [...(t.toolCalls || []), toolRecord],
+                      response: recoveryMsg ? t.response + recoveryMsg : t.response
+                    }
+                  : t
+              )
+            );
           }
+          setUiState((prev) => prev ? { ...prev, activeTool: undefined } : prev);
         } else if (event.type === "plan_created") {
           const planSummary = `Plan: ${event.plan.objective}\n\n`;
           const formattedPlan = PlanFormatter.formatPlanDetail(event.plan);
@@ -3854,6 +3913,11 @@ export const App: React.FC<AppProps> = ({
           totalSteps={totalSteps}
           activeStepTitle={activeStepTitle}
           activeView={activeView}
+          tokenTelemetry={{
+            currentTokens: estimatedSessionTokens,
+            contextLimit: contextWindowLimit,
+            isGenerating
+          }}
           isReconciliation={Boolean(pendingPlanBlocked?.reconciliationResult)}
           recoveryMode={
             pendingRecoveryContinuation
@@ -4036,6 +4100,7 @@ export const App: React.FC<AppProps> = ({
                       thinkingMs={targetTurn.thinkingMs}
                       thinkingTokens={targetTurn.thinkingTokens}
                       thinkingSummary={targetTurn.thinkingSummary}
+                      toolCalls={targetTurn.toolCalls}
                     />
                   );
                 })()}
@@ -4084,6 +4149,7 @@ export const App: React.FC<AppProps> = ({
                     thinkingMs={turn.thinkingMs}
                     thinkingTokens={turn.thinkingTokens}
                     thinkingSummary={turn.thinkingSummary}
+                    toolCalls={turn.toolCalls}
                   />
                 ))}
 

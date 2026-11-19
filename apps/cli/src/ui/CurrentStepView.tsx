@@ -2,6 +2,7 @@ import React from "react";
 import { Box, Text } from "ink";
 import { symbols } from "./symbols.js";
 import { getToolBadgeInfo, formatCompactToolInvocation } from "./toolBadgingUtils.js";
+import { useGlobalSpinner } from "./spinnerUtils.js";
 
 export interface CurrentStepViewProps {
   stepOrder?: number;
@@ -54,6 +55,9 @@ export const CurrentStepView: React.FC<CurrentStepViewProps> = ({
       ? `Step ${stepOrder}/${totalSteps}:`
       : "Current Operation:";
 
+  const spinnerGlyph = useGlobalSpinner(true);
+  const indicator = spinnerGlyph ? `${spinnerGlyph} ` : `${symbols.play} `;
+
   return (
     <Box
       flexDirection="column"
@@ -63,7 +67,7 @@ export const CurrentStepView: React.FC<CurrentStepViewProps> = ({
       <Box justifyContent="space-between">
         <Box>
           <Text>
-            <Text bold color="cyan">{symbols.play} {stepPrefix} </Text>
+            <Text bold color="cyan">{indicator}{stepPrefix} </Text>
             <Text bold color="white">{title || toolName || command}</Text>
           </Text>
         </Box>
@@ -85,7 +89,9 @@ export const CurrentStepView: React.FC<CurrentStepViewProps> = ({
       <Box marginTop={0} flexWrap="wrap">
         {toolName && (
           <Box marginRight={2}>
-            <Text color={getToolBadgeInfo(toolName).color}>{symbols.dot} </Text>
+            <Text color={getToolBadgeInfo(toolName).color} bold>
+              [{getToolBadgeInfo(toolName).label.toUpperCase()}]{" "}
+            </Text>
             <Text bold color="white">{formatCompactToolInvocation(toolName, target, command)}</Text>
           </Box>
         )}

@@ -2,6 +2,7 @@ import React from "react";
 import { Box, Text, useStdout } from "ink";
 import { MessageBubble } from "./MessageBubble.js";
 import { ThinkingBlock } from "./ThinkingBlock.js";
+import { ToolExecutionGroup, type ToolCallRecord } from "./ToolExecutionCard.js";
 
 export interface TurnViewProps {
   prompt: string;
@@ -12,6 +13,7 @@ export interface TurnViewProps {
   thinkingMs?: number;
   thinkingTokens?: number;
   thinkingSummary?: string;
+  toolCalls?: ToolCallRecord[];
   columns?: number;
 }
 
@@ -24,6 +26,7 @@ const TurnViewComponent: React.FC<TurnViewProps> = ({
   thinkingMs,
   thinkingTokens,
   thinkingSummary,
+  toolCalls,
   columns: explicitColumns
 }) => {
   const { stdout } = useStdout();
@@ -33,6 +36,11 @@ const TurnViewComponent: React.FC<TurnViewProps> = ({
 
   const isStreaming = status === "streaming";
   const hasError = status === "error";
+
+  const displayResponse = React.useMemo(() => {
+    if (!toolCalls || toolCalls.length === 0) return response;
+    return response.replace(/^✓\s+[^\n]+\s+executed\n?/gm, "");
+  }, [response, toolCalls]);
 
   return (
     <Box flexDirection="column" marginY={0}>
@@ -48,12 +56,19 @@ const TurnViewComponent: React.FC<TurnViewProps> = ({
         />
       )}
 
+      {/* Tool execution cards if any */}
+      {toolCalls && toolCalls.length > 0 && (
+        <Box marginLeft={1} marginY={0}>
+          <ToolExecutionGroup toolCalls={toolCalls} />
+        </Box>
+      )}
+
       {/* Agent response */}
-      {(status !== "thinking" || response || hasError) && (
+      {(status !== "thinking" || displayResponse || hasError) && (
         <MessageBubble
           role="agent"
-          content={response}
-          isStreaming={isStreaming && !response && !hasError}
+          content={displayResponse}
+          isStreaming={isStreaming && !displayResponse && !hasError}
           error={hasError ? (error || "An error occurred.") : undefined}
         />
       )}

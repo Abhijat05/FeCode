@@ -2,6 +2,13 @@ import React from "react";
 import { Box, Text, useStdout } from "ink";
 import { getTerminalLayout, truncateText } from "./AppShell.js";
 import { useGlobalSpinner } from "./spinnerUtils.js";
+import { formatTokenTelemetry } from "./telemetryUtils.js";
+
+export interface TokenTelemetryProps {
+  currentTokens: number;
+  contextLimit: number;
+  isGenerating?: boolean;
+}
 
 export interface StatusBarProps {
   status?: string;
@@ -18,6 +25,7 @@ export interface StatusBarProps {
   activeView?: string;
   columns?: number;
   exitPending?: boolean;
+  tokenTelemetry?: TokenTelemetryProps;
 }
 
 const ACTIVE_STATUSES = new Set([
@@ -41,11 +49,16 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   recoveryMode = "confirm",
   activeView = "main",
   columns: explicitColumns,
-  exitPending = false
+  exitPending = false,
+  tokenTelemetry
 }) => {
   const { stdout } = useStdout();
   const terminalColumns = explicitColumns ?? stdout?.columns ?? 80;
   const layout = getTerminalLayout(terminalColumns);
+
+  const telemetry = tokenTelemetry
+    ? formatTokenTelemetry(tokenTelemetry.currentTokens, tokenTelemetry.contextLimit, layout)
+    : null;
 
   const isAnimating =
     !hasModal &&
@@ -303,7 +316,17 @@ export const StatusBar: React.FC<StatusBarProps> = ({
       marginTop={0}
       marginBottom={0}
     >
-      <Box flexShrink={1}>{renderStatusText()}</Box>
+      <Box flexShrink={1} flexDirection="row" alignItems="center">
+        <Box flexShrink={1}>{renderStatusText()}</Box>
+        {telemetry && telemetry.text ? (
+          <Box marginLeft={2} flexShrink={0}>
+            <Text color="gray">│ </Text>
+            <Text color={telemetry.color} bold={telemetry.percent >= 85}>
+              {telemetry.text}
+            </Text>
+          </Box>
+        ) : null}
+      </Box>
       <Box flexShrink={0}>{renderShortcuts()}</Box>
     </Box>
   );

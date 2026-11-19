@@ -60,4 +60,37 @@ describe("TurnView Component", () => {
     // Separator should scale to 93 columns (95 - 2), exceeding the old 80 cap
     expect(frame).toContain("─".repeat(93));
   });
+
+  it("renders structured tool call cards when toolCalls are provided", () => {
+    const { lastFrame } = render(
+      <TurnView
+        prompt="modify file"
+        response="Done modifying"
+        status="done"
+        toolCalls={[
+          {
+            id: "t1",
+            name: "read_file",
+            target: "src/App.tsx",
+            status: "success",
+            durationMs: 15
+          },
+          {
+            id: "t2",
+            name: "edit_file",
+            target: "src/App.tsx",
+            status: "success",
+            durationMs: 40
+          }
+        ]}
+      />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("Read");
+    expect(frame).toContain("src/App.tsx");
+    expect(frame).toContain("Edit");
+    expect(frame).toContain("15ms");
+    expect(frame).toContain("Done modifying");
+  });
 });
+
