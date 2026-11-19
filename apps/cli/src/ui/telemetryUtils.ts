@@ -65,3 +65,25 @@ export function formatTokenTelemetry(
 
   return { text, percent, color };
 }
+
+export function estimateMessagesTokens(
+  messages?: Array<{ content?: string; toolCalls?: Array<{ arguments?: unknown }> }>
+): number {
+  if (!messages || messages.length === 0) return 0;
+  let total = 0;
+  for (const m of messages) {
+    if (m.content) {
+      total += Math.ceil(m.content.length / 4);
+    }
+    if (m.toolCalls) {
+      for (const tc of m.toolCalls) {
+        const argStr =
+          typeof tc.arguments === "string"
+            ? tc.arguments
+            : JSON.stringify(tc.arguments || {});
+        total += Math.ceil(argStr.length / 4);
+      }
+    }
+  }
+  return total;
+}

@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   getModelContextLimit,
   formatTokenCount,
-  formatTokenTelemetry
+  formatTokenTelemetry,
+  estimateMessagesTokens
 } from "./telemetryUtils.js";
 
 describe("telemetryUtils", () => {
@@ -85,6 +86,29 @@ describe("telemetryUtils", () => {
     it("colors gray when 0 tokens", () => {
       const gray = formatTokenTelemetry(0, 128000, "wide");
       expect(gray.color).toBe("gray");
+    });
+  });
+
+  describe("estimateMessagesTokens", () => {
+    it("returns 0 for empty or undefined messages", () => {
+      expect(estimateMessagesTokens(undefined)).toBe(0);
+      expect(estimateMessagesTokens([])).toBe(0);
+    });
+
+    it("estimates tokens across message contents and toolCalls arguments", () => {
+      const messages = [
+        { role: "user", content: "12345678" }, // 8 chars = 2 tokens
+        {
+          role: "assistant",
+          content: "1234", // 4 chars = 1 token
+          toolCalls: [
+            { arguments: { path: "src/App.tsx" } } // ~22 chars = 6 tokens
+          ]
+        },
+        { role: "tool", content: "123456789012" } // 12 chars = 3 tokens
+      ];
+      const total = estimateMessagesTokens(messages);
+      expect(total).toBeGreaterThan(10);
     });
   });
 });

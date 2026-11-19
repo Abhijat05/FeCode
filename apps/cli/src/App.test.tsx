@@ -31,6 +31,7 @@ async function typeAndSubmit(stdin: { write: (data: string) => void }, text: str
 class MockAgent implements Agent {
   public runFn?: (input: AgentInput) => AsyncIterable<AgentEvent>;
   public isCancelled = false;
+  public getState?: () => { messages?: import("@fecode/models").ModelMessage[] };
   public getRunSummary?: (runId?: string) => import("@fecode/agent").RunSummary | undefined;
   public listHistoricalRuns?: (options?: {
     projectId?: string;
@@ -3776,6 +3777,25 @@ describe("CLI App Component", () => {
       // Release step and finish
       resolveStep();
       await delay(100);
+    });
+  });
+
+  describe("StatusBar Token Telemetry", () => {
+    it("renders active context telemetry from agent.getState().messages when idle", async () => {
+      const mockAgent = new MockAgent();
+      mockAgent.getState = () => ({
+        messages: [
+          { role: "user", content: "Inspect codebase" },
+          { role: "tool", content: "A".repeat(40000) } // ~10,000 tokens
+        ]
+      });
+
+      const { lastFrame } = render(<App agent={mockAgent} cwd="/test" />);
+      await delay(50);
+
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("tokens");
+      expect(frame).toMatch(/10\.0k\/128k tokens/);
     });
   });
 

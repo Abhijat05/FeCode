@@ -68,6 +68,7 @@ import {
   WelcomeView,
   ProviderManagementView,
   getModelContextLimit,
+  estimateMessagesTokens,
   type ToolCallRecord
 } from "./ui/index.js";
 
@@ -650,15 +651,25 @@ export const App: React.FC<AppProps> = ({
   );
 
   const estimatedSessionTokens = useMemo(() => {
-    let total = turns.reduce(
-      (acc, t) => acc + estimateTokens(t.prompt || "") + estimateTokens(t.response || ""),
-      0
-    );
+    const agentMessages = (
+      agent as { getState?: () => { messages?: ModelMessage[] } }
+    )?.getState?.()?.messages;
+
+    let total = 0;
+    if (agentMessages && agentMessages.length > 0) {
+      total = estimateMessagesTokens(agentMessages);
+    } else {
+      total = turns.reduce(
+        (acc, t) => acc + estimateTokens(t.prompt || "") + estimateTokens(t.response || ""),
+        0
+      );
+    }
+
     if (isGenerating && activeTokenCount) {
       total += activeTokenCount;
     }
     return total;
-  }, [turns, isGenerating, activeTokenCount]);
+  }, [turns, isGenerating, activeTokenCount, agent]);
 
   // Track active execution elapsed time for Header
   useEffect(() => {

@@ -157,4 +157,18 @@ describe("hasUnquotedForbiddenChars — honorSingleQuotes option (Windows shell-
     const nodeWinRes = winPolicy.validate("node -e 'console.log(\"hello & world\")'");
     expect(nodeWinRes.type).toBe("allowed");
   });
+
+  it("flags backslash-prefixed metacharacters when honorSingleQuotes is false (Windows cmd bypass prevention)", () => {
+    // In cmd.exe, \\ is not an escape, so \\& is executed as \\ followed by command separator &
+    expect(
+      hasUnquotedForbiddenChars("npm test \\& del /s /q C:\\Users", {
+        honorSingleQuotes: false
+      })
+    ).toBe(true);
+
+    const winPolicy = new DefaultCommandPolicy({ platform: "win32" });
+    const winRes = winPolicy.validate("npm test \\& del /s /q C:\\Users");
+    expect(winRes.type).toBe("denied");
+    expect(winRes.code).toBe("UNSUPPORTED_SHELL_SYNTAX");
+  });
 });

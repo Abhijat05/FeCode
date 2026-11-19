@@ -44,7 +44,7 @@ export function hasUnquotedForbiddenChars(
       continue;
     }
 
-    if (char === "\\") {
+    if (char === "\\" && honorSingleQuotes) {
       isEscaped = true;
       continue;
     }
