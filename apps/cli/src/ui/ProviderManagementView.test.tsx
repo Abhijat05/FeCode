@@ -620,7 +620,7 @@ describe("ProviderManagementView", () => {
     await new Promise((r) => setTimeout(r, 50));
 
     frame = lastFrame() || "";
-    expect(frame).toContain("Add New Provider");
+    expect(frame).toContain("Welcome to FeCode");
     expect(frame).toContain("[ Back to Provider List ]");
 
     // Press Esc to go back to list

@@ -696,7 +696,6 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
   // RENDER: 1. Onboarding / Provider Selection
   // -------------------------------------------------------------
   if (mode === "onboarding-select") {
-    const isFirstRun = profiles.length === 0 && initialMode === "onboarding";
     const backOptionIndex = PROVIDER_OPTIONS.length;
     const isBackSelected = selectedProviderIndex === backOptionIndex;
 
@@ -710,14 +709,10 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
         marginY={1}
       >
         <Box justifyContent="center" marginBottom={1}>
-          <Text bold color="cyan">
-            {isFirstRun ? "Welcome to FeCode" : "Add New Provider"}
-          </Text>
+          <Text bold color="cyan">Welcome to FeCode</Text>
         </Box>
         <Box justifyContent="center" marginBottom={1}>
-          <Text color="white">
-            {isFirstRun ? "Configure your AI provider" : "Select a provider"}
-          </Text>
+          <Text color="white">Configure your AI provider</Text>
         </Box>
         <Box marginBottom={1}>
           <Text color="gray">Select a provider:</Text>
