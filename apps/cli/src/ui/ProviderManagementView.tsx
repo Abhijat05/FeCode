@@ -705,16 +705,16 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
         borderStyle="round"
         borderColor="cyan"
         paddingX={2}
-        paddingY={1}
-        marginY={1}
+        paddingY={0}
+        marginY={0}
       >
-        <Box justifyContent="center" marginBottom={1}>
+        <Box justifyContent="center" marginBottom={0}>
           <Text bold color="cyan">Welcome to FeCode</Text>
         </Box>
-        <Box justifyContent="center" marginBottom={1}>
+        <Box justifyContent="center" marginBottom={0}>
           <Text color="white">Configure your AI provider</Text>
         </Box>
-        <Box marginBottom={1}>
+        <Box marginBottom={0}>
           <Text color="gray">Select a provider:</Text>
         </Box>
         {PROVIDER_OPTIONS.map((opt, idx) => {
@@ -731,7 +731,7 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
             </Box>
           );
         })}
-        <Box key="back-option" marginLeft={1} marginTop={1}>
+        <Box key="back-option" marginLeft={1} marginTop={0}>
           <Text color={isBackSelected ? "cyan" : "gray"} bold={isBackSelected}>
             {isBackSelected ? "> " : "  "}
           </Text>
@@ -741,7 +741,7 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
               : "[ Cancel / Exit to Main ]"}
           </Text>
         </Box>
-        <Box marginTop={1}>
+        <Box marginTop={0}>
           <Text color="gray">
             Use ↑/↓ arrows to navigate, Enter to continue   [Esc / b / q] Back
           </Text>
@@ -760,8 +760,8 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
         borderStyle="round"
         borderColor="cyan"
         paddingX={2}
-        paddingY={1}
-        marginY={1}
+        paddingY={0}
+        marginY={0}
       >
         <Box marginBottom={1}>
           <Text bold color="cyan">
@@ -918,8 +918,8 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
         borderStyle="round"
         borderColor={isTesting ? "cyan" : testResult?.success ? "green" : "red"}
         paddingX={2}
-        paddingY={1}
-        marginY={1}
+        paddingY={0}
+        marginY={0}
       >
         <Box marginBottom={1}>
           <Text bold color={isTesting ? "cyan" : testResult?.success ? "green" : "red"}>
@@ -989,8 +989,8 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
         borderStyle="round"
         borderColor="cyan"
         paddingX={2}
-        paddingY={1}
-        marginY={1}
+        paddingY={0}
+        marginY={0}
       >
         <Box marginBottom={1}>
           <Text bold color="cyan">Provider Profile Details</Text>
@@ -1029,8 +1029,8 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
         borderStyle="round"
         borderColor="red"
         paddingX={2}
-        paddingY={1}
-        marginY={1}
+        paddingY={0}
+        marginY={0}
       >
         <Box marginBottom={1}>
           <Text bold color="red">Delete Provider Profile?</Text>
@@ -1059,8 +1059,8 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
       borderStyle="round"
       borderColor="cyan"
       paddingX={2}
-      paddingY={1}
-      marginY={1}
+      paddingY={0}
+      marginY={0}
     >
       <Box justifyContent="space-between" marginBottom={1}>
         <Text bold color="cyan">Saved Provider Profiles</Text>
