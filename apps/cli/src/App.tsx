@@ -663,11 +663,11 @@ export const App: React.FC<AppProps> = ({
         (acc, t) => acc + estimateTokens(t.prompt || "") + estimateTokens(t.response || ""),
         0
       );
+      if (isGenerating && activeTokenCount) {
+        total += activeTokenCount;
+      }
     }
 
-    if (isGenerating && activeTokenCount) {
-      total += activeTokenCount;
-    }
     return total;
   }, [turns, isGenerating, activeTokenCount, agent]);
 
