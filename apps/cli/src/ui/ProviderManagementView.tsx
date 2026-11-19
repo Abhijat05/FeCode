@@ -763,7 +763,7 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
         paddingY={0}
         marginY={0}
       >
-        <Box marginBottom={1}>
+        <Box marginBottom={0}>
           <Text bold color="cyan">
             {editingProfileId ? "Edit Provider Profile" : "Configure AI Provider"}
           </Text>
@@ -771,7 +771,7 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
         </Box>
 
         {formError && (
-          <Box marginY={1}>
+          <Box marginY={0}>
             <Text color="red">⚠ {formError}</Text>
           </Box>
         )}
@@ -896,7 +896,7 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
           );
         })}
 
-        <Box marginTop={1} flexDirection="column">
+        <Box marginTop={0} flexDirection="column">
           <Text color="gray">
             [Tab / Enter] Next Field   [Shift+Tab] Prev Field   [Esc] Back
           </Text>
@@ -921,20 +921,20 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
         paddingY={0}
         marginY={0}
       >
-        <Box marginBottom={1}>
+        <Box marginBottom={0}>
           <Text bold color={isTesting ? "cyan" : testResult?.success ? "green" : "red"}>
             {isTesting ? "Testing Connection..." : testResult?.success ? "✓ Connection Successful" : "✗ Connection Failed"}
           </Text>
         </Box>
 
         {isTesting && (
-          <Box marginY={1}>
+          <Box marginY={0}>
             <Text color="cyan">Testing authentication and model availability for {formModel}...</Text>
           </Box>
         )}
 
         {!isTesting && testResult && (
-          <Box flexDirection="column" marginY={1}>
+          <Box flexDirection="column" marginY={0}>
             <Box>
               <Text color={testResult.steps.authentication === "success" ? "green" : "red"}>
                 {testResult.steps.authentication === "success" ? "✓ " : "✗ "}
@@ -948,7 +948,7 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
               <Text color="white">Model Availability: {testResult.steps.modelAvailable}</Text>
             </Box>
 
-            <Box marginTop={1}>
+            <Box marginTop={0}>
               <Text color={testResult.success ? "green" : "red"}>
                 {testResult.message}
               </Text>
@@ -962,7 +962,7 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
           </Box>
         )}
 
-        <Box marginTop={1}>
+        <Box marginTop={0}>
           {!isTesting && testResult?.success ? (
             <Text color="green" bold>
               Press [Enter] to Save & Activate   [e] Edit Form   [Esc] Cancel
@@ -992,7 +992,7 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
         paddingY={0}
         marginY={0}
       >
-        <Box marginBottom={1}>
+        <Box marginBottom={0}>
           <Text bold color="cyan">Provider Profile Details</Text>
           <Text color="white"> — {currentProfile.displayName}</Text>
         </Box>
@@ -1012,7 +1012,7 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
           <Text color="gray">Updated At:           <Text color="white">{currentProfile.updatedAt}</Text></Text>
         </Box>
 
-        <Box marginTop={1}>
+        <Box marginTop={0}>
           <Text color="gray">[Esc / Enter / q] Back to profile list</Text>
         </Box>
       </Box>
@@ -1032,7 +1032,7 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
         paddingY={0}
         marginY={0}
       >
-        <Box marginBottom={1}>
+        <Box marginBottom={0}>
           <Text bold color="red">Delete Provider Profile?</Text>
         </Box>
         <Text color="white">
@@ -1041,7 +1041,7 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
         <Text color="gray">
           This will permanently remove the profile and its stored OS credential.
         </Text>
-        <Box marginTop={1}>
+        <Box marginTop={0}>
           <Text bold color="yellow">
             Press [y] to Confirm   [n / Esc] to Cancel
           </Text>
@@ -1062,13 +1062,13 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
       paddingY={0}
       marginY={0}
     >
-      <Box justifyContent="space-between" marginBottom={1}>
+      <Box justifyContent="space-between" marginBottom={0}>
         <Text bold color="cyan">Saved Provider Profiles</Text>
         <Text color="gray">{profiles.length} profile{profiles.length === 1 ? "" : "s"}</Text>
       </Box>
 
       {profiles.length === 0 ? (
-        <Box marginY={1}>
+        <Box marginY={0}>
           <Text color="gray">No saved provider profiles. Press [n] to add one.</Text>
         </Box>
       ) : (
@@ -1100,7 +1100,7 @@ export const ProviderManagementView: React.FC<ProviderManagementViewProps> = ({
         </Box>
       )}
 
-      <Box marginTop={1} flexDirection="column">
+      <Box marginTop={0} flexDirection="column">
         <Text color="gray">
           {profiles.length === 0
             ? "[n] Add   [Esc] Close"

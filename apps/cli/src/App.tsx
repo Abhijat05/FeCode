@@ -480,16 +480,6 @@ export const App: React.FC<AppProps> = ({
   }, []);
 
   useEffect(() => {
-    if (process.stdout?.isTTY && !isTestEnv && !process.env.CI_TEST_MODE) {
-      try {
-        process.stdout.write("\x1b[2J\x1b[H");
-      } catch {
-        // ignore
-      }
-    }
-  }, [activeView, isTestEnv]);
-
-  useEffect(() => {
     if (process.stdout.isTTY && !isTestEnv) {
       process.stdout.write("\x1b[?2004h");
     }
