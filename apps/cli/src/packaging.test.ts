@@ -19,8 +19,8 @@ describe("FeCode Packaging & Distribution Verification (Phase 5AH)", () => {
   it("Binary registration: apps/cli package.json registers fe and fecode bin targets", () => {
     const pkg = JSON.parse(fs.readFileSync(path.resolve(cliDir, "package.json"), "utf-8"));
     expect(pkg.bin).toBeDefined();
-    expect(pkg.bin.fe).toBe("./dist/index.js");
-    expect(pkg.bin.fecode).toBe("./dist/index.js");
+    expect(["./dist/index.js", "dist/index.js"]).toContain(pkg.bin.fe);
+    expect(["./dist/index.js", "dist/index.js"]).toContain(pkg.bin.fecode);
   });
 
   it("Ink configuration: CLI entrypoint sets exitOnCtrlC to false for two-tier exit trap", () => {
