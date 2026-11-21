@@ -5,7 +5,7 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { Tool, ToolContext, ToolRegistry, ToolResult } from "@fecode/models";
 import { isMcpHttpServerConfig, type McpServerConfig } from "./types.js";
 
-const FECODE_CLIENT_VERSION = "1.1.3";
+const FECODE_CLIENT_VERSION = "1.2.0";
 const MCP_CONNECT_TIMEOUT_MS = 10_000;
 
 function sanitizeNamePart(name: string): string {

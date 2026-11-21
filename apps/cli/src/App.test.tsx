@@ -81,7 +81,7 @@ describe("CLI App Component", () => {
     const output = lastFrame();
     expect(output).toContain("FeCode");
     expect(output).toContain("/test/dir");
-    expect(output).toContain("v1.1.3");
+    expect(output).toContain("v1.2.0");
     expect(output).toContain("❯");
   });
 

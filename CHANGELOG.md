@@ -4,6 +4,37 @@ All notable changes to FeCode are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-11-21
+
+### Added
+- **Model Context Protocol (MCP) Integration**:
+  - Full client support for external MCP servers via `@modelcontextprotocol/sdk`.
+  - Supports both standard stdio child process transports (`command`, `args`, `env`, `cwd`) and remote Streamable HTTP transports (`url`, `headers`).
+  - Hierarchical project-scoped configuration discovery from `.fecode/mcp.json`.
+  - Exposes external MCP tools dynamically to LLM providers alongside built-in engineering tools with automatic JSON Schema translation.
+  - Interactive `/mcp` slash command in the TUI to list connected servers, latency, and available tools.
+  - Integrated approval gating: all MCP tool invocations are treated as high-impact external actions requiring explicit user consent by default.
+- **In-Flight Activity & Collapsible Tool Cards (Tier-1 Standard)**:
+  - Clean, single-line tool chips (`✓ Read`, `✓ Edit`, `✓ Exec`, `✗ Exec`) replacing legacy verbose plain-text execution logs.
+  - Tier-1 Smart Collapsing: automatically compresses routine background exploration (read/search/list operations) into a single summary line (`✓ Explored workspace`), preventing terminal scrollback blowout.
+  - Individual spotlighting: all file mutations and command failures remain prominently highlighted with duration and error diagnostics.
+- **Context Window & Token Telemetry in Status Bar**:
+  - Live context telemetry pill in the status bar (`currentTokens/contextLimit tokens (percentage%)`).
+  - Dynamic model context window lookup (1M for Gemini, 200k for Claude, 128k for OpenAI/DeepSeek/Qwen/Mistral).
+  - Accurate retention of active conversation memory from `agent.getState().messages` without dropping context occupancy when idle.
+  - Dynamic color thresholds: cyan for nominal usage, yellow warning at ≥65%, and red alert at ≥85%.
+
+### Fixed & Hardened
+- **Windows Command Injection Prevention (`policy.ts`)**:
+  - Fixed backslash escape bypass where `\` was treated as an escape character in Windows `cmd.exe` mode, preventing shell chaining operators from evading validation.
+- **Agent Autonomy & Anti-Hallucination Guardrails (`systemPrompt.ts`)**:
+  - Enforced silent, direct tool invocation to prevent models from outputting verbose stream-of-consciousness monologues before calling tools.
+  - Added strict truthfulness guardrails preventing hallucinated bugs when code is working and tests pass.
+- **TUI Screen Stacking & Transition Stability**:
+  - Eliminated out-of-band screen clear escape sequences desynchronizing Ink's log-update render tree during secondary view transitions.
+
+---
+
 ## [1.1.3] - 2026-10-24
 
 ### Added

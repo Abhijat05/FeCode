@@ -12,7 +12,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License" /></a>
   <img src="https://img.shields.io/badge/typescript-strict%205.7+-blue.svg" alt="TypeScript Strict" />
   <img src="https://img.shields.io/badge/tests-1470%20passed-success.svg" alt="Tests" />
-  <img src="https://img.shields.io/badge/version-1.1.3-brightgreen.svg" alt="Version 1.1.3" />
+  <img src="https://img.shields.io/badge/version-1.2.0-brightgreen.svg" alt="Version 1.2.0" />
 </p>
 
 ---
